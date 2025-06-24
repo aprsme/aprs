@@ -1,16 +1,20 @@
 defmodule AprsParser.MixProject do
   use Mix.Project
 
+  @source_url "https://github.com/gmcintire/aprs_parser"
+  @version "0.1.2"
+
   def project do
     [
       app: :aprs,
-      version: "0.1.2",
+      version: @version,
       elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       description: "APRS packet parser for Elixir (aprs)",
       package: package(),
-      source_url: "https://github.com/gmcintire/aprs_parser"
+      docs: docs(),
+      source_url: @source_url
     ]
   end
 
@@ -23,6 +27,7 @@ defmodule AprsParser.MixProject do
   defp deps do
     [
       {:decimal, "~> 2.0"},
+      {:ex_doc, "~> 0.29", only: :dev, runtime: false},
       {:stream_data, "~> 1.2.0", only: [:dev, :test]},
       {:mix_test_watch, "~> 1.1", only: [:dev, :test]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
@@ -34,9 +39,22 @@ defmodule AprsParser.MixProject do
   defp package do
     [
       maintainers: ["Graham McIntire"],
-      licenses: ["MIT"],
-      links: %{"GitHub" => "https://github.com/gmcintire/aprs_parser"},
+      licenses: ["GPL-2.0"],
+      links: %{
+        "GitHub" => @source_url,
+        "HexDocs" => "https://hexdocs.pm/gridsquare"
+      },
       files: ["lib", "mix.exs", "README.md"]
+    ]
+  end
+
+  defp docs do
+    [
+      main: "readme",
+      extras: ["README.md", "CHANGELOG.md", "LICENSE"],
+      source_url: @source_url,
+      source_ref: "v#{@version}",
+      formatters: ["html"]
     ]
   end
 end

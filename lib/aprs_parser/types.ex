@@ -8,7 +8,9 @@ defmodule AprsParser.Types do
   @type mice :: MicE.t()
 
   defmodule Packet do
-    @moduledoc false
+    @moduledoc """
+    Represents an APRS packet with all its components.
+    """
     @type t :: %__MODULE__{}
     defstruct [
       :id,
@@ -25,7 +27,9 @@ defmodule AprsParser.Types do
   end
 
   defmodule Position do
-    @moduledoc false
+    @moduledoc """
+    Represents position data with latitude, longitude, and associated metadata.
+    """
     @type t :: %__MODULE__{}
     defstruct [
       :latitude,
@@ -78,7 +82,9 @@ defmodule AprsParser.Types do
   end
 
   defmodule ParseError do
-    @moduledoc false
+    @moduledoc """
+    Represents parsing errors with error code, message, and raw data.
+    """
     @type t :: %__MODULE__{}
     defstruct [
       :error_code,
