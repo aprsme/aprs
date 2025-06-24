@@ -1,8 +1,8 @@
-defmodule AprsParser.MessageTest do
+defmodule Aprs.MessageTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
-  alias AprsParser.Message
+  alias Aprs.Message
 
   describe "parse/1" do
     test "returns nil for now" do

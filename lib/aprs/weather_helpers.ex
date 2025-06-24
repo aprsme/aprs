@@ -1,4 +1,4 @@
-defmodule AprsParser.WeatherHelpers do
+defmodule Aprs.WeatherHelpers do
   @moduledoc """
   Weather field extraction helpers for APRS.
   """

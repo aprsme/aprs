@@ -1,4 +1,4 @@
-defmodule AprsParser.Convert do
+defmodule Aprs.Convert do
   @moduledoc false
 
   @spec wind(number(), :ultimeter, :mph) :: float()

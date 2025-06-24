@@ -1,8 +1,8 @@
-defmodule AprsParser.ObjectTest do
+defmodule Aprs.ObjectTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
-  alias AprsParser.Object
+  alias Aprs.Object
 
   describe "parse/1" do
     test "returns a map with :data_type => :object for valid input" do

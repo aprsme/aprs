@@ -1,8 +1,8 @@
-defmodule AprsParser.TelemetryTest do
+defmodule Aprs.TelemetryTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
-  alias AprsParser.Telemetry
+  alias Aprs.Telemetry
 
   describe "parse/1" do
     test "returns a map with :data_type for valid input" do

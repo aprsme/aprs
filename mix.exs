@@ -1,7 +1,7 @@
-defmodule AprsParser.MixProject do
+defmodule Aprs.MixProject do
   use Mix.Project
 
-  @source_url "https://github.com/gmcintire/aprs_parser"
+  @source_url "https://github.com/gmcintire/aprs"
   @version "0.1.2"
 
   def project do
@@ -42,7 +42,7 @@ defmodule AprsParser.MixProject do
       licenses: ["GPL-2.0"],
       links: %{
         "GitHub" => @source_url,
-        "HexDocs" => "https://hexdocs.pm/gridsquare"
+        "HexDocs" => "https://hexdocs.pm/aprs"
       },
       files: ["lib", "mix.exs", "README.md"]
     ]

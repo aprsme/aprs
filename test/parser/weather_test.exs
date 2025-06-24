@@ -1,8 +1,8 @@
-defmodule AprsParser.WeatherTest do
+defmodule Aprs.WeatherTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
-  alias AprsParser.Weather
+  alias Aprs.Weather
 
   describe "parse/1" do
     test "returns a map with :data_type => :weather for valid input" do

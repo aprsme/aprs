@@ -1,4 +1,4 @@
-defmodule AprsParser.Status do
+defmodule Aprs.Status do
   @moduledoc """
   APRS status parsing.
   """

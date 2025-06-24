@@ -1,4 +1,4 @@
-defmodule AprsParser.UtilsTest do
+defmodule Aprs.UtilsTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
@@ -9,5 +9,9 @@ defmodule AprsParser.UtilsTest do
     check all n <- StreamData.integer() do
       assert is_integer(n)
     end
+  end
+
+  test "placeholder test" do
+    assert true
   end
 end

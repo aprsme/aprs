@@ -1,4 +1,4 @@
-defmodule AprsParser.DeviceParser do
+defmodule Aprs.DeviceParser do
   @moduledoc """
   Extracts device identifier (TOCALL or Mic-E) from APRS packets.
   """

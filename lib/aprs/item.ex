@@ -1,4 +1,4 @@
-defmodule AprsParser.Item do
+defmodule Aprs.Item do
   @moduledoc """
   APRS item parsing.
   """
@@ -35,7 +35,7 @@ defmodule AprsParser.Item do
 
     case Regex.run(~r/(\d{4,5}\.\d+[NS]).*([\/]?)(\d{5,6}\.\d+[EW])/, data) do
       [_, lat_str, _, lon_str] ->
-        %{latitude: lat, longitude: lon} = AprsParser.Position.parse_aprs_position(lat_str, lon_str)
+        %{latitude: lat, longitude: lon} = Aprs.Position.parse_aprs_position(lat_str, lon_str)
         Map.merge(base, %{latitude: lat, longitude: lon})
 
       _ ->
@@ -48,7 +48,7 @@ defmodule AprsParser.Item do
       <<latitude::binary-size(8), sym_table_id::binary-size(1), longitude::binary-size(9), symbol_code::binary-size(1),
         comment::binary>> ->
         %{latitude: lat, longitude: lon} =
-          AprsParser.Position.parse_aprs_position(latitude, longitude)
+          Aprs.Position.parse_aprs_position(latitude, longitude)
 
         %{
           latitude: lat,
@@ -62,12 +62,12 @@ defmodule AprsParser.Item do
       <<"/", latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), symbol_code::binary-size(1),
         cs::binary-size(2), compression_type::binary-size(1), comment::binary>> ->
         converted_lat =
-          AprsParser.CompressedPositionHelpers.convert_compressed_lat(latitude_compressed)
+          Aprs.CompressedPositionHelpers.convert_compressed_lat(latitude_compressed)
 
         converted_lon =
-          AprsParser.CompressedPositionHelpers.convert_compressed_lon(longitude_compressed)
+          Aprs.CompressedPositionHelpers.convert_compressed_lon(longitude_compressed)
 
-        compressed_cs = AprsParser.CompressedPositionHelpers.convert_compressed_cs(cs)
+        compressed_cs = Aprs.CompressedPositionHelpers.convert_compressed_cs(cs)
 
         base_data = %{
           latitude: converted_lat,

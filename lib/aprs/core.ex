@@ -1,10 +1,10 @@
-defmodule AprsParser.Core do
+defmodule Aprs.Core do
   @moduledoc """
-  Main entry point for APRS packet parsing. Delegates to submodules for specific formats.
+  Core APRS parsing functionality.
   """
 
-  alias AprsParser.Types.Packet
-  alias AprsParser.Types.ParseError
+  alias Aprs.Types.Packet
+  alias Aprs.Types.ParseError
 
   @doc """
   Parse an APRS packet string into a Packet struct or return a ParseError struct.

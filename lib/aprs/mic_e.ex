@@ -1,4 +1,4 @@
-defmodule AprsParser.MicE do
+defmodule Aprs.MicE do
   @moduledoc """
   Parses Mic-E encoded APRS packets.
   """

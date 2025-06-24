@@ -1,10 +1,10 @@
-defmodule AprsParser.TypesTest do
+defmodule Aprs.TypesTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
-  alias AprsParser.Types.Packet
-  alias AprsParser.Types.ParseError
-  alias AprsParser.Types.Position
+  alias Aprs.Types.Packet
+  alias Aprs.Types.ParseError
+  alias Aprs.Types.Position
 
   describe "Position.from_aprs/2" do
     test "parses valid APRS lat/lon strings" do

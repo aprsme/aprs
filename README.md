@@ -16,7 +16,7 @@ end
 
 ```elixir
 # Parse an APRS packet
-{:ok, packet} = AprsParser.parse("N0CALL>APRS,TCPIP*,qAC,T2TEST:=1234.56N/12345.67W-Test message")
+{:ok, packet} = Aprs.parse("N0CALL>APRS,TCPIP*,qAC,T2TEST:=1234.56N/12345.67W-Test message")
 
 # The parsed packet contains:
 # - sender: "N0CALL"

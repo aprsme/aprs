@@ -1,9 +1,9 @@
-defmodule AprsParser.NMEA do
+defmodule Aprs.NMEA do
   @moduledoc """
-  NMEA sentence parsing for APRS packets.
+  NMEA sentence parsing for APRS.
   """
 
-  alias AprsParser.Types.ParseError
+  alias Aprs.Types.ParseError
 
   @doc """
   Parse an NMEA sentence string. Returns a struct or ParseError.

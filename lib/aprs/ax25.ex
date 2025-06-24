@@ -1,4 +1,4 @@
-defmodule AprsParser.AX25 do
+defmodule Aprs.AX25 do
   @moduledoc """
   AX.25 callsign and path parsing/validation for APRS packets.
   """

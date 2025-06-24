@@ -1,9 +1,9 @@
-defmodule AprsParser.PHG do
+defmodule Aprs.PHG do
   @moduledoc """
-  PHG/DFS parsing for APRS packets.
+  PHG (Power, Height, Gain) parsing for APRS packets.
   """
 
-  alias AprsParser.Types.ParseError
+  alias Aprs.Types.ParseError
 
   @doc """
   Parse a PHG/DFS string. Returns a struct or ParseError.

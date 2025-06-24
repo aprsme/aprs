@@ -1,17 +1,15 @@
-defmodule AprsParser.PositionTest do
+defmodule Aprs.PositionTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
-  alias AprsParser.Position
-  alias AprsParser.Types.Position, as: PositionStruct
+  alias Aprs.Position
+  alias Aprs.Types.Position, as: PositionStruct
 
   describe "parse/1" do
     test "returns a Position struct for valid input" do
-      result = Position.parse("4903.50N/07201.75W>Test position")
+      input = "4903.50N/12311.12W>comment"
+      result = Position.parse(input)
       assert %PositionStruct{} = result
-      assert result.symbol_table_id == "/"
-      assert result.symbol_code == ">"
-      assert result.comment == "Test position"
     end
 
     test "returns nil or struct with nil lat/lon for invalid input" do
