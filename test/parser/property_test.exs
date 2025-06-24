@@ -1,4 +1,4 @@
-defmodule AprsParser.PropertyTest do
+defmodule Aprs.PropertyTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
@@ -8,7 +8,7 @@ defmodule AprsParser.PropertyTest do
                 path <- StreamData.string(:alphanumeric, min_length: 1),
                 data <- StreamData.string(:printable, min_length: 1) do
         packet = sender <> ">" <> path <> ":" <> data
-        assert {:ok, [^sender, ^path, ^data]} = AprsParser.split_packet(packet)
+        assert {:ok, [^sender, ^path, ^data]} = Aprs.split_packet(packet)
       end
     end
 
@@ -16,7 +16,7 @@ defmodule AprsParser.PropertyTest do
       check all s <- StreamData.string(:printable, max_length: 10) do
         # Missing '>' or ':'
         bad = s <> s
-        assert match?({:error, _}, AprsParser.split_packet(bad))
+        assert match?({:error, _}, Aprs.split_packet(bad))
       end
     end
   end
@@ -24,7 +24,7 @@ defmodule AprsParser.PropertyTest do
   describe "split_path/1" do
     property "splits path into destination and digipeater path for any string" do
       check all s <- StreamData.string(:alphanumeric, min_length: 0, max_length: 10) do
-        result = AprsParser.split_path(s)
+        result = Aprs.split_path(s)
         assert match?({:ok, [_, _]}, result)
       end
     end
@@ -35,7 +35,7 @@ defmodule AprsParser.PropertyTest do
       check all base <- StreamData.string(:alphanumeric, min_length: 1),
                 ssid <- StreamData.string(:alphanumeric, min_length: 1) do
         callsign = base <> "-" <> ssid
-        assert {:ok, [^base, ^ssid]} = AprsParser.parse_callsign(callsign)
+        assert {:ok, [^base, ^ssid]} = Aprs.parse_callsign(callsign)
       end
     end
   end
@@ -44,14 +44,14 @@ defmodule AprsParser.PropertyTest do
     property "rejects paths with too many components" do
       check all n <- StreamData.integer(9..20) do
         path = Enum.map_join(1..n, ",", fn _ -> "WIDE1" end)
-        assert match?({:error, _}, AprsParser.validate_path(path))
+        assert match?({:error, _}, Aprs.validate_path(path))
       end
     end
 
     property "accepts paths with 8 or fewer components" do
       check all n <- StreamData.integer(1..8) do
         path = Enum.map_join(1..n, ",", fn _ -> "WIDE1" end)
-        assert :ok = AprsParser.validate_path(path)
+        assert :ok = Aprs.validate_path(path)
       end
     end
   end
@@ -59,19 +59,19 @@ defmodule AprsParser.PropertyTest do
   describe "parse_datatype/1" do
     property "returns an atom for any printable string" do
       check all s <- StreamData.string(:printable, min_length: 1) do
-        assert is_atom(AprsParser.parse_datatype(s))
+        assert is_atom(Aprs.parse_datatype(s))
       end
     end
   end
 
   describe "parse/1 error and fallback branches" do
     test "returns error for non-binary input" do
-      assert {:error, :invalid_packet} = AprsParser.parse(123)
-      assert {:error, :invalid_packet} = AprsParser.parse(nil)
+      assert {:error, :invalid_packet} = Aprs.parse(123)
+      assert {:error, :invalid_packet} = Aprs.parse(nil)
     end
 
     test "returns error for invalid packet format" do
-      assert {:error, "Invalid packet format"} = AprsParser.parse(":badpacket")
+      assert {:error, "Invalid packet format"} = Aprs.parse(":badpacket")
     end
 
     test "returns error for unknown error" do
@@ -79,7 +79,7 @@ defmodule AprsParser.PropertyTest do
       # Use a packet that will fail split_path
       # path is not splittable
       msg = "NOCALL>APRS:!badpath"
-      result = AprsParser.parse(msg)
+      result = Aprs.parse(msg)
       assert {:ok, packet} = result
       assert packet.data_extended.data_type == :malformed_position
 
@@ -95,37 +95,37 @@ defmodule AprsParser.PropertyTest do
 
   describe "parse_data/3 unknown and fallback branches" do
     test "returns nil for unknown type" do
-      assert AprsParser.parse_data(:unknown_type, "", "") == nil
+      assert Aprs.parse_data(:unknown_type, "", "") == nil
     end
 
     test "returns nil for parse_data/3 fallback" do
-      assert AprsParser.parse_data(:not_a_real_type, "", "") == nil
+      assert Aprs.parse_data(:not_a_real_type, "", "") == nil
     end
   end
 
   describe "parse_datatype/1 edge and unknown cases" do
     test "returns :unknown_datatype for unrecognized data" do
-      assert AprsParser.parse_datatype("ZZZ") == :unknown_datatype
-      assert AprsParser.parse_datatype("") == :unknown_datatype
+      assert Aprs.parse_datatype("ZZZ") == :unknown_datatype
+      assert Aprs.parse_datatype("") == :unknown_datatype
     end
 
     property "returns an atom for any printable string" do
       check all s <- StreamData.string(:printable, min_length: 1) do
-        assert is_atom(AprsParser.parse_datatype(s))
+        assert is_atom(Aprs.parse_datatype(s))
       end
     end
   end
 
   describe "split_packet/1 and split_path/1 malformed input" do
     test "split_packet/1 returns error for missing parts" do
-      assert {:error, _} = AprsParser.split_packet("")
-      assert {:error, _} = AprsParser.split_packet("NOCALL>")
-      assert {:error, _} = AprsParser.split_packet(":nope")
+      assert {:error, _} = Aprs.split_packet("")
+      assert {:error, _} = Aprs.split_packet("NOCALL>")
+      assert {:error, _} = Aprs.split_packet(":nope")
     end
 
     test "split_path/1 returns error for invalid format" do
       # The actual behavior is to return {:ok, ["", ",,,"]}
-      assert AprsParser.split_path(",,,,") == {:ok, ["", ",,,"]}
+      assert Aprs.split_path(",,,,") == {:ok, ["", ",,,"]}
     end
   end
 end

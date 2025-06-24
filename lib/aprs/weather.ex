@@ -1,4 +1,4 @@
-defmodule AprsParser.Weather do
+defmodule Aprs.Weather do
   @moduledoc """
   APRS weather report parsing.
   """
@@ -22,21 +22,21 @@ defmodule AprsParser.Weather do
   """
   @spec parse_weather_data(String.t()) :: map()
   def parse_weather_data(weather_data) do
-    timestamp = AprsParser.WeatherHelpers.extract_timestamp(weather_data)
-    weather_data = AprsParser.WeatherHelpers.remove_timestamp(weather_data)
+    timestamp = Aprs.WeatherHelpers.extract_timestamp(weather_data)
+    weather_data = Aprs.WeatherHelpers.remove_timestamp(weather_data)
 
     weather_values = %{
-      wind_direction: AprsParser.WeatherHelpers.parse_wind_direction(weather_data),
-      wind_speed: AprsParser.WeatherHelpers.parse_wind_speed(weather_data),
-      wind_gust: AprsParser.WeatherHelpers.parse_wind_gust(weather_data),
-      temperature: AprsParser.WeatherHelpers.parse_temperature(weather_data),
-      rain_1h: AprsParser.WeatherHelpers.parse_rainfall_1h(weather_data),
-      rain_24h: AprsParser.WeatherHelpers.parse_rainfall_24h(weather_data),
-      rain_since_midnight: AprsParser.WeatherHelpers.parse_rainfall_since_midnight(weather_data),
-      humidity: AprsParser.WeatherHelpers.parse_humidity(weather_data),
-      pressure: AprsParser.WeatherHelpers.parse_pressure(weather_data),
-      luminosity: AprsParser.WeatherHelpers.parse_luminosity(weather_data),
-      snow: AprsParser.WeatherHelpers.parse_snow(weather_data)
+      wind_direction: Aprs.WeatherHelpers.parse_wind_direction(weather_data),
+      wind_speed: Aprs.WeatherHelpers.parse_wind_speed(weather_data),
+      wind_gust: Aprs.WeatherHelpers.parse_wind_gust(weather_data),
+      temperature: Aprs.WeatherHelpers.parse_temperature(weather_data),
+      rain_1h: Aprs.WeatherHelpers.parse_rainfall_1h(weather_data),
+      rain_24h: Aprs.WeatherHelpers.parse_rainfall_24h(weather_data),
+      rain_since_midnight: Aprs.WeatherHelpers.parse_rainfall_since_midnight(weather_data),
+      humidity: Aprs.WeatherHelpers.parse_humidity(weather_data),
+      pressure: Aprs.WeatherHelpers.parse_pressure(weather_data),
+      luminosity: Aprs.WeatherHelpers.parse_luminosity(weather_data),
+      snow: Aprs.WeatherHelpers.parse_snow(weather_data)
     }
 
     result = %{timestamp: timestamp, data_type: :weather, raw_weather_data: weather_data}

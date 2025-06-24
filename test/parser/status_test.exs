@@ -1,8 +1,8 @@
-defmodule AprsParser.StatusTest do
+defmodule Aprs.StatusTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
-  alias AprsParser.Status
+  alias Aprs.Status
 
   describe "parse/1" do
     test "returns a status map for valid input" do

@@ -1,4 +1,4 @@
-defmodule AprsParser.TimestampedPosition do
+defmodule Aprs.TimestampedPosition do
   @moduledoc """
   APRS timestamped position parsing.
   """

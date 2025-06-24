@@ -1,9 +1,9 @@
-defmodule AprsParser.NMEATest do
+defmodule Aprs.NMEATest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
-  alias AprsParser.NMEA
-  alias AprsParser.Types.ParseError
+  alias Aprs.NMEA
+  alias Aprs.Types.ParseError
 
   describe "parse/1" do
     test "returns not_implemented error for now" do

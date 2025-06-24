@@ -1,9 +1,9 @@
-defmodule AprsParser.Compressed do
+defmodule Aprs.Compressed do
   @moduledoc """
   Compressed position parsing for APRS packets.
   """
 
-  alias AprsParser.Types.ParseError
+  alias Aprs.Types.ParseError
 
   @doc """
   Parse a compressed position string. Returns a struct or ParseError.

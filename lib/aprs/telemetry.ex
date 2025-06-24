@@ -1,4 +1,4 @@
-defmodule AprsParser.Telemetry do
+defmodule Aprs.Telemetry do
   @moduledoc """
   APRS telemetry parsing.
   """
@@ -14,9 +14,9 @@ defmodule AprsParser.Telemetry do
         digital_values = values |> Enum.drop(5) |> Enum.take(8)
 
         %{
-          sequence_number: AprsParser.TelemetryHelpers.parse_telemetry_sequence(seq),
-          analog_values: AprsParser.TelemetryHelpers.parse_analog_values(analog_values),
-          digital_values: AprsParser.TelemetryHelpers.parse_digital_values(digital_values),
+          sequence_number: Aprs.TelemetryHelpers.parse_telemetry_sequence(seq),
+          analog_values: Aprs.TelemetryHelpers.parse_analog_values(analog_values),
+          digital_values: Aprs.TelemetryHelpers.parse_digital_values(digital_values),
           data_type: :telemetry,
           raw_data: rest
         }
@@ -44,9 +44,9 @@ defmodule AprsParser.Telemetry do
       |> Enum.chunk_every(3)
       |> Enum.map(fn [a, b, c] ->
         %{
-          a: AprsParser.TelemetryHelpers.parse_coefficient(a),
-          b: AprsParser.TelemetryHelpers.parse_coefficient(b),
-          c: AprsParser.TelemetryHelpers.parse_coefficient(c)
+          a: Aprs.TelemetryHelpers.parse_coefficient(a),
+          b: Aprs.TelemetryHelpers.parse_coefficient(b),
+          c: Aprs.TelemetryHelpers.parse_coefficient(c)
         }
       end)
 

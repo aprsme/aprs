@@ -1,4 +1,4 @@
-defmodule AprsParser.NMEAHelpers do
+defmodule Aprs.NMEAHelpers do
   @moduledoc """
   NMEA coordinate and sentence parsing helpers for APRS.
   """

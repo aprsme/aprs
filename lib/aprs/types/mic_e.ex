@@ -1,4 +1,4 @@
-defmodule AprsParser.Types.MicE do
+defmodule Aprs.Types.MicE do
   @moduledoc """
   Type struct for MicE
   """

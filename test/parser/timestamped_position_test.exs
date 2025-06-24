@@ -1,8 +1,8 @@
-defmodule AprsParser.TimestampedPositionTest do
+defmodule Aprs.TimestampedPositionTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
-  alias AprsParser.TimestampedPosition
+  alias Aprs.TimestampedPosition
 
   describe "parse/1" do
     test "returns nil for now" do

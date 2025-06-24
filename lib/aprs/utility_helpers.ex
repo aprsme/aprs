@@ -1,4 +1,4 @@
-defmodule AprsParser.UtilityHelpers do
+defmodule Aprs.UtilityHelpers do
   @moduledoc """
   Utility and ambiguity helpers for APRS.
   """

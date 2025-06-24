@@ -1,7 +1,7 @@
-defmodule AprsParser.MicETest do
+defmodule Aprs.MicETest do
   use ExUnit.Case, async: true
 
-  alias AprsParser.MicE
+  alias Aprs.MicE
 
   describe "parse/2" do
     test "returns parsed map for valid Mic-E destination and data" do

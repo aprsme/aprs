@@ -1,4 +1,4 @@
-defmodule AprsParser.TelemetryHelpers do
+defmodule Aprs.TelemetryHelpers do
   @moduledoc """
   Telemetry helpers for APRS.
   """

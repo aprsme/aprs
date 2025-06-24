@@ -1,6 +1,6 @@
-defmodule AprsParser.CompressedPositionHelpers do
+defmodule Aprs.CompressedPositionHelpers do
   @moduledoc """
-  Compressed position helpers for APRS.
+  Compressed position helpers for APRS packets.
   """
 
   @spec convert_compressed_lat(binary()) :: {:ok, float()} | {:error, String.t()}
@@ -45,7 +45,7 @@ defmodule AprsParser.CompressedPositionHelpers do
 
     case c do
       x when x in ?!..?z ->
-        %{course: s * 4, speed: AprsParser.Convert.speed(1.08 ** s - 1, :knots, :mph)}
+        %{course: s * 4, speed: Aprs.Convert.speed(1.08 ** s - 1, :knots, :mph)}
 
       ?Z ->
         %{range: 2 * 1.08 ** s}

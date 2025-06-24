@@ -1,4 +1,4 @@
-defmodule AprsParser.PHGHelpers do
+defmodule Aprs.PHGHelpers do
   @moduledoc """
   PHG/DF helper functions for APRS.
   """

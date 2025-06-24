@@ -1,14 +1,14 @@
-defmodule AprsParser do
+defmodule Aprs do
   @moduledoc """
   Main APRS packet parsing library
   """
-  alias AprsParser.Item
-  alias AprsParser.MicE
-  alias AprsParser.Object
-  alias AprsParser.PHG
-  alias AprsParser.Status
-  alias AprsParser.Telemetry
-  alias AprsParser.Weather
+  alias Aprs.Item
+  alias Aprs.MicE
+  alias Aprs.Object
+  alias Aprs.PHG
+  alias Aprs.Status
+  alias Aprs.Telemetry
+  alias Aprs.Weather
 
   # Simple APRS position parsing to replace parse_aprs_position
   defp parse_aprs_position(lat, lon) do
@@ -150,7 +150,7 @@ defmodule AprsParser do
 
   @spec parse_callsign(String.t()) :: {:ok, [String.t()]} | {:error, String.t()}
   def parse_callsign(callsign) do
-    case AprsParser.AX25.parse_callsign(callsign) do
+    case Aprs.AX25.parse_callsign(callsign) do
       {:ok, {base, ssid}} -> {:ok, [base, ssid]}
       {:error, reason} -> {:error, reason}
     end
@@ -197,11 +197,11 @@ defmodule AprsParser do
   def parse_data(:telemetry, _destination, data), do: Telemetry.parse(data)
   def parse_data(:status, _destination, data), do: Status.parse(data)
   def parse_data(:phg_data, _destination, data), do: PHG.parse(data)
-  def parse_data(:peet_logging, _destination, data), do: AprsParser.SpecialDataHelpers.parse_peet_logging(data)
-  def parse_data(:invalid_test_data, _destination, data), do: AprsParser.SpecialDataHelpers.parse_invalid_test_data(data)
+  def parse_data(:peet_logging, _destination, data), do: Aprs.SpecialDataHelpers.parse_peet_logging(data)
+  def parse_data(:invalid_test_data, _destination, data), do: Aprs.SpecialDataHelpers.parse_invalid_test_data(data)
 
   def parse_data(:raw_gps_ultimeter, _destination, data) do
-    case AprsParser.NMEAHelpers.parse_nmea_sentence(data) do
+    case Aprs.NMEAHelpers.parse_nmea_sentence(data) do
       {:error, error} ->
         %{
           data_type: :raw_gps_ultimeter,
@@ -219,10 +219,10 @@ defmodule AprsParser do
       <<"DFS", s, h, g, d, rest::binary>> = data
 
       %{
-        df_strength: AprsParser.PHGHelpers.parse_df_strength(s),
-        height: AprsParser.PHGHelpers.parse_phg_height(h),
-        gain: AprsParser.PHGHelpers.parse_phg_gain(g),
-        directivity: AprsParser.PHGHelpers.parse_phg_directivity(d),
+        df_strength: Aprs.PHGHelpers.parse_df_strength(s),
+        height: Aprs.PHGHelpers.parse_phg_height(h),
+        gain: Aprs.PHGHelpers.parse_phg_gain(g),
+        directivity: Aprs.PHGHelpers.parse_phg_directivity(d),
         comment: rest,
         data_type: :df_report
       }
@@ -290,7 +290,7 @@ defmodule AprsParser do
 
         if weather_start do
           result =
-            AprsParser.parse_position_with_datetime_and_weather(
+            Aprs.parse_position_with_datetime_and_weather(
               true,
               time,
               latitude,
@@ -346,7 +346,7 @@ defmodule AprsParser do
         weather_report
       ) do
     pos = parse_aprs_position(latitude, longitude)
-    weather_data = AprsParser.Weather.parse_weather_data(weather_report)
+    weather_data = Aprs.Weather.parse_weather_data(weather_report)
 
     %{
       latitude: pos.latitude,
@@ -365,8 +365,8 @@ defmodule AprsParser do
         <<"/", latitude::binary-size(4), longitude::binary-size(4), symbol_code::binary-size(1), _cs::binary-size(2),
           _compression_type::binary-size(2), _rest::binary>>
       ) do
-    lat = AprsParser.CompressedPositionHelpers.convert_to_base91(latitude)
-    lon = AprsParser.CompressedPositionHelpers.convert_to_base91(longitude)
+    lat = Aprs.CompressedPositionHelpers.convert_to_base91(latitude)
+    lon = Aprs.CompressedPositionHelpers.convert_to_base91(longitude)
 
     %{
       latitude: lat,
@@ -420,7 +420,7 @@ defmodule AprsParser do
 
   defp parse_position_uncompressed(latitude, sym_table_id, longitude, symbol_code, comment) do
     %{latitude: lat, longitude: lon} = parse_aprs_position(latitude, longitude)
-    ambiguity = AprsParser.UtilityHelpers.calculate_position_ambiguity(latitude, longitude)
+    ambiguity = Aprs.UtilityHelpers.calculate_position_ambiguity(latitude, longitude)
     dao_data = parse_dao_extension(comment)
     {course, speed} = extract_course_and_speed(comment)
 
@@ -445,7 +445,7 @@ defmodule AprsParser do
     }
 
     if sym_table_id == "/" and symbol_code == "_" do
-      weather_map = AprsParser.Weather.parse_weather_data(comment)
+      weather_map = Aprs.Weather.parse_weather_data(comment)
       Map.merge(base_map, weather_map)
     else
       base_map
@@ -454,7 +454,7 @@ defmodule AprsParser do
 
   defp parse_position_short_uncompressed(latitude, sym_table_id, longitude) do
     %{latitude: lat, longitude: lon} = parse_aprs_position(latitude, longitude)
-    ambiguity = AprsParser.UtilityHelpers.calculate_position_ambiguity(latitude, longitude)
+    ambiguity = Aprs.UtilityHelpers.calculate_position_ambiguity(latitude, longitude)
 
     has_position =
       (is_number(lat) or is_struct(lat, Decimal)) and (is_number(lon) or is_struct(lon, Decimal))
@@ -477,10 +477,10 @@ defmodule AprsParser do
   end
 
   defp parse_position_compressed(latitude_compressed, longitude_compressed, symbol_code, cs, compression_type, comment) do
-    converted_lat = AprsParser.CompressedPositionHelpers.convert_compressed_lat(latitude_compressed)
-    converted_lon = AprsParser.CompressedPositionHelpers.convert_compressed_lon(longitude_compressed)
-    compressed_cs = AprsParser.CompressedPositionHelpers.convert_compressed_cs(cs)
-    ambiguity = AprsParser.CompressedPositionHelpers.calculate_compressed_ambiguity(compression_type)
+    converted_lat = Aprs.CompressedPositionHelpers.convert_compressed_lat(latitude_compressed)
+    converted_lon = Aprs.CompressedPositionHelpers.convert_compressed_lon(longitude_compressed)
+    compressed_cs = Aprs.CompressedPositionHelpers.convert_compressed_cs(cs)
+    ambiguity = Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity(compression_type)
 
     has_position =
       (is_number(converted_lat) or is_struct(converted_lat, Decimal)) and
@@ -514,7 +514,7 @@ defmodule AprsParser do
         compression_type: compression_type,
         data_type: :position,
         compressed?: true,
-        position_ambiguity: AprsParser.CompressedPositionHelpers.calculate_compressed_ambiguity(compression_type),
+        position_ambiguity: Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity(compression_type),
         dao: nil,
         course: nil,
         speed: nil,
@@ -555,7 +555,7 @@ defmodule AprsParser do
           symbol_code::binary-size(1), comment::binary>>,
         _data_type
       ) do
-    case AprsParser.UtilityHelpers.validate_position_data(latitude, longitude) do
+    case Aprs.UtilityHelpers.validate_position_data(latitude, longitude) do
       {:ok, {lat, lon}} ->
         position = parse_aprs_position(latitude, longitude)
         {course, speed} = extract_course_and_speed(comment)
@@ -564,7 +564,7 @@ defmodule AprsParser do
           latitude: lat,
           longitude: lon,
           position: position,
-          time: AprsParser.UtilityHelpers.validate_timestamp(time),
+          time: Aprs.UtilityHelpers.validate_timestamp(time),
           symbol_table_id: sym_table_id,
           symbol_code: symbol_code,
           comment: comment,
@@ -677,7 +677,7 @@ defmodule AprsParser do
         # speed is returned in knots
         %{
           course: s * 4,
-          speed: AprsParser.Convert.speed(1.08 ** s - 1, :knots, :mph)
+          speed: Aprs.Convert.speed(1.08 ** s - 1, :knots, :mph)
         }
 
       ?Z ->
@@ -770,7 +770,7 @@ defmodule AprsParser do
 
   # Third Party Traffic parsing
   def parse_third_party_traffic(packet) do
-    if AprsParser.UtilityHelpers.count_leading_braces(packet) + 1 > 3 do
+    if Aprs.UtilityHelpers.count_leading_braces(packet) + 1 > 3 do
       %{
         error: "Maximum tunnel depth exceeded"
       }

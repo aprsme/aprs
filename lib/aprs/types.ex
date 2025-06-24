@@ -1,9 +1,9 @@
-defmodule AprsParser.Types do
+defmodule Aprs.Types do
   @moduledoc """
-  Core types and structs for APRS parser.
+  Type definitions for APRS parsing.
   """
 
-  alias AprsParser.Types.MicE
+  alias Aprs.Types.MicE
 
   @type mice :: MicE.t()
 

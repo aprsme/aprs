@@ -1,4 +1,4 @@
-defmodule AprsParser.KISSHelpers do
+defmodule Aprs.KISSHelpers do
   @moduledoc """
   KISS/TNC2 conversion helpers for APRS.
   """

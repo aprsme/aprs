@@ -1,5 +1,5 @@
 # @dialyzer {:nowarn_function, parse: 1}
-defmodule AprsParser.Object do
+defmodule Aprs.Object do
   @moduledoc """
   APRS object parsing.
   """
@@ -15,12 +15,12 @@ defmodule AprsParser.Object do
           cs::binary-size(2), compression_type::binary-size(1), comment::binary>> ->
           try do
             converted_lat =
-              AprsParser.CompressedPositionHelpers.convert_compressed_lat(latitude_compressed)
+              Aprs.CompressedPositionHelpers.convert_compressed_lat(latitude_compressed)
 
             converted_lon =
-              AprsParser.CompressedPositionHelpers.convert_compressed_lon(longitude_compressed)
+              Aprs.CompressedPositionHelpers.convert_compressed_lon(longitude_compressed)
 
-            compressed_cs = AprsParser.CompressedPositionHelpers.convert_compressed_cs(cs)
+            compressed_cs = Aprs.CompressedPositionHelpers.convert_compressed_cs(cs)
 
             base_data = %{
               latitude: converted_lat,
@@ -40,7 +40,7 @@ defmodule AprsParser.Object do
         <<latitude::binary-size(8), sym_table_id::binary-size(1), longitude::binary-size(9), symbol_code::binary-size(1),
           comment::binary>> ->
           %{latitude: lat, longitude: lon} =
-            AprsParser.Position.parse_aprs_position(latitude, longitude)
+            Aprs.Position.parse_aprs_position(latitude, longitude)
 
           %{
             latitude: lat,

@@ -1,4 +1,4 @@
-defmodule AprsParser.Message do
+defmodule Aprs.Message do
   @moduledoc """
   APRS message parsing.
   """

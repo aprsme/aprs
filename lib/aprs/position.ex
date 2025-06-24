@@ -1,9 +1,9 @@
-defmodule AprsParser.Position do
+defmodule Aprs.Position do
   @moduledoc """
   Uncompressed position parsing for APRS packets.
   """
 
-  alias AprsParser.Types.Position
+  alias Aprs.Types.Position
 
   @doc """
   Parse an uncompressed APRS position string. Returns a Position struct or nil.

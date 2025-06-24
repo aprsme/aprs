@@ -1,9 +1,9 @@
-defmodule AprsParser.CompressedTest do
+defmodule Aprs.CompressedTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
-  alias AprsParser.Compressed
-  alias AprsParser.Types.ParseError
+  alias Aprs.Compressed
+  alias Aprs.Types.ParseError
 
   describe "parse/1" do
     test "returns not_implemented error for now" do

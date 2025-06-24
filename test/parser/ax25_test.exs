@@ -1,8 +1,8 @@
-defmodule AprsParser.AX25Test do
+defmodule Aprs.AX25Test do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
-  alias AprsParser.AX25
+  alias Aprs.AX25
 
   describe "parse_callsign/1" do
     test "parses callsign with dash" do

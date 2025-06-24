@@ -1,4 +1,4 @@
-defmodule AprsParser.SpecialDataHelpers do
+defmodule Aprs.SpecialDataHelpers do
   @moduledoc """
   Helpers for special APRS data types: PEET logging and invalid/test data.
   """

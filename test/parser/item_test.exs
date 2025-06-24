@@ -1,7 +1,7 @@
-defmodule AprsParser.ItemTest do
+defmodule Aprs.ItemTest do
   use ExUnit.Case, async: true
 
-  alias AprsParser.Item
+  alias Aprs.Item
 
   describe "parse/1" do
     test "parses an item with uncompressed position" do
