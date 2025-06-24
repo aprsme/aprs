@@ -6,7 +6,8 @@ defmodule Aprs.HelpersTest do
     test "parse_nmea_sentence handles valid NMEA" do
       nmea = "$GPRMC,123456,A,4903.50,N,07201.75,W,0.0,0.0,010180,,*6A"
       result = Aprs.NMEAHelpers.parse_nmea_sentence(nmea)
-      assert {:error, _} = result # not implemented
+      # not implemented
+      assert {:error, _} = result
     end
 
     test "parse_nmea_sentence handles invalid NMEA" do

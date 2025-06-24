@@ -3,10 +3,15 @@ defmodule Aprs.CompressedPositionHelpers do
   Compressed position helpers for APRS packets.
   """
 
+  # Pre-calculated constants for better performance
+  @lat_divisor 380_926
+  @lon_divisor 190_463
+
   @spec convert_compressed_lat(binary()) :: {:ok, float()} | {:error, String.t()}
   def convert_compressed_lat(lat) when is_binary(lat) and byte_size(lat) == 4 do
     [l1, l2, l3, l4] = to_charlist(lat)
-    {:ok, 90 - ((l1 - 33) * 91 ** 3 + (l2 - 33) * 91 ** 2 + (l3 - 33) * 91 + l4 - 33) / 380_926}
+    value = calculate_base91_value([l1, l2, l3, l4])
+    {:ok, 90 - value / @lat_divisor}
   end
 
   def convert_compressed_lat(_), do: {:error, "Invalid compressed latitude"}
@@ -14,10 +19,19 @@ defmodule Aprs.CompressedPositionHelpers do
   @spec convert_compressed_lon(binary()) :: {:ok, float()} | {:error, String.t()}
   def convert_compressed_lon(lon) when is_binary(lon) and byte_size(lon) == 4 do
     [l1, l2, l3, l4] = to_charlist(lon)
-    {:ok, -180 + ((l1 - 33) * 91 ** 3 + (l2 - 33) * 91 ** 2 + (l3 - 33) * 91 + l4 - 33) / 190_463}
+    value = calculate_base91_value([l1, l2, l3, l4])
+    {:ok, -180 + value / @lon_divisor}
   end
 
   def convert_compressed_lon(_), do: {:error, "Invalid compressed longitude"}
+
+  # Optimized base91 calculation
+  defp calculate_base91_value([c1, c2, c3, c4]) do
+    (c1 - 33) * 91 * 91 * 91 +
+      (c2 - 33) * 91 * 91 +
+      (c3 - 33) * 91 +
+      (c4 - 33)
+  end
 
   @spec calculate_compressed_ambiguity(String.t()) :: integer()
   def calculate_compressed_ambiguity(compression_type) do
@@ -34,7 +48,7 @@ defmodule Aprs.CompressedPositionHelpers do
   @doc false
   def convert_to_base91(<<value::binary-size(4)>>) do
     [v1, v2, v3, v4] = to_charlist(value)
-    (v1 - 33) * 91 * 91 * 91 + (v2 - 33) * 91 * 91 + (v3 - 33) * 91 + v4
+    calculate_base91_value([v1, v2, v3, v4])
   end
 
   @spec convert_compressed_cs(binary()) :: map()
