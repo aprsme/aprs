@@ -7,7 +7,7 @@ A pure Elixir library for parsing APRS (Automatic Packet Reporting System) packe
 ```elixir
 def deps do
   [
-    {:aprs_parser, "~> 0.1.0"}
+    {:aprs, "~> 0.1.0"}
   ]
 end
 ```
