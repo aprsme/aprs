@@ -4,7 +4,8 @@ defmodule Aprs.UtilityHelpers do
   """
 
   def count_spaces(str) do
-    str |> String.graphemes() |> Enum.count(fn c -> c == " " end)
+    # More efficient than String.graphemes() |> Enum.count()
+    str |> String.to_charlist() |> Enum.count(fn c -> c == ?\s end)
   end
 
   def count_leading_braces(packet), do: count_leading_braces(packet, 0)
@@ -17,11 +18,15 @@ defmodule Aprs.UtilityHelpers do
     lat_spaces = count_spaces(latitude)
     lon_spaces = count_spaces(longitude)
 
-    Map.get(
-      %{{0, 0} => 0, {1, 1} => 1, {2, 2} => 2, {3, 3} => 3, {4, 4} => 4},
-      {lat_spaces, lon_spaces},
-      0
-    )
+    # Use a more efficient lookup
+    case {lat_spaces, lon_spaces} do
+      {0, 0} -> 0
+      {1, 1} -> 1
+      {2, 2} -> 2
+      {3, 3} -> 3
+      {4, 4} -> 4
+      _ -> 0
+    end
   end
 
   def find_matches(regex, text) do

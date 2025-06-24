@@ -12,13 +12,8 @@ defmodule Aprs do
 
   # Simple APRS position parsing to replace parse_aprs_position
   defp parse_aprs_position(lat, lon) do
-    # Regex for latitude: 2 deg, 2+ min, 1 dir (N/S)
-    # Regex for longitude: 3 deg, 2+ min, 1 dir (E/W)
-    lat_re = ~r/^(\d{2})(\d{2}\.\d+)([NS])$/
-    lon_re = ~r/^(\d{3})(\d{2}\.\d+)([EW])$/
-
-    with [_, lat_deg, lat_min, lat_dir] <- Regex.run(lat_re, lat),
-         [_, lon_deg, lon_min, lon_dir] <- Regex.run(lon_re, lon) do
+    with [_, lat_deg, lat_min, lat_dir] <- Regex.run(~r/^(\d{2})(\d{2}\.\d+)([NS])$/, lat),
+         [_, lon_deg, lon_min, lon_dir] <- Regex.run(~r/^(\d{3})(\d{2}\.\d+)([EW])$/, lon) do
       lat_val =
         Decimal.add(Decimal.new(lat_deg), Decimal.div(Decimal.new(lat_min), Decimal.new("60")))
 
@@ -365,8 +360,8 @@ defmodule Aprs do
         <<"/", latitude::binary-size(4), longitude::binary-size(4), symbol_code::binary-size(1), _cs::binary-size(2),
           _compression_type::binary-size(2), _rest::binary>>
       ) do
-    lat = Aprs.CompressedPositionHelpers.convert_to_base91(latitude)
-    lon = Aprs.CompressedPositionHelpers.convert_to_base91(longitude)
+    lat = convert_to_base91(latitude)
+    lon = convert_to_base91(longitude)
 
     %{
       latitude: lat,
@@ -424,8 +419,7 @@ defmodule Aprs do
     dao_data = parse_dao_extension(comment)
     {course, speed} = extract_course_and_speed(comment)
 
-    has_position =
-      (is_number(lat) or is_struct(lat, Decimal)) and (is_number(lon) or is_struct(lon, Decimal))
+    has_position = is_valid_coordinate(lat) and is_valid_coordinate(lon)
 
     base_map = %{
       latitude: lat,
@@ -456,8 +450,7 @@ defmodule Aprs do
     %{latitude: lat, longitude: lon} = parse_aprs_position(latitude, longitude)
     ambiguity = Aprs.UtilityHelpers.calculate_position_ambiguity(latitude, longitude)
 
-    has_position =
-      (is_number(lat) or is_struct(lat, Decimal)) and (is_number(lon) or is_struct(lon, Decimal))
+    has_position = is_valid_coordinate(lat) and is_valid_coordinate(lon)
 
     %{
       latitude: lat,
@@ -477,49 +470,49 @@ defmodule Aprs do
   end
 
   defp parse_position_compressed(latitude_compressed, longitude_compressed, symbol_code, cs, compression_type, comment) do
-    converted_lat = Aprs.CompressedPositionHelpers.convert_compressed_lat(latitude_compressed)
-    converted_lon = Aprs.CompressedPositionHelpers.convert_compressed_lon(longitude_compressed)
-    compressed_cs = Aprs.CompressedPositionHelpers.convert_compressed_cs(cs)
-    ambiguity = Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity(compression_type)
+    case {Aprs.CompressedPositionHelpers.convert_compressed_lat(latitude_compressed),
+          Aprs.CompressedPositionHelpers.convert_compressed_lon(longitude_compressed)} do
+      {{:ok, converted_lat}, {:ok, converted_lon}} ->
+        compressed_cs = Aprs.CompressedPositionHelpers.convert_compressed_cs(cs)
+        ambiguity = Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity(compression_type)
 
-    has_position =
-      (is_number(converted_lat) or is_struct(converted_lat, Decimal)) and
-        (is_number(converted_lon) or is_struct(converted_lon, Decimal))
+        has_position = is_valid_coordinate(converted_lat) and is_valid_coordinate(converted_lon)
 
-    base_data = %{
-      latitude: converted_lat,
-      longitude: converted_lon,
-      symbol_table_id: "/",
-      symbol_code: symbol_code,
-      comment: comment,
-      position_format: :compressed,
-      compression_type: compression_type,
-      data_type: :position,
-      compressed?: true,
-      position_ambiguity: ambiguity,
-      dao: nil,
-      has_position: has_position
-    }
+        base_data = %{
+          latitude: converted_lat,
+          longitude: converted_lon,
+          symbol_table_id: "/",
+          symbol_code: symbol_code,
+          comment: comment,
+          position_format: :compressed,
+          compression_type: compression_type,
+          data_type: :position,
+          compressed?: true,
+          position_ambiguity: ambiguity,
+          dao: nil,
+          has_position: has_position
+        }
 
-    Map.merge(base_data, compressed_cs)
-  rescue
-    _e ->
-      %{
-        latitude: nil,
-        longitude: nil,
-        symbol_table_id: "/",
-        symbol_code: symbol_code,
-        comment: comment,
-        position_format: :compressed,
-        compression_type: compression_type,
-        data_type: :position,
-        compressed?: true,
-        position_ambiguity: Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity(compression_type),
-        dao: nil,
-        course: nil,
-        speed: nil,
-        has_position: false
-      }
+        Map.merge(base_data, compressed_cs)
+
+      _ ->
+        %{
+          latitude: nil,
+          longitude: nil,
+          symbol_table_id: "/",
+          symbol_code: symbol_code,
+          comment: comment,
+          position_format: :compressed,
+          compression_type: compression_type,
+          data_type: :position,
+          compressed?: true,
+          position_ambiguity: Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity(compression_type),
+          dao: nil,
+          course: nil,
+          speed: nil,
+          has_position: false
+        }
+    end
   end
 
   defp parse_position_malformed(position_data) do
@@ -650,44 +643,6 @@ defmodule Aprs do
           error: "Invalid timestamped position format",
           raw_data: data
         }
-    end
-  end
-
-  @spec convert_compressed_lat(binary()) :: float()
-  def convert_compressed_lat(lat) do
-    [l1, l2, l3, l4] = to_charlist(lat)
-    90 - ((l1 - 33) * 91 ** 3 + (l2 - 33) * 91 ** 2 + (l3 - 33) * 91 + l4 - 33) / 380_926
-  end
-
-  @spec convert_compressed_lon(binary()) :: float()
-  def convert_compressed_lon(lon) do
-    [l1, l2, l3, l4] = to_charlist(lon)
-    -180 + ((l1 - 33) * 91 ** 3 + (l2 - 33) * 91 ** 2 + (l3 - 33) * 91 + l4 - 33) / 190_463
-  end
-
-  @spec convert_compressed_cs(binary()) :: map()
-  def convert_compressed_cs(cs) do
-    [c, s] = to_charlist(cs)
-    c = c - 33
-    s = s - 33
-
-    case c do
-      x when x in ?!..?z ->
-        # compressed speed/course value
-        # speed is returned in knots
-        %{
-          course: s * 4,
-          speed: Aprs.Convert.speed(1.08 ** s - 1, :knots, :mph)
-        }
-
-      ?Z ->
-        # pre-calculated radio range
-        %{
-          range: 2 * 1.08 ** s
-        }
-
-      _ ->
-        %{}
     end
   end
 
@@ -954,5 +909,10 @@ defmodule Aprs do
       _ ->
         nil
     end
+  end
+
+  # Helper to check if coordinate is valid (reduces redundant checks)
+  defp is_valid_coordinate(coord) do
+    is_number(coord) or is_struct(coord, Decimal)
   end
 end
