@@ -18,6 +18,50 @@ defmodule Aprs.Weather do
   end
 
   @doc """
+  Parse weather data from a comment field that contains weather information.
+  This handles cases where weather data is embedded in the comment field.
+  """
+  @spec parse_from_comment(String.t()) :: map() | nil
+  def parse_from_comment(comment) when is_binary(comment) do
+    if weather_packet_comment?(comment) do
+      weather_data = parse_weather_data(comment)
+      Map.merge(%{data_type: :weather, comment: comment}, weather_data)
+    end
+  end
+
+  def parse_from_comment(_), do: nil
+
+  @doc """
+  Check if a comment contains weather data patterns.
+  """
+  @spec weather_packet_comment?(String.t()) :: boolean()
+  def weather_packet_comment?(comment) when is_binary(comment) do
+    # Look for common weather data patterns in comments
+    weather_patterns = [
+      # Wind direction/speed
+      ~r/\d{3}\/\d{3}/,
+      # Temperature
+      ~r/t\d{3}/,
+      # Humidity
+      ~r/h\d{2}/,
+      # Pressure
+      ~r/b\d{5}/,
+      # Rain
+      ~r/r\d{3}/,
+      # Wind gust
+      ~r/g\d{3}/,
+      # Rain 24h
+      ~r/p\d{3}/,
+      # Rain since midnight
+      ~r/P\d{3}/
+    ]
+
+    Enum.any?(weather_patterns, &Regex.match?(&1, comment))
+  end
+
+  def weather_packet_comment?(_), do: false
+
+  @doc """
   Parses a weather data string into a map of weather values.
   """
   @spec parse_weather_data(String.t()) :: map()
