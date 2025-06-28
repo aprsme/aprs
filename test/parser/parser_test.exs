@@ -235,6 +235,37 @@ defmodule Aprs.ParserTest do
       refute is_nil(data[:longitude])
       if Map.has_key?(data, :has_location), do: assert(data[:has_location])
     end
+
+    test "handles compressed position data without / prefix (malformed compressed position)" do
+      # This is the problematic packet from the user
+      packet =
+        "YM1KTC-14>APLRG1,TCPIP*,qAC,T2UK:!L9f\\]UP1fa GAmatör Radyocular Derneği - YM1KTC Aytepe_Mevkii LoRa Aprs i-Gate - 433.775 Derneğimiz: https://www.qrz.com/db/YM1KTC Güncel Röle Bilgileri: https://www.ta-role.com "
+
+      {:ok, parsed} = Aprs.parse(packet)
+      data = parsed.data_extended
+
+      # Should be parsed as compressed position despite missing "/" prefix
+      assert is_map(data)
+      assert data[:data_type] == :position
+      assert data[:compressed?] == true
+      assert data[:position_format] == :compressed
+      assert data[:symbol_table_id] == "/"
+      assert data[:symbol_code] == "f"
+      assert data[:compression_type] == "G"
+
+      # Should have valid coordinates
+      assert is_float(data[:latitude])
+      assert is_float(data[:longitude])
+      assert_in_delta data[:latitude], 18.64, 0.1
+      assert_in_delta data[:longitude], 59.67, 0.1
+
+      # Should have course/speed data
+      assert data[:course] == -4
+      assert_in_delta data[:speed], 0.01, 0.01
+
+      # Should have position
+      assert data[:has_position] == true
+    end
   end
 
   describe "parse/1" do

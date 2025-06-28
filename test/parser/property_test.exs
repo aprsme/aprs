@@ -71,7 +71,7 @@ defmodule Aprs.PropertyTest do
     end
 
     test "returns error for invalid packet format" do
-      assert {:error, "Invalid packet format"} = Aprs.parse(":badpacket")
+      assert {:error, :invalid_packet} = Aprs.parse(":badpacket")
     end
 
     test "returns error for unknown error" do
@@ -83,11 +83,11 @@ defmodule Aprs.PropertyTest do
       assert {:ok, packet} = result
       assert packet.data_extended.data_type == :malformed_position
 
-      if Map.has_key?(packet, :latitude) and not is_nil(packet.latitude) do
+      if is_map(packet) and Map.has_key?(packet, :latitude) and not is_nil(packet.latitude) do
         assert is_struct(packet.latitude, Decimal)
       end
 
-      if Map.has_key?(packet, :longitude) and not is_nil(packet.longitude) do
+      if is_map(packet) and Map.has_key?(packet, :longitude) and not is_nil(packet.longitude) do
         assert is_struct(packet.longitude, Decimal)
       end
     end
