@@ -440,7 +440,8 @@ defmodule Aprs do
 
     if sym_table_id == "/" and symbol_code == "_" do
       weather_map = Aprs.Weather.parse_weather_data(comment)
-      Map.merge(base_map, weather_map)
+      merged = Map.merge(weather_map, base_map)
+      Map.put(merged, :timestamp, base_map[:timestamp])
     else
       base_map
     end
@@ -553,11 +554,12 @@ defmodule Aprs do
         position = parse_aprs_position(latitude, longitude)
         {course, speed} = extract_course_and_speed(comment)
 
-        %{
+        base_map = %{
           latitude: lat,
           longitude: lon,
           position: position,
           time: Aprs.UtilityHelpers.validate_timestamp(time),
+          timestamp: time,
           symbol_table_id: sym_table_id,
           symbol_code: symbol_code,
           comment: comment,
@@ -567,6 +569,14 @@ defmodule Aprs do
           course: course,
           speed: speed
         }
+
+        if sym_table_id == "/" and symbol_code == "_" do
+          weather_map = Aprs.Weather.parse_weather_data(comment)
+          merged = Map.merge(weather_map, base_map)
+          Map.put(merged, :timestamp, base_map[:timestamp])
+        else
+          base_map
+        end
 
       _ ->
         # Fallback: try to extract lat/lon using regex if binary pattern match fails
@@ -587,10 +597,11 @@ defmodule Aprs do
           } ->
             pos = parse_aprs_position(lat, lon)
 
-            %{
+            base_map = %{
               latitude: pos.latitude,
               longitude: pos.longitude,
               time: time,
+              timestamp: time,
               symbol_table_id: sym_table,
               symbol_code: sym_code,
               comment: comment,
@@ -598,6 +609,14 @@ defmodule Aprs do
               aprs_messaging?: aprs_messaging?,
               compressed?: false
             }
+
+            if sym_table == "/" and sym_code == "_" do
+              weather_map = Aprs.Weather.parse_weather_data(comment)
+              merged = Map.merge(weather_map, base_map)
+              Map.put(merged, :timestamp, base_map[:timestamp])
+            else
+              base_map
+            end
 
           _ ->
             %{
@@ -629,6 +648,7 @@ defmodule Aprs do
           latitude: pos.latitude,
           longitude: pos.longitude,
           time: time,
+          timestamp: time,
           symbol_table_id: sym_table,
           symbol_code: sym_code,
           comment: comment,
