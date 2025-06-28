@@ -86,7 +86,8 @@ defmodule Aprs.Weather do
     # Ensure all keys are atoms in the result
     result = %{timestamp: timestamp, data_type: :weather, raw_weather_data: weather_data}
 
-    Enum.reduce(weather_values, result, fn {key, value}, acc ->
+    weather_values
+    |> Enum.reduce(result, fn {key, value}, acc ->
       put_weather_value(acc, key, value)
     end)
     |> atomize_keys_recursive()
@@ -97,12 +98,11 @@ defmodule Aprs.Weather do
 
   # Recursively convert all string keys in a map to atoms
   defp atomize_keys_recursive(map) when is_map(map) do
-    map
-    |> Enum.map(fn
+    Map.new(map, fn
       {k, v} when is_binary(k) -> {String.to_atom(k), atomize_keys_recursive(v)}
       {k, v} -> {k, atomize_keys_recursive(v)}
     end)
-    |> Enum.into(%{})
   end
+
   defp atomize_keys_recursive(other), do: other
 end
