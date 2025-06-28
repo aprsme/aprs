@@ -4,14 +4,23 @@ defmodule Aprs.CompressedPositionHelpers do
   """
 
   # Pre-calculated constants for better performance
-  @lat_divisor 380_926
+  @lat_divisor 456_976
   @lon_divisor 190_463
 
   @spec convert_compressed_lat(binary()) :: {:ok, float()} | {:error, String.t()}
   def convert_compressed_lat(lat) when is_binary(lat) and byte_size(lat) == 4 do
     [l1, l2, l3, l4] = to_charlist(lat)
     value = calculate_base91_value([l1, l2, l3, l4])
-    {:ok, 90 - value / @lat_divisor}
+    lat_val = 90 - value / @lat_divisor
+
+    lat_val =
+      cond do
+        lat_val < -90.0 -> -90.0
+        lat_val > 90.0 -> 90.0
+        true -> lat_val
+      end
+
+    {:ok, lat_val}
   end
 
   def convert_compressed_lat(_), do: {:error, "Invalid compressed latitude"}
@@ -20,7 +29,16 @@ defmodule Aprs.CompressedPositionHelpers do
   def convert_compressed_lon(lon) when is_binary(lon) and byte_size(lon) == 4 do
     [l1, l2, l3, l4] = to_charlist(lon)
     value = calculate_base91_value([l1, l2, l3, l4])
-    {:ok, -180 + value / @lon_divisor}
+    lon_val = -180 + value / @lon_divisor
+
+    lon_val =
+      cond do
+        lon_val < -180.0 -> -180.0
+        lon_val > 180.0 -> 180.0
+        true -> lon_val
+      end
+
+    {:ok, lon_val}
   end
 
   def convert_compressed_lon(_), do: {:error, "Invalid compressed longitude"}
@@ -33,9 +51,9 @@ defmodule Aprs.CompressedPositionHelpers do
       (c4 - 33)
   end
 
-  @spec calculate_compressed_ambiguity(String.t()) :: integer()
-  def calculate_compressed_ambiguity(compression_type) do
-    case compression_type do
+  @spec calculate_compressed_ambiguity(binary()) :: integer()
+  def calculate_compressed_ambiguity(<<char::utf8, _rest::binary>>) do
+    case <<char>> do
       " " -> 0
       "!" -> 1
       "\"" -> 2
@@ -45,27 +63,34 @@ defmodule Aprs.CompressedPositionHelpers do
     end
   end
 
+  def calculate_compressed_ambiguity("") do
+    0
+  end
+
   @doc false
   def convert_to_base91(<<value::binary-size(4)>>) do
     [v1, v2, v3, v4] = to_charlist(value)
     calculate_base91_value([v1, v2, v3, v4])
   end
 
-  @spec convert_compressed_cs(binary()) :: map()
-  def convert_compressed_cs(cs) do
+  @spec convert_compressed_cs(binary() | nil) :: map()
+  def convert_compressed_cs(cs) when is_binary(cs) and byte_size(cs) == 2 do
     [c, s] = to_charlist(cs)
-    c = c - 33
-    s = s - 33
+    _c_val = c - 33
+    s_val = s - 33
 
-    case c do
-      x when x in ?!..?z ->
-        %{course: s * 4, speed: Aprs.Convert.speed(1.08 ** s - 1, :knots, :mph)}
+    cond do
+      c == ?Z ->
+        %{range: 2 * 1.08 ** s_val}
 
-      ?Z ->
-        %{range: 2 * 1.08 ** s}
+      c in ?!..?~ and c != ?Z ->
+        speed = max(Aprs.Convert.speed(1.08 ** s_val - 1, :knots, :mph), 0.01)
+        %{course: s_val * 4, speed: speed}
 
-      _ ->
+      true ->
         %{}
     end
   end
+
+  def convert_compressed_cs(_), do: %{}
 end

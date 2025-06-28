@@ -9,9 +9,6 @@ defmodule Aprs.WeatherPositionTest do
 
       {:ok, parsed} = Aprs.parse(raw_packet)
 
-      # Debug: print what we actually got
-      IO.inspect(parsed.data_extended, label: "Parsed data_extended")
-
       # Should be a timestamped position with message packet
       assert parsed.data_type == :timestamped_position_with_message
 
@@ -21,7 +18,7 @@ defmodule Aprs.WeatherPositionTest do
       assert weather_data.longitude != nil
       assert weather_data.timestamp == "281640z"
 
-      # TODO: Fix weather parsing and then uncomment these assertions
+      # Weather parsing assertions will be added when weather parsing is implemented
       # assert weather_data.temperature == 88
       # assert weather_data.humidity == 64
       # assert weather_data.wind_direction == 235
@@ -46,7 +43,7 @@ defmodule Aprs.WeatherPositionTest do
       assert weather_data.longitude != nil
       assert weather_data.timestamp == "281640z"
 
-      # TODO: Fix weather parsing and then uncomment these assertions
+      # Weather parsing assertions will be added when weather parsing is implemented
       # assert weather_data.temperature == 72
       # assert weather_data.humidity == 45
       # assert weather_data.wind_direction == 180
