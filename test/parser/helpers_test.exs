@@ -175,19 +175,19 @@ defmodule Aprs.HelpersTest do
     test "parse_rainfall_1h handles valid input" do
       weather = "r000"
       result = Aprs.WeatherHelpers.parse_rainfall_1h(weather)
-      assert is_integer(result) or result == nil
+      assert is_float(result) or result == nil
     end
 
     test "parse_rainfall_24h handles valid input" do
       weather = "p000"
       result = Aprs.WeatherHelpers.parse_rainfall_24h(weather)
-      assert is_integer(result) or result == nil
+      assert is_float(result) or result == nil
     end
 
     test "parse_rainfall_since_midnight handles valid input" do
       weather = "P000"
       result = Aprs.WeatherHelpers.parse_rainfall_since_midnight(weather)
-      assert is_integer(result) or result == nil
+      assert is_float(result) or result == nil
     end
 
     test "parse_humidity handles valid input" do
@@ -211,7 +211,7 @@ defmodule Aprs.HelpersTest do
     test "parse_snow handles valid input" do
       weather = "s000"
       result = Aprs.WeatherHelpers.parse_snow(weather)
-      assert is_integer(result) or result == nil
+      assert is_float(result) or result == nil
     end
   end
 
