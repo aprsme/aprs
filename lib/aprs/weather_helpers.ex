@@ -51,26 +51,26 @@ defmodule Aprs.WeatherHelpers do
     end
   end
 
-  @spec parse_rainfall_1h(String.t()) :: integer() | nil
+  @spec parse_rainfall_1h(String.t()) :: float() | nil
   def parse_rainfall_1h(weather_data) do
     case Regex.run(~r/r(\d{3})/, weather_data) do
-      [_, rain] -> String.to_integer(rain)
+      [_, rain] -> String.to_integer(rain) / 100.0
       nil -> nil
     end
   end
 
-  @spec parse_rainfall_24h(String.t()) :: integer() | nil
+  @spec parse_rainfall_24h(String.t()) :: float() | nil
   def parse_rainfall_24h(weather_data) do
     case Regex.run(~r/p(\d{3})/, weather_data) do
-      [_, rain] -> String.to_integer(rain)
+      [_, rain] -> String.to_integer(rain) / 100.0
       nil -> nil
     end
   end
 
-  @spec parse_rainfall_since_midnight(String.t()) :: integer() | nil
+  @spec parse_rainfall_since_midnight(String.t()) :: float() | nil
   def parse_rainfall_since_midnight(weather_data) do
     case Regex.run(~r/P(\d{3})/, weather_data) do
-      [_, rain] -> String.to_integer(rain)
+      [_, rain] -> String.to_integer(rain) / 100.0
       nil -> nil
     end
   end
@@ -106,10 +106,10 @@ defmodule Aprs.WeatherHelpers do
     end
   end
 
-  @spec parse_snow(String.t()) :: integer() | nil
+  @spec parse_snow(String.t()) :: float() | nil
   def parse_snow(weather_data) do
     case Regex.run(~r/s(\d{3})/, weather_data) do
-      [_, snow] -> String.to_integer(snow)
+      [_, snow] -> String.to_integer(snow) / 100.0
       nil -> nil
     end
   end
