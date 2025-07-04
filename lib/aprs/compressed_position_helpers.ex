@@ -12,15 +12,7 @@ defmodule Aprs.CompressedPositionHelpers do
     [l1, l2, l3, l4] = to_charlist(lat)
     value = calculate_base91_value([l1, l2, l3, l4])
     lat_val = 90 - value / @lat_divisor
-
-    lat_val =
-      cond do
-        lat_val < -90.0 -> -90.0
-        lat_val > 90.0 -> 90.0
-        true -> lat_val
-      end
-
-    {:ok, lat_val}
+    {:ok, clamp_lat(lat_val)}
   end
 
   def convert_compressed_lat(_), do: {:error, "Invalid compressed latitude"}
@@ -30,15 +22,7 @@ defmodule Aprs.CompressedPositionHelpers do
     [l1, l2, l3, l4] = to_charlist(lon)
     value = calculate_base91_value([l1, l2, l3, l4])
     lon_val = -180 + value / @lon_divisor
-
-    lon_val =
-      cond do
-        lon_val < -180.0 -> -180.0
-        lon_val > 180.0 -> 180.0
-        true -> lon_val
-      end
-
-    {:ok, lon_val}
+    {:ok, clamp_lon(lon_val)}
   end
 
   def convert_compressed_lon(_), do: {:error, "Invalid compressed longitude"}
@@ -49,6 +33,24 @@ defmodule Aprs.CompressedPositionHelpers do
       (c2 - 33) * 91 * 91 +
       (c3 - 33) * 91 +
       (c4 - 33)
+  end
+
+  @doc false
+  def clamp_lat(lat_val) do
+    cond do
+      lat_val < -90.0 -> -90.0
+      lat_val > 90.0 -> 90.0
+      true -> lat_val
+    end
+  end
+
+  @doc false
+  def clamp_lon(lon_val) do
+    cond do
+      lon_val < -180.0 -> -180.0
+      lon_val > 180.0 -> 180.0
+      true -> lon_val
+    end
   end
 
   @spec calculate_compressed_ambiguity(binary()) :: integer()
