@@ -207,7 +207,7 @@ defmodule Aprs.ParserTest do
       {:ok, parsed} = Aprs.parse(packet)
       data = parsed.data_extended
       assert is_map(data)
-      assert data[:data_type] == :position
+      assert data[:data_type] == :weather
     end
 
     test "extracts lat/lon from @ timestamped position with message packet (issue regression)" do

@@ -559,7 +559,6 @@ defmodule Aprs do
       symbol_table_id: sym_table_id,
       symbol_code: symbol_code,
       comment: comment,
-      data_type: :position,
       aprs_messaging?: false,
       compressed?: false,
       position_ambiguity: ambiguity,
@@ -569,12 +568,29 @@ defmodule Aprs do
       has_position: has_position
     }
 
-    if sym_table_id == "/" and symbol_code == "_" do
-      weather_map = Aprs.Weather.parse_weather_data(comment)
-      merged = Map.merge(weather_map, base_map)
-      Map.put(merged, :timestamp, base_map[:timestamp])
+    # Check if this is a weather packet (either by symbol or by comment content)
+    if (sym_table_id == "/" and symbol_code == "_") or Aprs.Weather.weather_packet_comment?(comment) do
+      weather_data =
+        if sym_table_id == "/" and symbol_code == "_" do
+          Aprs.Weather.parse_weather_data(comment)
+        else
+          case Aprs.Weather.parse_from_comment(comment) do
+            nil -> %{}
+            weather_map -> weather_map
+          end
+        end
+
+      merged = Map.merge(weather_data, base_map)
+      # If any weather field is present, treat as weather
+      if Enum.any?(weather_data, fn {k, v} ->
+           k not in [:timestamp, :data_type, :raw_weather_data, :comment] and not is_nil(v)
+         end) do
+        Map.put(merged, :data_type, :weather)
+      else
+        Map.put(merged, :data_type, :position)
+      end
     else
-      base_map
+      Map.put(base_map, :data_type, :position)
     end
   end
 
@@ -779,25 +795,40 @@ defmodule Aprs do
   defp build_fallback_position_result(aprs_messaging?, lat, lon, time, sym_table, sym_code, comment) do
     pos = parse_aprs_position(lat, lon)
 
-    base_map = %{
-      latitude: pos.latitude,
-      longitude: pos.longitude,
-      time: time,
-      timestamp: time,
-      symbol_table_id: sym_table,
-      symbol_code: sym_code,
-      comment: comment,
-      data_type: :position,
-      aprs_messaging?: aprs_messaging?,
-      compressed?: false
-    }
-
     if sym_table == "/" and sym_code == "_" do
       weather_map = Aprs.Weather.parse_weather_data(comment)
-      merged = Map.merge(weather_map, base_map)
-      Map.put(merged, :timestamp, base_map[:timestamp])
+
+      merged =
+        Map.merge(weather_map, %{
+          latitude: pos.latitude,
+          longitude: pos.longitude,
+          time: time,
+          timestamp: time,
+          symbol_table_id: sym_table,
+          symbol_code: sym_code,
+          comment: comment,
+          aprs_messaging?: aprs_messaging?,
+          compressed?: false
+        })
+
+      if Enum.any?(weather_map, fn {k, v} -> k not in [:timestamp, :data_type, :raw_weather_data] and not is_nil(v) end) do
+        Map.put(merged, :data_type, :weather)
+      else
+        Map.put(merged, :data_type, :position)
+      end
     else
-      base_map
+      %{
+        latitude: pos.latitude,
+        longitude: pos.longitude,
+        time: time,
+        timestamp: time,
+        symbol_table_id: sym_table,
+        symbol_code: sym_code,
+        comment: comment,
+        data_type: :position,
+        aprs_messaging?: aprs_messaging?,
+        compressed?: false
+      }
     end
   end
 
@@ -811,28 +842,46 @@ defmodule Aprs do
 
     {course, speed} = extract_course_and_speed(comment)
 
-    base_map = %{
-      latitude: position.latitude,
-      longitude: position.longitude,
-      position: position,
-      time: Aprs.UtilityHelpers.validate_timestamp(time),
-      timestamp: time,
-      symbol_table_id: sym_table_id,
-      symbol_code: symbol_code,
-      comment: comment,
-      data_type: :position,
-      aprs_messaging?: aprs_messaging?,
-      compressed?: false,
-      course: course,
-      speed: speed
-    }
-
     if sym_table_id == "/" and symbol_code == "_" do
       weather_map = Aprs.Weather.parse_weather_data(comment)
-      merged = Map.merge(weather_map, base_map)
-      Map.put(merged, :timestamp, base_map[:timestamp])
+
+      merged =
+        Map.merge(weather_map, %{
+          latitude: position.latitude,
+          longitude: position.longitude,
+          position: position,
+          time: Aprs.UtilityHelpers.validate_timestamp(time),
+          timestamp: time,
+          symbol_table_id: sym_table_id,
+          symbol_code: symbol_code,
+          comment: comment,
+          aprs_messaging?: aprs_messaging?,
+          compressed?: false,
+          course: course,
+          speed: speed
+        })
+
+      if Enum.any?(weather_map, fn {k, v} -> k not in [:timestamp, :data_type, :raw_weather_data] and not is_nil(v) end) do
+        Map.put(merged, :data_type, :weather)
+      else
+        Map.put(merged, :data_type, :position)
+      end
     else
-      base_map
+      %{
+        latitude: position.latitude,
+        longitude: position.longitude,
+        position: position,
+        time: Aprs.UtilityHelpers.validate_timestamp(time),
+        timestamp: time,
+        symbol_table_id: sym_table_id,
+        symbol_code: symbol_code,
+        comment: comment,
+        data_type: :position,
+        aprs_messaging?: aprs_messaging?,
+        compressed?: false,
+        course: course,
+        speed: speed
+      }
     end
   end
 
