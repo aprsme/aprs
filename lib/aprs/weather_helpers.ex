@@ -109,7 +109,7 @@ defmodule Aprs.WeatherHelpers do
   @spec parse_snow(String.t()) :: float() | nil
   def parse_snow(weather_data) do
     case Regex.run(~r/s(\d{3})/, weather_data) do
-      [_, snow] -> String.to_integer(snow) / 100.0
+      [_, snow] -> String.to_integer(snow) / 10.0
       nil -> nil
     end
   end
