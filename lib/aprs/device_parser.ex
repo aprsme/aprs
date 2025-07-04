@@ -6,13 +6,13 @@ defmodule Aprs.DeviceParser do
   @doc """
   Extract the device identifier from a packet map or raw packet string.
   """
-  def extract_device_identifier(%{destination: dest}) when is_binary(dest) do
-    # TOCALL is usually the first 6 chars of destination
+  def extract_device_identifier(%{data_type: :mic_e, destination: dest}) when is_binary(dest) do
+    # Mic-E uses destination for device ID
     String.slice(dest, 0, 6)
   end
 
-  def extract_device_identifier(%{data_type: :mic_e, destination: dest}) when is_binary(dest) do
-    # Mic-E uses destination for device ID
+  def extract_device_identifier(%{destination: dest}) when is_binary(dest) do
+    # TOCALL is usually the first 6 chars of destination
     String.slice(dest, 0, 6)
   end
 

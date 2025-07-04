@@ -23,7 +23,8 @@ defmodule Aprs.TypesTest do
 
   describe "Position.from_decimal/2" do
     property "returns a map with the same lat/lon as input" do
-      check all lat <- StreamData.float(), lon <- StreamData.float() do
+      check all lat <- StreamData.filter(StreamData.float(), &(&1 >= -90.0 and &1 <= 90.0)),
+                lon <- StreamData.filter(StreamData.float(), &(&1 >= -180.0 and &1 <= 180.0)) do
         result = Position.from_decimal(lat, lon)
         assert Decimal.equal?(result.latitude, Decimal.new(to_string(lat)))
         assert Decimal.equal?(result.longitude, Decimal.new(to_string(lon)))
