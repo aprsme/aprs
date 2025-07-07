@@ -2,7 +2,7 @@ defmodule Aprs.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/gmcintire/aprs"
-  @version "0.1.3"
+  @version "0.1.4"
 
   def project do
     [
@@ -10,6 +10,7 @@ defmodule Aprs.MixProject do
       version: @version,
       elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
+      compilers: Mix.compilers(),
       deps: deps(),
       description: "APRS packet parser for Elixir (aprs)",
       package: package(),

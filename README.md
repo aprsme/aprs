@@ -7,7 +7,7 @@ A pure Elixir library for parsing APRS (Automatic Packet Reporting System) packe
 ```elixir
 def deps do
   [
-    {:aprs, "~> 0.1.0"}
+    {:aprs, "~> 0.1.4"}
   ]
 end
 ```
@@ -94,14 +94,25 @@ iex> Aprs.parse("N0CALL>APRS,TCPIP*,qAC,T2TEST:>Test status message")
 ## Supported Packet Types
 
 - Position reports (uncompressed and compressed)
-- Mic-E packets
-- Weather reports
-- Telemetry data
+- Mic-E packets with enhanced parsing
+- Weather reports with position integration
+- Telemetry data with comprehensive validation
 - Messages
 - Status reports
 - Objects and Items
 - PHG data
+- Device ID parsing
+- Compressed position calculations
 - And more...
+
+## Recent Improvements (v0.1.4)
+
+- **Enhanced Performance**: Significant performance optimizations in packet parsing
+- **Better Error Handling**: Improved error handling and validation throughout
+- **Device ID Support**: New comprehensive device ID parsing functionality
+- **Improved Mic-E Parsing**: Better Mic-E packet parsing with enhanced validation
+- **Weather Integration**: Enhanced weather packet parsing with position data
+- **Comprehensive Testing**: Dramatically increased test coverage across all modules
 
 ## License
 
