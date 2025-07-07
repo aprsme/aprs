@@ -2,6 +2,14 @@ defmodule Aprs do
   @moduledoc """
   Main APRS packet parsing library
   """
+
+  @version "0.1.4"
+
+  @doc """
+  Returns the current version of the APRS library as a static string.
+  """
+  @spec version() :: String.t()
+  def version, do: @version
   alias Aprs.Item
   alias Aprs.MicE
   alias Aprs.Object
