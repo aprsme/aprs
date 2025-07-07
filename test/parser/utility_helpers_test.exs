@@ -164,9 +164,9 @@ defmodule Aprs.UtilityHelpersTest do
   describe "validate_position_data/2" do
     property "validates correct position formats" do
       check all lat_deg <- StreamData.integer(0..89),
-                lat_min <- StreamData.filter(StreamData.float(), &(&1 >= 0.0 and &1 <= 59.99)),
+                lat_min <- StreamData.float(min: 0.0, max: 59.99),
                 lon_deg <- StreamData.integer(0..179),
-                lon_min <- StreamData.filter(StreamData.float(), &(&1 >= 0.0 and &1 <= 59.99)),
+                lon_min <- StreamData.float(min: 0.0, max: 59.99),
                 lat_dir <- StreamData.member_of(["N", "S"]),
                 lon_dir <- StreamData.member_of(["E", "W"]) do
         lat_min_str = IO.iodata_to_binary(:io_lib.format("~.2f", [lat_min]))

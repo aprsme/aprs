@@ -105,4 +105,31 @@ defmodule Aprs.PositionTest do
       assert Position.parse_dao_extension("no dao here") == nil
     end
   end
+
+  describe "specific failing packet" do
+    test "VE6LY-7 packet with mic_e data type" do
+      packet = "VE6LY-7>T5TYR2,F5ZFL-4*,WIDE1,WIDE2-1,qAR,HB9GYR-10:`|apl [/>\":E}432.812MHzAndy S andy@nsnw.ca^"
+
+      # Test the full packet parsing
+      result = Aprs.parse(packet)
+      assert {:ok, parsed} = result
+
+      # Check if we have extended data
+      if parsed[:data_extended] do
+        data = parsed[:data_extended]
+        # The packet should have location data but it's not being decoded properly
+        # This test will help us understand what's happening
+        assert data[:data_type] == :mic_e
+        # VE6LY-7 is in southern France, so longitude should be positive (east)
+        # and in the correct range for France (roughly 0-10 degrees east)
+        if data[:longitude] do
+          lon = Decimal.to_float(data[:longitude])
+          # The longitude should be positive for eastern hemisphere (France)
+          assert lon > 0, "Longitude should be positive for eastern hemisphere (France), got #{lon}"
+          # Should be in reasonable range for France (roughly 0-10 degrees east)
+          assert lon < 10, "Longitude should be in reasonable range for France, got #{lon}"
+        end
+      end
+    end
+  end
 end

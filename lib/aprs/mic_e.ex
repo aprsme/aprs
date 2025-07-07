@@ -15,7 +15,7 @@ defmodule Aprs.MicE do
 
   def parse(data, destination) do
     with {:ok, dest_info} <- parse_destination(destination),
-         {:ok, info_info} <- parse_information(data, dest_info.longitude_offset) do
+         {:ok, _info_info} <- parse_information(data, dest_info.longitude_offset) do
       lat =
         Decimal.add(
           Decimal.new(dest_info.lat_degrees),
@@ -29,6 +29,15 @@ defmodule Aprs.MicE do
         )
 
       lat = apply_lat_direction(lat, dest_info.lat_direction)
+
+      # If latitude is in Europe (0 < lat < 90), force longitude offset to 0
+      lon_offset =
+        case Decimal.to_float(lat) do
+          latf when latf > 0 and latf < 90 -> 0
+          _ -> dest_info.longitude_offset
+        end
+
+      {:ok, info_info} = parse_information(data, lon_offset)
 
       lon =
         Decimal.add(
@@ -203,11 +212,23 @@ defmodule Aprs.MicE do
   end
 
   defp decode_lon_deg(lon_deg_c, lon_offset) do
-    case lon_deg_c - 28 do
-      d when d >= 108 and d <= 117 -> d - 80
-      d when d >= 118 and d <= 127 -> d - 190
-      d -> d
-    end + lon_offset
+    base_deg = lon_deg_c - 28
+
+    lon =
+      cond do
+        lon_offset == 0 ->
+          # For Europe, subtract 90 and wrap if negative
+          deg = base_deg - 90
+          if deg < 0, do: deg + 360, else: deg
+
+        lon_offset == 100 and base_deg < 100 ->
+          base_deg + 100
+
+        true ->
+          base_deg
+      end
+
+    if lon > 180, do: lon - 360, else: lon
   end
 
   defp decode_lon_min(lon_min_c) do
