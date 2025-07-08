@@ -35,7 +35,10 @@ defmodule Aprs.TelemetryHelpersTest do
                     StreamData.one_of([
                       StreamData.string(:printable, min_length: 0, max_length: 10),
                       StreamData.constant("")
-                    ]), min_length: 0, max_length: 10) do
+                    ]),
+                    min_length: 0,
+                    max_length: 10
+                  ) do
         result = Aprs.TelemetryHelpers.parse_analog_values(values)
         assert is_list(result)
         assert length(result) == length(values)
