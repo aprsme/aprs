@@ -3,13 +3,6 @@ defmodule Aprs do
   Main APRS packet parsing library
   """
 
-  @version "0.1.4"
-
-  @doc """
-  Returns the current version of the APRS library as a static string.
-  """
-  @spec version() :: String.t()
-  def version, do: @version
   alias Aprs.Item
   alias Aprs.MicE
   alias Aprs.Object
@@ -17,6 +10,14 @@ defmodule Aprs do
   alias Aprs.Status
   alias Aprs.Telemetry
   alias Aprs.Weather
+
+  @version "0.1.4"
+
+  @doc """
+  Returns the current version of the APRS library as a static string.
+  """
+  @spec version() :: String.t()
+  def version, do: @version
 
   # Simple APRS position parsing to replace parse_aprs_position
   defp parse_aprs_position(lat, lon) do
