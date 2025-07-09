@@ -86,50 +86,56 @@ defmodule Aprs do
               {:ok, data_type} ->
                 case split_path(path) do
                   {:ok, [destination, path2]} ->
-                    try do
-                      # Use binary pattern matching for trimming instead of String.trim
-                      data_trimmed = trim_binary(data)
-                      # Use binary pattern matching instead of String.slice for Unicode safety
-                      data_without_type =
-                        case data_trimmed do
-                          <<_first_char::binary-size(1), rest::binary>> -> rest
-                          _ -> ""
-                        end
+                    # Validate that destination is not empty when sender is also empty or when both are empty
+                    # and information field is empty (completely malformed packet)
+                    if destination == "" and (sender == "" or (sender != "" and data_type == :empty)) do
+                      {:error, :invalid_packet}
+                    else
+                      try do
+                        # Use binary pattern matching for trimming instead of String.trim
+                        data_trimmed = trim_binary(data)
+                        # Use binary pattern matching instead of String.slice for Unicode safety
+                        data_without_type =
+                          case data_trimmed do
+                            <<_first_char::binary-size(1), rest::binary>> -> rest
+                            _ -> ""
+                          end
 
-                      data_extended =
-                        try do
-                          parse_data(data_type, destination, data_without_type)
-                        rescue
-                          _e ->
-                            nil
-                        end
+                        data_extended =
+                          try do
+                            parse_data(data_type, destination, data_without_type)
+                          rescue
+                            _e ->
+                              nil
+                          end
 
-                      base_callsign = List.first(callsign_parts)
+                        base_callsign = List.first(callsign_parts)
 
-                      ssid =
-                        case List.last(callsign_parts) do
-                          nil -> nil
-                          s when is_binary(s) -> s
-                          i when is_integer(i) -> to_string(i)
-                          _ -> nil
-                        end
+                        ssid =
+                          case List.last(callsign_parts) do
+                            nil -> nil
+                            s when is_binary(s) -> s
+                            i when is_integer(i) -> to_string(i)
+                            _ -> nil
+                          end
 
-                      {:ok,
-                       %{
-                         id: 16 |> :crypto.strong_rand_bytes() |> Base.encode16(case: :lower),
-                         sender: sender,
-                         path: path2,
-                         destination: destination,
-                         information_field: data_trimmed,
-                         data_type: data_type,
-                         base_callsign: base_callsign,
-                         ssid: ssid,
-                         data_extended: data_extended,
-                         received_at: DateTime.truncate(DateTime.utc_now(), :microsecond)
-                       }}
-                    rescue
-                      _e ->
-                        {:error, :invalid_packet}
+                        {:ok,
+                         %{
+                           id: 16 |> :crypto.strong_rand_bytes() |> Base.encode16(case: :lower),
+                           sender: sender,
+                           path: path2,
+                           destination: destination,
+                           information_field: data_trimmed,
+                           data_type: data_type,
+                           base_callsign: base_callsign,
+                           ssid: ssid,
+                           data_extended: data_extended,
+                           received_at: DateTime.truncate(DateTime.utc_now(), :microsecond)
+                         }}
+                      rescue
+                        _e ->
+                          {:error, :invalid_packet}
+                      end
                     end
 
                   _err ->
@@ -229,7 +235,7 @@ defmodule Aprs do
 
   # Safe version of parse_datatype that returns {:ok, type} or {:error, reason}
   @spec parse_datatype_safe(String.t()) :: {:ok, atom()} | {:error, String.t()}
-  def parse_datatype_safe(""), do: {:error, "Empty data"}
+  def parse_datatype_safe(""), do: {:ok, :empty}
   def parse_datatype_safe(data), do: {:ok, parse_datatype(data)}
 
   @spec parse_callsign(String.t()) :: {:ok, [String.t()]} | {:error, String.t()}
@@ -273,6 +279,7 @@ defmodule Aprs do
   def parse_datatype(_), do: :unknown_datatype
 
   @spec parse_data(atom(), String.t(), String.t()) :: map() | nil
+  def parse_data(:empty, _destination, _data), do: %{data_type: :empty}
   def parse_data(:mic_e, destination, data), do: MicE.parse(data, destination)
   def parse_data(:mic_e_old, destination, data), do: MicE.parse(data, destination)
   def parse_data(:object, _destination, data), do: Object.parse(data)
@@ -1030,21 +1037,16 @@ defmodule Aprs do
   end
 
   defp parse_tunneled_packet_with_information(header_data, information) do
-    case parse_datatype_safe(information) do
-      {:ok, data_type} ->
-        data_without_type = String.slice(information, 1..-1//1)
-        data_extended = parse_data(data_type, header_data.destination, data_without_type)
+    {:ok, data_type} = parse_datatype_safe(information)
+    data_without_type = String.slice(information, 1..-1//1)
+    data_extended = parse_data(data_type, header_data.destination, data_without_type)
 
-        {:ok,
-         Map.merge(header_data, %{
-           information_field: information,
-           data_type: data_type,
-           data_extended: data_extended
-         })}
-
-      {:error, reason} ->
-        {:error, "Invalid data type: #{reason}"}
-    end
+    {:ok,
+     Map.merge(header_data, %{
+       information_field: information,
+       data_type: data_type,
+       data_extended: data_extended
+     })}
   end
 
   @spec parse_tunneled_header(String.t()) :: {:ok, map()} | {:error, String.t()}

@@ -63,7 +63,22 @@ defmodule Aprs.MainTest do
     end
 
     test "handles packets with empty data" do
-      assert {:error, :invalid_packet} = Aprs.parse("N0CALL>APRS:")
+      assert {:ok, parsed} = Aprs.parse("N0CALL>APRS:")
+      assert parsed.data_type == :empty
+      assert parsed.information_field == ""
+      assert parsed.sender == "N0CALL"
+      assert parsed.destination == "APRS"
+    end
+
+    test "handles real world packet with empty information field" do
+      # Real world packet like YM6KAM-3>APRS,YM6KTR*,WIDE2-1,qAR,TA6AD-10:
+      packet = "YM6KAM-3>APRS,YM6KTR*,WIDE2-1,qAR,TA6AD-10:"
+      assert {:ok, parsed} = Aprs.parse(packet)
+      assert parsed.data_type == :empty
+      assert parsed.information_field == ""
+      assert parsed.sender == "YM6KAM-3"
+      assert parsed.destination == "APRS"
+      assert parsed.path == "YM6KTR*,WIDE2-1,qAR,TA6AD-10"
     end
 
     test "handles packets that cause parsing exceptions" do
@@ -115,7 +130,7 @@ defmodule Aprs.MainTest do
     end
 
     test "handles empty data" do
-      assert {:error, "Empty data"} = Aprs.parse_datatype_safe("")
+      assert {:ok, :empty} = Aprs.parse_datatype_safe("")
     end
 
     test "handles unknown data types" do
