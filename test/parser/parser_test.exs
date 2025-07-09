@@ -179,9 +179,9 @@ defmodule Aprs.ParserTest do
       end
     end
 
-    property "parse_datatype_safe returns {:error, _} for empty strings" do
+    property "parse_datatype_safe returns {:ok, :empty} for empty strings" do
       check all _ <- StreamData.constant(nil) do
-        assert {:error, _} = Aprs.parse_datatype_safe("")
+        assert {:ok, :empty} = Aprs.parse_datatype_safe("")
       end
     end
 
@@ -243,9 +243,9 @@ defmodule Aprs.ParserTest do
       end
     end
 
-    test "parse_datatype_safe returns {:ok, atom} for non-empty, {:error, _} for empty" do
+    test "parse_datatype_safe returns {:ok, atom} for non-empty, {:ok, :empty} for empty" do
       assert {:ok, _} = Aprs.parse_datatype_safe("!")
-      assert {:error, _} = Aprs.parse_datatype_safe("")
+      assert {:ok, :empty} = Aprs.parse_datatype_safe("")
     end
 
     test "returns correct atom for each known type indicator" do
