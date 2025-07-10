@@ -475,10 +475,26 @@ defmodule Aprs do
   # Helper to extract course and speed from comment field (e.g., "/123/045" or "123/045")
   @spec extract_course_and_speed(String.t()) :: {integer() | nil, float() | nil}
   defp extract_course_and_speed(comment) do
-    # Match "/123/045" or "123/045" at the start of the comment
-    case Regex.run(~r"/?(\d{3})/(\d{3})", comment) do
-      [_, course, speed] -> {String.to_integer(course), String.to_integer(speed) * 1.0}
-      _ -> {nil, nil}
+    # Skip if comment starts with PHG
+    if String.starts_with?(comment, "PHG") do
+      {nil, nil}
+    else
+      # Match "/123/045" or "123/045" pattern
+      case Regex.run(~r"^/?(\d{3})/(\d{3})", comment) do
+        [_, course_str, speed_str] ->
+          course = String.to_integer(course_str)
+          speed = String.to_integer(speed_str) * 1.0
+
+          # Validate course (0-360) and reasonable speed (< 300 knots)
+          if course >= 0 and course <= 360 and speed < 300 do
+            {course, speed}
+          else
+            {nil, nil}
+          end
+
+        _ ->
+          {nil, nil}
+      end
     end
   end
 
