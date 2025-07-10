@@ -37,25 +37,29 @@ defmodule Aprs.Weather do
   @spec weather_packet_comment?(String.t()) :: boolean()
   def weather_packet_comment?(comment) when is_binary(comment) do
     # Look for common weather data patterns in comments
+    # Note: We explicitly check for weather-specific patterns to avoid
+    # misidentifying position packets with course/speed (xxx/xxx) as weather
     weather_patterns = [
-      # Wind direction/speed
-      ~r/\d{3}\/\d{3}/,
-      # Temperature
+      # Temperature (must have 't' prefix)
       ~r/t\d{3}/,
-      # Humidity
+      # Humidity (must have 'h' prefix)
       ~r/h\d{2}/,
-      # Pressure
+      # Pressure (must have 'b' prefix)
       ~r/b\d{5}/,
-      # Rain
+      # Rain (must have 'r' prefix)
       ~r/r\d{3}/,
-      # Wind gust
+      # Wind gust (must have 'g' prefix)
       ~r/g\d{3}/,
-      # Rain 24h
+      # Rain 24h (must have 'p' prefix)
       ~r/p\d{3}/,
-      # Rain since midnight
-      ~r/P\d{3}/
+      # Rain since midnight (must have 'P' prefix)
+      ~r/P\d{3}/,
+      # Snow (must have 's' prefix)
+      ~r/s\d{3}/
     ]
 
+    # Only consider it a weather packet if it has at least one weather-specific pattern
+    # This prevents position packets with course/speed (xxx/xxx) from being misidentified
     Enum.any?(weather_patterns, &Regex.match?(&1, comment))
   end
 
