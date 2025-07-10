@@ -66,9 +66,16 @@ defmodule Aprs.WeatherTest do
   end
 
   describe "weather_packet_comment?/1" do
-    test "returns true for comments with wind direction/speed" do
-      assert Weather.weather_packet_comment?("175/002")
-      assert Weather.weather_packet_comment?("Some text 180/015 more text")
+    test "returns false for bare wind direction/speed patterns" do
+      # Bare wind patterns are NOT considered weather to avoid confusion with position course/speed
+      refute Weather.weather_packet_comment?("175/002")
+      refute Weather.weather_packet_comment?("Some text 180/015 more text")
+    end
+
+    test "returns true for comments with wind gust data" do
+      # Wind gust with 'g' prefix is recognized as weather
+      assert Weather.weather_packet_comment?("g015")
+      assert Weather.weather_packet_comment?("Wind gust g025")
     end
 
     test "returns true for comments with temperature" do

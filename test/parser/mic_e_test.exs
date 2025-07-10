@@ -8,19 +8,19 @@ defmodule Aprs.MicETest do
       # This packet previously decoded incorrectly as 33.054333, -6.573667
       # but should decode to 33°03.26' N 96°34.42' W
       packet = "KG5EIU-9>S3PS2V,KK5PP-3,WIDE1*,qAR,W5DCR-3:`|>Fp wj/`\"5c}442.425MHz Toff +500 kg5eiu@w5fc.org _4"
-      
+
       {:ok, parsed} = Aprs.parse(packet)
-      
+
       assert parsed.data_type == :mic_e_old
       assert parsed.sender == "KG5EIU-9"
       assert parsed.destination == "S3PS2V"
-      
+
       # Verify the coordinates are correct
       # 33°03.26' N = 33 + 3.26/60 = 33.054333°
       # 96°34.42' W = 96 + 34.42/60 = 96.573667°
       assert_in_delta Decimal.to_float(parsed.data_extended.latitude), 33.054333, 0.0001
       assert_in_delta Decimal.to_float(parsed.data_extended.longitude), -96.573667, 0.0001
-      
+
       # Verify other MicE data
       assert parsed.data_extended.symbol_table_id == "/"
       assert parsed.data_extended.symbol_code == "j"
