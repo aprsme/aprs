@@ -30,14 +30,8 @@ defmodule Aprs.MicE do
 
       lat = apply_lat_direction(lat, dest_info.lat_direction)
 
-      # If latitude is in Europe (0 < lat < 90), force longitude offset to 0
-      lon_offset =
-        case Decimal.to_float(lat) do
-          latf when latf > 0 and latf < 90 -> 0
-          _ -> dest_info.longitude_offset
-        end
-
-      {:ok, info_info} = parse_information(data, lon_offset)
+      # Don't need special Europe handling - use the offset from destination
+      {:ok, info_info} = parse_information(data, dest_info.longitude_offset)
 
       lon =
         Decimal.add(
@@ -212,23 +206,28 @@ defmodule Aprs.MicE do
   end
 
   defp decode_lon_deg(lon_deg_c, lon_offset) do
-    base_deg = lon_deg_c - 28
+    # Start with base longitude from the character
+    longitude = lon_deg_c - 28
 
-    lon =
-      cond do
-        lon_offset == 0 ->
-          # For Europe, subtract 90 and wrap if negative
-          deg = base_deg - 90
-          if deg < 0, do: deg + 360, else: deg
-
-        lon_offset == 100 and base_deg < 100 ->
-          base_deg + 100
-
-        true ->
-          base_deg
+    # Add offset if character 5 of destination is >= 'P' (0x50)
+    longitude =
+      if lon_offset == 100 do
+        longitude + 100
+      else
+        longitude
       end
 
-    if lon > 180, do: lon - 360, else: lon
+    # Apply standard adjustments
+    cond do
+      longitude >= 180 and longitude <= 189 ->
+        longitude - 80
+
+      longitude >= 190 and longitude <= 199 ->
+        longitude - 190
+
+      true ->
+        longitude
+    end
   end
 
   defp decode_lon_min(lon_min_c) do
