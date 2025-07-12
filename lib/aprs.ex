@@ -101,13 +101,7 @@ defmodule Aprs do
                             _ -> ""
                           end
 
-                        data_extended =
-                          try do
-                            parse_data(data_type, destination, data_without_type)
-                          rescue
-                            _e ->
-                              nil
-                          end
+                        data_extended = parse_data(data_type, destination, data_without_type)
 
                         base_callsign = List.first(callsign_parts)
 
@@ -498,6 +492,54 @@ defmodule Aprs do
     end
   end
 
+  # Helper to extract altitude from comment field (e.g., "/A=000680")
+  @spec extract_altitude_and_clean_comment(String.t()) :: {float() | nil, String.t()}
+  defp extract_altitude_and_clean_comment(comment) do
+    case Regex.run(~r"/A=(\d{6})", comment) do
+      [full_match, altitude_str] ->
+        # Convert to feet (altitude is in feet in APRS)
+        altitude = String.to_integer(altitude_str) * 1.0
+        # Remove the altitude from the comment
+        cleaned_comment = comment |> String.replace(full_match, "") |> String.trim()
+        {altitude, cleaned_comment}
+
+      _ ->
+        {nil, comment}
+    end
+  end
+
+  # Helper to extract PHG data from comment
+  @spec extract_phg_data(String.t()) :: {map() | nil, String.t()}
+  defp extract_phg_data(comment) do
+    case Regex.run(~r"PHG(\d)(\d)(\d)(\d)", comment) do
+      [full_match, p, h, g, d] ->
+        # PHG helpers expect character codes, not strings
+        <<p_char::8>> = p
+        <<h_char::8>> = h
+        <<g_char::8>> = g
+        <<d_char::8>> = d
+
+        {power_val, _} = Aprs.PHGHelpers.parse_phg_power(p_char)
+        {height_val, _} = Aprs.PHGHelpers.parse_phg_height(h_char)
+        {gain_val, _} = Aprs.PHGHelpers.parse_phg_gain(g_char)
+        {dir_val, _} = Aprs.PHGHelpers.parse_phg_directivity(d_char)
+
+        phg_map = %{
+          power: power_val,
+          height: height_val,
+          gain: gain_val,
+          directivity: dir_val
+        }
+
+        # Remove PHG from comment
+        cleaned_comment = comment |> String.replace(full_match, "") |> String.trim()
+        {phg_map, cleaned_comment}
+
+      _ ->
+        {nil, comment}
+    end
+  end
+
   # Patch parse_position_without_timestamp to include course/speed
   @spec parse_position_without_timestamp(String.t()) :: map()
   def parse_position_without_timestamp(position_data) do
@@ -551,8 +593,8 @@ defmodule Aprs do
 
   # Helper function to validate APRS coordinates
   defp is_valid_aprs_coordinate?(lat, lon) do
-    lat_valid = Regex.match?(~r/^\d{4,5}\.\d+[NS]$/, lat)
-    lon_valid = Regex.match?(~r/^\d{5,6}\.\d+[EW]$/, lon)
+    lat_valid = Regex.match?(~r/^\d{4}\.\d{2}[NS]$/, lat)
+    lon_valid = Regex.match?(~r/^\d{5}\.\d{2}[EW]$/, lon)
     lat_valid and lon_valid
   end
 
@@ -580,7 +622,15 @@ defmodule Aprs do
     %{latitude: lat, longitude: lon} = parse_aprs_position(latitude, longitude)
     ambiguity = Aprs.UtilityHelpers.calculate_position_ambiguity(latitude, longitude)
     dao_data = parse_dao_extension(comment)
-    {course, speed} = extract_course_and_speed(comment)
+
+    # Extract altitude and clean the comment
+    {altitude, comment_after_altitude} = extract_altitude_and_clean_comment(comment)
+
+    # Extract PHG data and clean the comment further
+    {phg_data, comment_after_phg} = extract_phg_data(comment_after_altitude)
+
+    # Extract course and speed from the cleaned comment
+    {course, speed} = extract_course_and_speed(comment_after_altitude)
 
     has_position = valid_coordinate?(lat) and valid_coordinate?(lon)
 
@@ -590,7 +640,9 @@ defmodule Aprs do
       timestamp: nil,
       symbol_table_id: sym_table_id,
       symbol_code: symbol_code,
-      comment: comment,
+      comment: comment_after_phg,
+      altitude: altitude,
+      phg: phg_data,
       aprs_messaging?: false,
       compressed?: false,
       position_ambiguity: ambiguity,
