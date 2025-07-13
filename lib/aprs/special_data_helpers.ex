@@ -3,6 +3,7 @@ defmodule Aprs.SpecialDataHelpers do
   Helpers for special APRS data types: PEET logging and invalid/test data.
   """
 
+  @spec parse_peet_logging(String.t()) :: map()
   def parse_peet_logging(<<"*", peet_data::binary>>) do
     %{
       peet_data: peet_data,
@@ -17,6 +18,7 @@ defmodule Aprs.SpecialDataHelpers do
     }
   end
 
+  @spec parse_invalid_test_data(String.t()) :: map()
   def parse_invalid_test_data(<<",", test_data::binary>>) do
     %{
       test_data: test_data,
