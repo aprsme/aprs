@@ -20,6 +20,7 @@ defmodule Aprs do
   def version, do: @version
 
   # Simple APRS position parsing to replace parse_aprs_position
+  @spec parse_aprs_position(String.t(), String.t()) :: %{latitude: coordinate(), longitude: coordinate()}
   defp parse_aprs_position(lat, lon) do
     with [_, lat_deg, lat_min, lat_dir] <- Regex.run(~r/^(\d{2})(\d{2}\.\d+)([NS])$/, lat),
          [_, lon_deg, lon_min, lon_dir] <- Regex.run(~r/^(\d{3})(\d{2}\.\d+)([EW])$/, lon) do
@@ -45,7 +46,7 @@ defmodule Aprs do
           information_field: String.t(),
           data_type: atom(),
           base_callsign: String.t(),
-          ssid: String.t(),
+          ssid: String.t() | nil,
           data_extended: map() | nil,
           received_at: DateTime.t()
         }
@@ -53,6 +54,27 @@ defmodule Aprs do
   @type parse_result :: {:ok, packet()} | {:error, atom() | String.t()}
 
   @type position_ambiguity :: 0..4
+
+  @type coordinate :: Decimal.t() | nil
+
+  @type position_data :: %{
+          required(:latitude) => coordinate(),
+          required(:longitude) => coordinate(),
+          optional(:timestamp) => String.t() | nil,
+          optional(:symbol_table_id) => String.t() | nil,
+          optional(:symbol_code) => String.t() | nil,
+          optional(:comment) => String.t(),
+          optional(:altitude) => float() | nil,
+          optional(:phg) => map() | nil,
+          optional(:aprs_messaging?) => boolean(),
+          optional(:compressed?) => boolean(),
+          optional(:position_ambiguity) => position_ambiguity(),
+          optional(:dao) => map() | nil,
+          optional(:course) => integer() | nil,
+          optional(:speed) => float() | nil,
+          optional(:has_position) => boolean(),
+          optional(:data_type) => atom()
+        }
 
   @spec parse(String.t()) :: parse_result()
   def parse(message) when is_binary(message) do
@@ -78,78 +100,71 @@ defmodule Aprs do
 
   @spec do_parse(String.t()) :: parse_result()
   defp do_parse(message) do
-    case split_packet(message) do
-      {:ok, [sender, path, data]} ->
-        case parse_callsign(sender) do
-          {:ok, callsign_parts} ->
-            case parse_datatype_safe(data) do
-              {:ok, data_type} ->
-                case split_path(path) do
-                  {:ok, [destination, path2]} ->
-                    # Validate that destination is not empty when sender is also empty or when both are empty
-                    # and information field is empty (completely malformed packet)
-                    if destination == "" and (sender == "" or (sender != "" and data_type == :empty)) do
-                      {:error, :invalid_packet}
-                    else
-                      try do
-                        # Use binary pattern matching for trimming instead of String.trim
-                        data_trimmed = trim_binary(data)
-                        # Use binary pattern matching instead of String.slice for Unicode safety
-                        data_without_type =
-                          case data_trimmed do
-                            <<_first_char::binary-size(1), rest::binary>> -> rest
-                            _ -> ""
-                          end
-
-                        data_extended = parse_data(data_type, destination, data_without_type)
-
-                        base_callsign = List.first(callsign_parts)
-
-                        ssid =
-                          case List.last(callsign_parts) do
-                            nil -> nil
-                            s when is_binary(s) -> s
-                            i when is_integer(i) -> to_string(i)
-                            _ -> nil
-                          end
-
-                        {:ok,
-                         %{
-                           id: 16 |> :crypto.strong_rand_bytes() |> Base.encode16(case: :lower),
-                           sender: sender,
-                           path: path2,
-                           destination: destination,
-                           information_field: data_trimmed,
-                           data_type: data_type,
-                           base_callsign: base_callsign,
-                           ssid: ssid,
-                           data_extended: data_extended,
-                           received_at: DateTime.truncate(DateTime.utc_now(), :microsecond)
-                         }}
-                      rescue
-                        _e ->
-                          {:error, :invalid_packet}
-                      end
-                    end
-
-                  _err ->
-                    {:error, :invalid_packet}
-                end
-
-              _err ->
-                {:error, :invalid_packet}
-            end
-
-          _err ->
-            {:error, :invalid_packet}
-        end
-
-      _err ->
-        {:error, :invalid_packet}
+    with {:ok, [sender, path, data]} <- split_packet(message),
+         {:ok, callsign_parts} <- parse_callsign(sender),
+         {:ok, data_type} <- parse_datatype_safe(data),
+         {:ok, [destination, path2]} <- split_path(path),
+         :ok <- validate_packet_parts(destination, sender, data_type),
+         {:ok, packet_data} <- build_packet_data(sender, path2, destination, data, data_type, callsign_parts) do
+      {:ok, packet_data}
+    else
+      {:error, _reason} -> {:error, :invalid_packet}
+      _ -> {:error, :invalid_packet}
     end
   rescue
-    _e ->
+    _ -> {:error, :invalid_packet}
+  end
+
+  @spec validate_packet_parts(String.t(), String.t(), atom()) :: :ok | {:error, :invalid_packet}
+  defp validate_packet_parts(destination, sender, data_type) do
+    if destination == "" and (sender == "" or (sender != "" and data_type == :empty)) do
       {:error, :invalid_packet}
+    else
+      :ok
+    end
+  end
+
+  @spec build_packet_data(String.t(), String.t(), String.t(), String.t(), atom(), [String.t()]) ::
+          {:ok, packet()} | {:error, :invalid_packet}
+  defp build_packet_data(sender, path, destination, data, data_type, callsign_parts) do
+    data_trimmed = trim_binary(data)
+    data_without_type = extract_data_without_type(data_trimmed)
+    data_extended = parse_data(data_type, destination, data_without_type)
+
+    {:ok,
+     %{
+       id: generate_packet_id(),
+       sender: sender,
+       path: path,
+       destination: destination,
+       information_field: data_trimmed,
+       data_type: data_type,
+       base_callsign: List.first(callsign_parts),
+       ssid: extract_ssid(callsign_parts),
+       data_extended: data_extended,
+       received_at: DateTime.truncate(DateTime.utc_now(), :microsecond)
+     }}
+  rescue
+    _ -> {:error, :invalid_packet}
+  end
+
+  @spec generate_packet_id() :: String.t()
+  defp generate_packet_id do
+    16 |> :crypto.strong_rand_bytes() |> Base.encode16(case: :lower)
+  end
+
+  @spec extract_data_without_type(String.t()) :: String.t()
+  defp extract_data_without_type(<<_first_char::binary-size(1), rest::binary>>), do: rest
+  defp extract_data_without_type(_), do: ""
+
+  @spec extract_ssid([String.t()]) :: String.t() | nil
+  defp extract_ssid(callsign_parts) do
+    case List.last(callsign_parts) do
+      nil -> nil
+      s when is_binary(s) -> s
+      i when is_integer(i) -> to_string(i)
+      _ -> nil
+    end
   end
 
   # Safely split packet into components using binary pattern matching
@@ -171,10 +186,12 @@ defmodule Aprs do
   end
 
   # Helper function to find delimiter using binary pattern matching
+  @spec find_delimiter(binary(), byte()) :: {:ok, binary(), binary()} | :error
   defp find_delimiter(binary, delimiter) do
     find_delimiter(binary, delimiter, 0, binary)
   end
 
+  @spec find_delimiter(binary(), byte(), non_neg_integer(), binary()) :: {:ok, binary(), binary()} | :error
   defp find_delimiter(<<delimiter, rest::binary>>, delimiter, pos, original) do
     {:ok, binary_part(original, 0, pos), rest}
   end
@@ -188,32 +205,10 @@ defmodule Aprs do
   end
 
   # Binary-safe trim function that handles Unicode characters
+  # Using String.trim/1 is safe here as APRS packets should be ASCII
+  @spec trim_binary(binary()) :: binary()
   defp trim_binary(binary) do
-    binary
-    |> trim_leading_whitespace()
-    |> trim_trailing_whitespace()
-  end
-
-  defp trim_leading_whitespace(<<?\s, rest::binary>>), do: trim_leading_whitespace(rest)
-  defp trim_leading_whitespace(<<?\t, rest::binary>>), do: trim_leading_whitespace(rest)
-  defp trim_leading_whitespace(<<?\r, rest::binary>>), do: trim_leading_whitespace(rest)
-  defp trim_leading_whitespace(<<?\n, rest::binary>>), do: trim_leading_whitespace(rest)
-  defp trim_leading_whitespace(binary), do: binary
-
-  defp trim_trailing_whitespace(binary) do
-    trim_trailing_whitespace(binary, byte_size(binary))
-  end
-
-  defp trim_trailing_whitespace(binary, 0), do: binary
-
-  defp trim_trailing_whitespace(binary, pos) do
-    case binary_part(binary, pos - 1, 1) do
-      <<?\s>> -> trim_trailing_whitespace(binary, pos - 1)
-      <<?\t>> -> trim_trailing_whitespace(binary, pos - 1)
-      <<?\r>> -> trim_trailing_whitespace(binary, pos - 1)
-      <<?\n>> -> trim_trailing_whitespace(binary, pos - 1)
-      _ -> binary_part(binary, 0, pos)
-    end
+    String.trim(binary)
   end
 
   # Safely split path into destination and digipeater path
@@ -223,12 +218,13 @@ defmodule Aprs do
     split_path_parts(split)
   end
 
+  @spec split_path_parts(list(String.t())) :: {:ok, [String.t()]} | {:error, String.t()}
   defp split_path_parts([destination, digi_path]), do: {:ok, [destination, digi_path]}
   defp split_path_parts([destination]), do: {:ok, [destination, ""]}
   defp split_path_parts(_), do: {:error, "Invalid path format"}
 
-  # Safe version of parse_datatype that returns {:ok, type} or {:error, reason}
-  @spec parse_datatype_safe(String.t()) :: {:ok, atom()} | {:error, String.t()}
+  # Safe version of parse_datatype that returns {:ok, type}
+  @spec parse_datatype_safe(String.t()) :: {:ok, atom()}
   def parse_datatype_safe(""), do: {:ok, :empty}
   def parse_datatype_safe(data), do: {:ok, parse_datatype(data)}
 
@@ -240,6 +236,30 @@ defmodule Aprs do
     end
   end
 
+  # Map of data type indicators to their corresponding atom types
+  @datatype_map %{
+    ":" => :message,
+    ">" => :status,
+    "!" => :position,
+    "/" => :timestamped_position,
+    "=" => :position_with_message,
+    "@" => :timestamped_position_with_message,
+    ";" => :object,
+    "`" => :mic_e_old,
+    "'" => :mic_e_old,
+    "_" => :weather,
+    "T" => :telemetry,
+    "$" => :raw_gps_ultimeter,
+    "<" => :station_capabilities,
+    "?" => :query,
+    "{" => :user_defined,
+    "}" => :third_party_traffic,
+    "%" => :item,
+    ")" => :item,
+    "*" => :peet_logging,
+    "," => :invalid_test_data
+  }
+
   # One of the nutty exceptions in the APRS protocol has to do with this
   # data type indicator. It's usually the first character of the message.
   # However, in some rare cases, the ! indicator can be anywhere in the
@@ -247,29 +267,25 @@ defmodule Aprs do
   # weird case right now. It seems like its for a specific type of old
   # TNC hardware that probably doesn't even exist anymore.
   @spec parse_datatype(String.t()) :: atom()
-  def parse_datatype(<<":", _::binary>>), do: :message
-  def parse_datatype(<<">", _::binary>>), do: :status
-  def parse_datatype("!" <> _), do: :position
-  def parse_datatype("/" <> _), do: :timestamped_position
-  def parse_datatype("=" <> _), do: :position_with_message
-  def parse_datatype("@" <> _), do: :timestamped_position_with_message
-  def parse_datatype(";" <> _), do: :object
-  def parse_datatype("`" <> _), do: :mic_e_old
-  def parse_datatype("'" <> _), do: :mic_e_old
-  def parse_datatype("_" <> _), do: :weather
-  def parse_datatype("T" <> _), do: :telemetry
-  def parse_datatype("$" <> _), do: :raw_gps_ultimeter
-  def parse_datatype("<" <> _), do: :station_capabilities
-  def parse_datatype("?" <> _), do: :query
-  def parse_datatype("{" <> _), do: :user_defined
-  def parse_datatype("}" <> _), do: :third_party_traffic
-  def parse_datatype("%" <> _), do: :item
-  def parse_datatype(")" <> _), do: :item
-  def parse_datatype("*" <> _), do: :peet_logging
-  def parse_datatype("," <> _), do: :invalid_test_data
-  def parse_datatype("#DFS" <> _), do: :df_report
-  def parse_datatype("#PHG" <> _), do: :phg_data
-  def parse_datatype("#" <> _), do: :phg_data
+  def parse_datatype(data) when is_binary(data) and byte_size(data) > 0 do
+    # Special cases for multi-character prefixes
+    cond do
+      String.starts_with?(data, "#DFS") ->
+        :df_report
+
+      String.starts_with?(data, "#PHG") ->
+        :phg_data
+
+      String.starts_with?(data, "#") ->
+        :phg_data
+
+      true ->
+        # Get first character and look up in map
+        <<first_char::binary-size(1), _::binary>> = data
+        Map.get(@datatype_map, first_char, :unknown_datatype)
+    end
+  end
+
   def parse_datatype(_), do: :unknown_datatype
 
   @spec parse_data(atom(), String.t(), String.t()) :: map() | nil
@@ -404,13 +420,15 @@ defmodule Aprs do
   def parse_data(_type, _destination, _data), do: nil
 
   defp add_has_location(result) do
-    Map.put(
-      result,
-      :has_location,
-      (is_number(result[:latitude]) or is_struct(result[:latitude], Decimal)) and
-        (is_number(result[:longitude]) or is_struct(result[:longitude], Decimal))
-    )
+    Map.put(result, :has_location, has_valid_coordinates?(result))
   end
+
+  @spec has_valid_coordinates?(map()) :: boolean()
+  defp has_valid_coordinates?(%{latitude: lat, longitude: lon}) do
+    valid_coordinate?(lat) and valid_coordinate?(lon)
+  end
+
+  defp has_valid_coordinates?(_), do: false
 
   @spec parse_position_with_datetime_and_weather(
           boolean(),
@@ -469,26 +487,30 @@ defmodule Aprs do
   # Helper to extract course and speed from comment field (e.g., "/123/045" or "123/045")
   @spec extract_course_and_speed(String.t()) :: {integer() | nil, float() | nil}
   defp extract_course_and_speed(comment) do
-    # Skip if comment starts with PHG
-    if String.starts_with?(comment, "PHG") do
-      {nil, nil}
-    else
+    cond do
+      # Skip if comment starts with PHG
+      String.starts_with?(comment, "PHG") ->
+        {nil, nil}
+
       # Match "/123/045" or "123/045" pattern
-      case Regex.run(~r"^/?(\d{3})/(\d{3})", comment) do
-        [_, course_str, speed_str] ->
-          course = String.to_integer(course_str)
-          speed = String.to_integer(speed_str) * 1.0
+      match = Regex.run(~r"^/?(\d{3})/(\d{3})", comment) ->
+        extract_valid_course_speed(match)
 
-          # Validate course (0-360) and reasonable speed (< 300 knots)
-          if course >= 0 and course <= 360 and speed < 300 do
-            {course, speed}
-          else
-            {nil, nil}
-          end
+      true ->
+        {nil, nil}
+    end
+  end
 
-        _ ->
-          {nil, nil}
-      end
+  @spec extract_valid_course_speed([String.t()]) :: {integer() | nil, float() | nil}
+  defp extract_valid_course_speed([_, course_str, speed_str]) do
+    course = String.to_integer(course_str)
+    speed = String.to_integer(speed_str) * 1.0
+
+    # Validate course (0-360) and reasonable speed (< 300 knots)
+    if course >= 0 and course <= 360 and speed < 300 do
+      {course, speed}
+    else
+      {nil, nil}
     end
   end
 
@@ -547,7 +569,7 @@ defmodule Aprs do
       # Uncompressed position with validation
       <<latitude::binary-size(8), sym_table_id::binary-size(1), longitude::binary-size(9), symbol_code::binary-size(1),
         comment::binary>> ->
-        if is_valid_aprs_coordinate?(latitude, longitude) do
+        if valid_aprs_coordinate?(latitude, longitude) do
           parse_position_uncompressed(latitude, sym_table_id, longitude, symbol_code, comment)
         else
           # Try compressed position without "/" prefix as fallback
@@ -555,7 +577,7 @@ defmodule Aprs do
         end
 
       <<latitude::binary-size(8), sym_table_id::binary-size(1), longitude::binary-size(9)>> ->
-        if is_valid_aprs_coordinate?(latitude, longitude) do
+        if valid_aprs_coordinate?(latitude, longitude) do
           parse_position_short_uncompressed(latitude, sym_table_id, longitude)
         else
           # Try compressed position without "/" prefix as fallback
@@ -592,7 +614,8 @@ defmodule Aprs do
   end
 
   # Helper function to validate APRS coordinates
-  defp is_valid_aprs_coordinate?(lat, lon) do
+  @spec valid_aprs_coordinate?(String.t(), String.t()) :: boolean()
+  defp valid_aprs_coordinate?(lat, lon) do
     lat_valid = Regex.match?(~r/^\d{4}\.\d{2}[NS]$/, lat)
     lon_valid = Regex.match?(~r/^\d{5}\.\d{2}[EW]$/, lon)
     lat_valid and lon_valid
@@ -626,8 +649,8 @@ defmodule Aprs do
     # Extract altitude and clean the comment
     {altitude, comment_after_altitude} = extract_altitude_and_clean_comment(comment)
 
-    # Extract PHG data and clean the comment further
-    {phg_data, comment_after_phg} = extract_phg_data(comment_after_altitude)
+    # Extract PHG data but don't remove it from comment
+    {phg_data, _comment_after_phg} = extract_phg_data(comment_after_altitude)
 
     # Extract course and speed from the cleaned comment
     {course, speed} = extract_course_and_speed(comment_after_altitude)
@@ -640,7 +663,7 @@ defmodule Aprs do
       timestamp: nil,
       symbol_table_id: sym_table_id,
       symbol_code: symbol_code,
-      comment: comment_after_phg,
+      comment: comment_after_altitude,
       altitude: altitude,
       phg: phg_data,
       aprs_messaging?: false,
@@ -652,30 +675,8 @@ defmodule Aprs do
       has_position: has_position
     }
 
-    # Check if this is a weather packet (either by symbol or by comment content)
-    if (sym_table_id == "/" and symbol_code == "_") or Aprs.Weather.weather_packet_comment?(comment) do
-      weather_data =
-        if sym_table_id == "/" and symbol_code == "_" do
-          Aprs.Weather.parse_weather_data(comment)
-        else
-          case Aprs.Weather.parse_from_comment(comment) do
-            nil -> %{}
-            weather_map -> weather_map
-          end
-        end
-
-      merged = Map.merge(weather_data, base_map)
-      # If any weather field is present, treat as weather
-      if Enum.any?(weather_data, fn {k, v} ->
-           k not in [:timestamp, :data_type, :raw_weather_data, :comment] and not is_nil(v)
-         end) do
-        Map.put(merged, :data_type, :weather)
-      else
-        Map.put(merged, :data_type, :position)
-      end
-    else
-      Map.put(base_map, :data_type, :position)
-    end
+    # Check if this is a weather packet and merge accordingly
+    merge_weather_if_present(base_map, sym_table_id, symbol_code, comment)
   end
 
   defp parse_position_short_uncompressed(latitude, sym_table_id, longitude) do
@@ -879,41 +880,19 @@ defmodule Aprs do
   defp build_fallback_position_result(aprs_messaging?, lat, lon, time, sym_table, sym_code, comment) do
     pos = parse_aprs_position(lat, lon)
 
-    if sym_table == "/" and sym_code == "_" do
-      weather_map = Aprs.Weather.parse_weather_data(comment)
+    base_map = %{
+      latitude: pos.latitude,
+      longitude: pos.longitude,
+      time: time,
+      timestamp: time,
+      symbol_table_id: sym_table,
+      symbol_code: sym_code,
+      comment: comment,
+      aprs_messaging?: aprs_messaging?,
+      compressed?: false
+    }
 
-      merged =
-        Map.merge(weather_map, %{
-          latitude: pos.latitude,
-          longitude: pos.longitude,
-          time: time,
-          timestamp: time,
-          symbol_table_id: sym_table,
-          symbol_code: sym_code,
-          comment: comment,
-          aprs_messaging?: aprs_messaging?,
-          compressed?: false
-        })
-
-      if Enum.any?(weather_map, fn {k, v} -> k not in [:timestamp, :data_type, :raw_weather_data] and not is_nil(v) end) do
-        Map.put(merged, :data_type, :weather)
-      else
-        Map.put(merged, :data_type, :position)
-      end
-    else
-      %{
-        latitude: pos.latitude,
-        longitude: pos.longitude,
-        time: time,
-        timestamp: time,
-        symbol_table_id: sym_table,
-        symbol_code: sym_code,
-        comment: comment,
-        data_type: :position,
-        aprs_messaging?: aprs_messaging?,
-        compressed?: false
-      }
-    end
+    merge_weather_if_present(base_map, sym_table, sym_code, comment)
   end
 
   defp build_position_result(aprs_messaging?, lat, lon, time, sym_table_id, symbol_code, comment) do
@@ -926,47 +905,22 @@ defmodule Aprs do
 
     {course, speed} = extract_course_and_speed(comment)
 
-    if sym_table_id == "/" and symbol_code == "_" do
-      weather_map = Aprs.Weather.parse_weather_data(comment)
+    base_map = %{
+      latitude: position.latitude,
+      longitude: position.longitude,
+      position: position,
+      time: Aprs.UtilityHelpers.validate_timestamp(time),
+      timestamp: time,
+      symbol_table_id: sym_table_id,
+      symbol_code: symbol_code,
+      comment: comment,
+      aprs_messaging?: aprs_messaging?,
+      compressed?: false,
+      course: course,
+      speed: speed
+    }
 
-      merged =
-        Map.merge(weather_map, %{
-          latitude: position.latitude,
-          longitude: position.longitude,
-          position: position,
-          time: Aprs.UtilityHelpers.validate_timestamp(time),
-          timestamp: time,
-          symbol_table_id: sym_table_id,
-          symbol_code: symbol_code,
-          comment: comment,
-          aprs_messaging?: aprs_messaging?,
-          compressed?: false,
-          course: course,
-          speed: speed
-        })
-
-      if Enum.any?(weather_map, fn {k, v} -> k not in [:timestamp, :data_type, :raw_weather_data] and not is_nil(v) end) do
-        Map.put(merged, :data_type, :weather)
-      else
-        Map.put(merged, :data_type, :position)
-      end
-    else
-      %{
-        latitude: position.latitude,
-        longitude: position.longitude,
-        position: position,
-        time: Aprs.UtilityHelpers.validate_timestamp(time),
-        timestamp: time,
-        symbol_table_id: sym_table_id,
-        symbol_code: symbol_code,
-        comment: comment,
-        data_type: :position,
-        aprs_messaging?: aprs_messaging?,
-        compressed?: false,
-        course: course,
-        speed: speed
-      }
-    end
+    merge_weather_if_present(base_map, sym_table_id, symbol_code, comment)
   end
 
   # Status Report parsing
@@ -1040,11 +994,19 @@ defmodule Aprs do
     }
   end
 
+  # Map of user-defined format identifiers
+  @user_defined_formats %{
+    "A" => :experimental_a,
+    "B" => :experimental_b,
+    "C" => :custom_c
+  }
+
   # Parse specific user-defined formats
-  defp parse_user_defined_format("A", user_data), do: %{format: :experimental_a, content: user_data}
-  defp parse_user_defined_format("B", user_data), do: %{format: :experimental_b, content: user_data}
-  defp parse_user_defined_format("C", user_data), do: %{format: :custom_c, content: user_data}
-  defp parse_user_defined_format(_, user_data), do: %{format: :unknown, content: user_data}
+  @spec parse_user_defined_format(String.t(), String.t()) :: map()
+  defp parse_user_defined_format(user_id, user_data) do
+    format = Map.get(@user_defined_formats, user_id, :unknown)
+    %{format: format, content: user_data}
+  end
 
   # Third Party Traffic parsing
   def parse_third_party_traffic(packet) do
@@ -1154,11 +1116,6 @@ defmodule Aprs do
     end
   end
 
-  defp extract_ssid(nil), do: nil
-  defp extract_ssid(s) when is_binary(s), do: s
-  defp extract_ssid(i) when is_integer(i), do: to_string(i)
-  defp extract_ssid(_), do: nil
-
   defp split_path_for_tunnel(path) do
     split_path(path)
   end
@@ -1232,5 +1189,46 @@ defmodule Aprs do
   # Helper to check if coordinate is valid (reduces redundant checks)
   defp valid_coordinate?(coord) do
     is_number(coord) or is_struct(coord, Decimal)
+  end
+
+  # Extract common weather merging logic
+  @spec merge_weather_if_present(map(), String.t(), String.t(), String.t()) :: map()
+  defp merge_weather_if_present(base_map, sym_table_id, symbol_code, comment) do
+    if weather_packet?(sym_table_id, symbol_code, comment) do
+      weather_data = extract_weather_data(sym_table_id, symbol_code, comment)
+      merged = Map.merge(weather_data, base_map)
+
+      if has_weather_fields?(weather_data) do
+        Map.put(merged, :data_type, :weather)
+      else
+        Map.put(merged, :data_type, :position)
+      end
+    else
+      Map.put(base_map, :data_type, :position)
+    end
+  end
+
+  @spec weather_packet?(String.t(), String.t(), String.t()) :: boolean()
+  defp weather_packet?(sym_table_id, symbol_code, comment) do
+    (sym_table_id == "/" and symbol_code == "_") or Aprs.Weather.weather_packet_comment?(comment)
+  end
+
+  @spec extract_weather_data(String.t(), String.t(), String.t()) :: map()
+  defp extract_weather_data("/", "_", comment) do
+    Aprs.Weather.parse_weather_data(comment)
+  end
+
+  defp extract_weather_data(_sym_table_id, _symbol_code, comment) do
+    case Aprs.Weather.parse_from_comment(comment) do
+      nil -> %{}
+      weather_map -> weather_map
+    end
+  end
+
+  @spec has_weather_fields?(map()) :: boolean()
+  defp has_weather_fields?(weather_data) do
+    Enum.any?(weather_data, fn {k, v} ->
+      k not in [:timestamp, :data_type, :raw_weather_data, :comment] and not is_nil(v)
+    end)
   end
 end

@@ -16,6 +16,7 @@ defmodule Aprs.DeviceParser do
   @doc """
   Extract the device identifier from a packet map or raw packet string.
   """
+  @spec extract_device_identifier(map() | String.t()) :: String.t() | nil
   def extract_device_identifier(%{data_type: :mic_e, destination: dest, data_extended: %{comment: comment}})
       when is_binary(dest) and is_binary(comment) do
     case identify_mic_e_legacy_device(comment) do
@@ -44,6 +45,7 @@ defmodule Aprs.DeviceParser do
   def extract_device_identifier(_), do: nil
 
   # Legacy Mic-E device identification from comment field
+  @spec identify_mic_e_legacy_device(String.t()) :: String.t() | nil
   defp identify_mic_e_legacy_device(comment) when is_binary(comment) do
     Enum.find_value(@mic_e_legacy_devices, fn %{prefix: prefix, suffix: suffix, tocall: tocall} ->
       prefix_match = String.starts_with?(comment, prefix)
@@ -55,6 +57,7 @@ defmodule Aprs.DeviceParser do
   @doc """
   Decode a Mic-E destination to its corresponding TOCALL (matches FAP/APRS spec).
   """
+  @spec decode_mic_e_tocall(String.t()) :: String.t()
   def decode_mic_e_tocall(dest) when is_binary(dest) and byte_size(dest) == 6 do
     <<c1, c2, c3, c4, c5, c6>> = dest
     # Special case for Kenwood TH-D74 (FAP logic)
@@ -108,11 +111,13 @@ defmodule Aprs.DeviceParser do
     # ... (expand as needed)
   }
 
+  @spec mic_e_prefix(binary()) :: String.t() | nil
   defp mic_e_prefix(three) when is_binary(three) and byte_size(three) == 3 do
     Map.get(@mic_e_prefix_map, three)
   end
 
   # Suffix calculation (matches FAP logic)
+  @spec mic_e_suffix(byte(), byte(), byte()) :: String.t() | nil
   defp mic_e_suffix(c4, c5, c6) do
     d1 = mic_e_digit(c4)
     d2 = mic_e_digit(c5)
@@ -124,6 +129,7 @@ defmodule Aprs.DeviceParser do
   end
 
   # FAP/Spec: '0'..'9' => 0..9, 'A'..'J' => 0..9, 'P'..'Y' => 0..9
+  @spec mic_e_digit(byte()) :: integer() | nil
   defp mic_e_digit(char) when char in ?0..?9, do: char - ?0
   defp mic_e_digit(char) when char in ?A..?J, do: char - ?A
   defp mic_e_digit(char) when char in ?P..?Y, do: char - ?P
