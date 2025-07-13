@@ -3,17 +3,21 @@ defmodule Aprs.UtilityHelpers do
   Utility and ambiguity helpers for APRS.
   """
 
+  @spec count_spaces(String.t()) :: non_neg_integer()
   def count_spaces(str) do
     # More efficient than String.graphemes() |> Enum.count()
     str |> String.to_charlist() |> Enum.count(fn c -> c == ?\s end)
   end
 
+  @spec count_leading_braces(binary()) :: non_neg_integer()
   def count_leading_braces(packet), do: count_leading_braces(packet, 0)
 
+  @spec count_leading_braces(binary(), non_neg_integer()) :: non_neg_integer()
   def count_leading_braces(<<"}", rest::binary>>, count), do: count_leading_braces(rest, count + 1)
 
   def count_leading_braces(_packet, count), do: count
 
+  @spec calculate_position_ambiguity(String.t(), String.t()) :: 0..4
   def calculate_position_ambiguity(latitude, longitude) do
     lat_spaces = count_spaces(latitude)
     lon_spaces = count_spaces(longitude)
@@ -29,6 +33,7 @@ defmodule Aprs.UtilityHelpers do
     end
   end
 
+  @spec find_matches(Regex.t(), String.t()) :: map()
   def find_matches(regex, text) do
     case Regex.names(regex) do
       [] ->
@@ -43,6 +48,8 @@ defmodule Aprs.UtilityHelpers do
     end
   end
 
+  @spec validate_position_data(String.t(), String.t()) ::
+          {:ok, {Decimal.t(), Decimal.t()}} | {:error, :invalid_position}
   def validate_position_data(latitude, longitude) do
     import Decimal, only: [new: 1, add: 2, negate: 1]
 
@@ -73,5 +80,6 @@ defmodule Aprs.UtilityHelpers do
     end
   end
 
+  @spec validate_timestamp(any()) :: nil
   def validate_timestamp(_time), do: nil
 end

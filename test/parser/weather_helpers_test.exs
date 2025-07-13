@@ -370,7 +370,7 @@ defmodule Aprs.WeatherHelpersTest do
     test "parses pressure correctly" do
       assert Aprs.WeatherHelpers.parse_pressure("123/045g015t090r000p000P000h60b10161") == 1016.1
       assert Aprs.WeatherHelpers.parse_pressure("123/045g015t090r000p000P000h60b00000") == 0.0
-      assert Aprs.WeatherHelpers.parse_pressure("123/045g015t090r000p000P000h60b99999") == 9999.9
+      assert Aprs.WeatherHelpers.parse_pressure("123/045g015t090r000p000P000h60b99999") == 9_999.9
     end
 
     test "returns nil for no pressure" do
