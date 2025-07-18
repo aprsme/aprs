@@ -449,7 +449,7 @@ defmodule Aprs do
         weather_report
       ) do
     pos = parse_aprs_position(latitude, longitude)
-    weather_data = Aprs.Weather.parse_weather_data(weather_report)
+    weather_data = Weather.parse_weather_data(weather_report)
 
     %{
       latitude: pos.latitude,
@@ -1210,16 +1210,16 @@ defmodule Aprs do
 
   @spec weather_packet?(String.t(), String.t(), String.t()) :: boolean()
   defp weather_packet?(sym_table_id, symbol_code, comment) do
-    (sym_table_id == "/" and symbol_code == "_") or Aprs.Weather.weather_packet_comment?(comment)
+    (sym_table_id == "/" and symbol_code == "_") or Weather.weather_packet_comment?(comment)
   end
 
   @spec extract_weather_data(String.t(), String.t(), String.t()) :: map()
   defp extract_weather_data("/", "_", comment) do
-    Aprs.Weather.parse_weather_data(comment)
+    Weather.parse_weather_data(comment)
   end
 
   defp extract_weather_data(_sym_table_id, _symbol_code, comment) do
-    case Aprs.Weather.parse_from_comment(comment) do
+    case Weather.parse_from_comment(comment) do
       nil -> %{}
       weather_map -> weather_map
     end
