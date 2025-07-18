@@ -48,7 +48,7 @@ defmodule Aprs.ParserUnitTest do
       assert is_map(result)
       assert Decimal.equal?(Decimal.round(result.latitude, 4), Decimal.new("49.2742"))
       assert Decimal.equal?(Decimal.round(result.longitude, 4), Decimal.new("-123.1853"))
-      assert result.weather != nil
+      refute is_nil(result.weather)
       assert result.timestamp == "201750z"
     end
   end
@@ -59,7 +59,7 @@ defmodule Aprs.ParserUnitTest do
         Aprs.parse_data(:raw_gps_ultimeter, "", "$GPRMC,123456,A,4903.50,N,07201.75,W*6A")
 
       assert result.data_type == :raw_gps_ultimeter
-      assert result.error != nil
+      refute is_nil(result.error)
     end
 
     test "df_report fallback" do
