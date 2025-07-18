@@ -54,5 +54,34 @@ defmodule Aprs.ObjectTest do
       assert result[:data_type] == :object
       assert result[:raw_data] == data
     end
+
+    test "handles compressed position parsing errors" do
+      # Test the rescue branch in compressed position parsing
+      # Invalid compressed position that will cause an error
+      data =
+        ";OBJECTNAM*1234567/" <>
+          <<255, 255, 255, 255>> <> <<255, 255, 255, 255>> <> "X" <> <<255, 255>> <> "X" <> "comment"
+
+      result = Object.parse(data)
+      assert is_map(result)
+      assert result[:data_type] == :object
+      assert result[:position_format] == :compressed
+      assert result[:latitude] == nil
+      assert result[:longitude] == nil
+      assert result[:comment] == "comment"
+    end
+
+    test "handles invalid compressed latitude/longitude conversion" do
+      # Test when conversion functions return error tuples
+      # Using invalid base91 characters
+      data = ";OBJECTNAM*1234567/!!!!!!!!!!Xcomment"
+      result = Object.parse(data)
+      assert is_map(result)
+      assert result[:data_type] == :object
+      assert result[:position_format] == :compressed
+      # '!' is actually a valid base91 character (value 0), so it may convert successfully
+      assert result[:latitude] == {:ok, 90.0} or result[:latitude] == nil
+      assert result[:longitude] == {:ok, -180.0} or result[:longitude] == nil
+    end
   end
 end

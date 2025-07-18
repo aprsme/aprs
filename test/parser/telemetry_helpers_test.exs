@@ -19,6 +19,8 @@ defmodule Aprs.TelemetryHelpersTest do
 
     test "returns nil for invalid sequence numbers" do
       assert Aprs.TelemetryHelpers.parse_telemetry_sequence("12.34") == 12
+      assert Aprs.TelemetryHelpers.parse_telemetry_sequence("abc") == nil
+      assert Aprs.TelemetryHelpers.parse_telemetry_sequence("") == nil
     end
 
     test "handles edge cases" do
@@ -125,6 +127,31 @@ defmodule Aprs.TelemetryHelpersTest do
       assert Aprs.TelemetryHelpers.parse_coefficient("12.34%") == 12.34
       assert Aprs.TelemetryHelpers.parse_coefficient("$123.45") == "$123.45"
       assert Aprs.TelemetryHelpers.parse_coefficient("123.45°") == 123.45
+    end
+  end
+
+  describe "parse_digital_values/1" do
+    test "parses single '1' character" do
+      assert Aprs.TelemetryHelpers.parse_digital_values(["1"]) == [true]
+    end
+
+    test "handles non-binary input" do
+      # Test the fallback case for non-binary input
+      assert Aprs.TelemetryHelpers.parse_digital_values([123]) == [nil]
+      assert Aprs.TelemetryHelpers.parse_digital_values([nil]) == [nil]
+      assert Aprs.TelemetryHelpers.parse_digital_values([%{}]) == [nil]
+    end
+
+    test "parses multi-character binary strings" do
+      assert Aprs.TelemetryHelpers.parse_digital_values(["101"]) == [true, false, true]
+      assert Aprs.TelemetryHelpers.parse_digital_values(["010"]) == [false, true, false]
+      assert Aprs.TelemetryHelpers.parse_digital_values(["000"]) == [false, false, false]
+      assert Aprs.TelemetryHelpers.parse_digital_values(["111"]) == [true, true, true]
+    end
+
+    test "handles invalid characters in binary strings" do
+      assert Aprs.TelemetryHelpers.parse_digital_values(["12a"]) == [true, nil, nil]
+      assert Aprs.TelemetryHelpers.parse_digital_values(["0x1"]) == [false, nil, true]
     end
   end
 

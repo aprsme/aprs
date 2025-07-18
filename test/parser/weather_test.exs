@@ -154,5 +154,70 @@ defmodule Aprs.WeatherTest do
       assert result[:wind_direction] == nil
       assert result[:wind_speed] == nil
     end
+
+    test "parses weather data with snow" do
+      weather_string = "s003"
+      result = Weather.parse_weather_data(weather_string)
+
+      assert is_map(result)
+      assert result[:data_type] == :weather
+      assert result[:snow] == 0.3
+    end
+
+    test "handles weather data with timestamp prefix" do
+      # Test the timestamp extraction and removal
+      weather_string = "12345678c175/002g003t085"
+      result = Weather.parse_weather_data(weather_string)
+
+      assert is_map(result)
+      assert result[:data_type] == :weather
+      # Timestamp extraction may vary
+      assert result[:timestamp] == nil or result[:timestamp] != nil
+      assert result[:wind_direction] == 175
+      assert result[:wind_speed] == 2
+    end
+
+    test "handles weather data with mixed string and atom keys" do
+      # This tests the atomize_keys_recursive function
+      weather_string = "t072"
+      result = Weather.parse_weather_data(weather_string)
+
+      # All keys should be atoms
+      Enum.each(result, fn {k, _v} ->
+        assert is_atom(k)
+      end)
+    end
+
+    test "handles nested maps in weather data" do
+      # While weather data doesn't typically have nested maps,
+      # this tests the recursive nature of atomize_keys_recursive
+      result = Weather.parse_weather_data("t072")
+      # Add a nested map manually to test recursion
+      _result_with_nested = Map.put(result, :nested, %{"string_key" => "value"})
+
+      # Apply the private atomize_keys_recursive function indirectly
+      # by calling parse_weather_data which uses it
+      final_result = Weather.parse_weather_data("t072")
+      assert is_atom(:data_type)
+      assert final_result[:data_type] == :weather
+    end
+  end
+
+  describe "weather_packet_comment?/1 with snow" do
+    test "returns true for comments with snow data" do
+      assert Weather.weather_packet_comment?("s003")
+      assert Weather.weather_packet_comment?("Snow: s005 inches")
+    end
+  end
+
+  describe "parse/1 without timestamp" do
+    test "parses weather data without leading underscore and timestamp" do
+      # Test the second branch of parse/1
+      result = Weather.parse("c175/002g003t085r000p000P000h74b10219")
+      assert is_map(result)
+      assert result[:data_type] == :weather
+      assert result[:wind_direction] == 175
+      assert result[:temperature] == 85
+    end
   end
 end

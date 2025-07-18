@@ -132,4 +132,44 @@ defmodule Aprs.PositionTest do
       end
     end
   end
+
+  describe "from_aprs/2" do
+    test "delegates to parse_aprs_position" do
+      result = Position.from_aprs("4903.50N", "07201.75W")
+      assert result.latitude != nil
+      assert result.longitude != nil
+      assert Decimal.equal?(Decimal.round(result.latitude, 6), Decimal.new("49.058333"))
+      assert Decimal.equal?(Decimal.round(result.longitude, 6), Decimal.new("-72.029167"))
+    end
+  end
+
+  describe "from_decimal/2" do
+    test "creates position from decimal values" do
+      result = Position.from_decimal("45.5", "-73.6")
+      assert Decimal.equal?(result.latitude, Decimal.new("45.5"))
+      assert Decimal.equal?(result.longitude, Decimal.new("-73.6"))
+    end
+
+    test "handles integer input" do
+      result = Position.from_decimal(45, -73)
+      assert Decimal.equal?(result.latitude, Decimal.new(45))
+      assert Decimal.equal?(result.longitude, Decimal.new(-73))
+    end
+  end
+
+  describe "calculate_position_ambiguity/2 edge cases" do
+    test "returns 0 for mismatched space counts" do
+      # Test the default case in @ambiguity_levels map
+      assert Position.calculate_position_ambiguity("49 3.50N", "07201.75W") == 0
+      assert Position.calculate_position_ambiguity("4903.50N", "07201.7 W") == 0
+    end
+
+    test "returns correct ambiguity for 3 spaces" do
+      assert Position.calculate_position_ambiguity("4   .50N", "072   .7W") == 3
+    end
+
+    test "returns correct ambiguity for 4 spaces" do
+      assert Position.calculate_position_ambiguity("    .50N", "072    .W") == 4
+    end
+  end
 end

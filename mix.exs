@@ -33,7 +33,7 @@ defmodule Aprs.MixProject do
       {:mix_test_watch, "~> 1.1", only: [:dev, :test]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
-      {:styler, "~> 1.4.2", only: [:dev, :test], runtime: false}
+      {:styler, "~> 1.5", only: [:dev, :test], runtime: false}
     ]
   end
 
