@@ -172,7 +172,8 @@ defmodule Aprs.WeatherTest do
       assert is_map(result)
       assert result[:data_type] == :weather
       # Timestamp extraction may vary
-      assert result[:timestamp] == nil or result[:timestamp] != nil
+      # Timestamp extraction may vary, just verify it's set
+      assert Map.has_key?(result, :timestamp)
       assert result[:wind_direction] == 175
       assert result[:wind_speed] == 2
     end
