@@ -484,34 +484,38 @@ defmodule Aprs do
     (v1 - 33) * 91 * 91 * 91 + (v2 - 33) * 91 * 91 + (v3 - 33) * 91 + v4
   end
 
-  # Helper to extract course and speed from comment field (e.g., "/123/045" or "123/045")
-  @spec extract_course_and_speed(String.t()) :: {integer() | nil, float() | nil}
-  defp extract_course_and_speed(comment) do
+  # Helper to extract course and speed from comment field and clean the comment
+  @spec extract_course_speed_and_clean_comment(String.t()) :: {integer() | nil, float() | nil, String.t()}
+  defp extract_course_speed_and_clean_comment(comment) do
     cond do
       # Skip if comment starts with PHG
       String.starts_with?(comment, "PHG") ->
-        {nil, nil}
+        {nil, nil, comment}
 
-      # Match "/123/045" or "123/045" pattern
-      match = Regex.run(~r"^/?(\d{3})/(\d{3})", comment) ->
-        extract_valid_course_speed(match)
+      # Match "/123/045" or "123/045" or "[123/045" pattern
+      match = Regex.run(~r"^([/\[]?)(\d{3})/(\d{3})", comment) ->
+        [full_match, _prefix, course_str, speed_str] = match
+        course = String.to_integer(course_str)
+        speed = String.to_integer(speed_str) * 1.0
+
+        # Validate course (0-360) and reasonable speed (< 300 knots)
+        if course >= 0 and course <= 360 and speed < 300 do
+          cleaned_comment = comment |> String.replace(full_match, "") |> String.trim()
+          {course, speed, cleaned_comment}
+        else
+          {nil, nil, comment}
+        end
 
       true ->
-        {nil, nil}
+        {nil, nil, comment}
     end
   end
 
-  @spec extract_valid_course_speed([String.t()]) :: {integer() | nil, float() | nil}
-  defp extract_valid_course_speed([_, course_str, speed_str]) do
-    course = String.to_integer(course_str)
-    speed = String.to_integer(speed_str) * 1.0
-
-    # Validate course (0-360) and reasonable speed (< 300 knots)
-    if course >= 0 and course <= 360 and speed < 300 do
-      {course, speed}
-    else
-      {nil, nil}
-    end
+  # Helper to extract course and speed from comment field (e.g., "/123/045" or "123/045" or "[123/045")
+  @spec extract_course_and_speed(String.t()) :: {integer() | nil, float() | nil}
+  defp extract_course_and_speed(comment) do
+    {course, speed, _} = extract_course_speed_and_clean_comment(comment)
+    {course, speed}
   end
 
   # Helper to extract altitude from comment field (e.g., "/A=000680")
@@ -652,8 +656,8 @@ defmodule Aprs do
     # Extract PHG data but don't remove it from comment
     {phg_data, _comment_after_phg} = extract_phg_data(comment_after_altitude)
 
-    # Extract course and speed from the cleaned comment
-    {course, speed} = extract_course_and_speed(comment_after_altitude)
+    # Extract course and speed from the cleaned comment and clean it further
+    {course, speed, comment_cleaned} = extract_course_speed_and_clean_comment(comment_after_altitude)
 
     has_position = valid_coordinate?(lat) and valid_coordinate?(lon)
 
@@ -663,7 +667,7 @@ defmodule Aprs do
       timestamp: nil,
       symbol_table_id: sym_table_id,
       symbol_code: symbol_code,
-      comment: comment_after_altitude,
+      comment: comment_cleaned,
       altitude: altitude,
       phg: phg_data,
       aprs_messaging?: false,
