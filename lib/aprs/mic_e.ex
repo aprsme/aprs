@@ -57,6 +57,7 @@ defmodule Aprs.MicE do
         symbol_code: info_info.symbol_code,
         symbol_table_id: info_info.symbol_table_id,
         comment: info_info.comment,
+        altitude: info_info.altitude,
         data_type: :mic_e
       }
     else
@@ -191,8 +192,8 @@ defmodule Aprs.MicE do
       speed = decode_speed(sp_c, dc_c)
       course = decode_course(dc_c, se_c)
 
-      # Clean up comment by removing telemetry data
-      cleaned_comment = clean_comment(comment)
+      # Parse altitude and clean up comment
+      {altitude, cleaned_comment} = parse_altitude_and_clean_comment(comment)
 
       {:ok,
        %{
@@ -203,7 +204,8 @@ defmodule Aprs.MicE do
          course: course,
          symbol_code: <<symbol_code>>,
          symbol_table_id: <<symbol_table_id>>,
-         comment: cleaned_comment
+         comment: cleaned_comment,
+         altitude: altitude
        }}
     end
   end
@@ -268,19 +270,60 @@ defmodule Aprs.MicE do
   defp normalize_course(course), do: course
 
   @doc false
-  # Clean up comment by removing telemetry data and other suffixes
-  defp clean_comment(comment) do
+  # Parse altitude from Mic-E comment and clean up the comment
+  defp parse_altitude_and_clean_comment(comment) do
     # First, remove telemetry marker and data (_%...)
     cleaned = String.replace(comment, ~r/_%.*/u, "")
 
-    # Remove Mic-E altitude prefix if present
-    # Format: "`...]}" or similar patterns with backtick and closing brace
-    cleaned =
-      case Regex.run(~r/^[`"].{0,4}\}(.*)$/u, cleaned) do
-        [_full, actual_comment] -> actual_comment
-        _ -> cleaned
+    # Check for various Mic-E data extensions
+    {altitude, cleaned} =
+      case cleaned do
+        # Standard altitude encoding: 3 chars + "}"
+        <<a1, a2, a3, "}", rest::binary>> when a1 >= 33 and a1 <= 124 ->
+          alt = (a1 - 33) * 91 * 91 + (a2 - 33) * 91 + (a3 - 33) - 10_000
+          {alt, rest}
+
+        # Data extension with "]" prefix followed by altitude
+        <<"]", a1, a2, a3, "}", rest::binary>> when a1 >= 33 and a1 <= 124 ->
+          alt = (a1 - 33) * 91 * 91 + (a2 - 33) * 91 + (a3 - 33) - 10_000
+          {alt, rest}
+
+        _ ->
+          {nil, cleaned}
       end
 
-    String.trim(cleaned)
+    # If the remaining "comment" is just encoded data (no readable text), 
+    # return empty string instead
+    final_comment =
+      if is_encoded_data_only?(cleaned) do
+        ""
+      else
+        String.trim(cleaned)
+      end
+
+    {altitude, final_comment}
+  end
+
+  # Check if a string appears to be only encoded data (not human-readable)
+  defp is_encoded_data_only?(str) do
+    # Empty or very short strings
+    if String.length(str) <= 1 do
+      true
+    else
+      # Check if it starts with data indicators or contains mostly non-printable/special chars
+      case str do
+        <<"]", _rest::binary>> ->
+          true
+
+        <<"=", _rest::binary>> ->
+          true
+
+        _ ->
+          # Check if it's mostly special characters and no spaces or readable text
+          # A real comment would typically have spaces and alphanumeric characters
+          printable_chars = String.replace(str, ~r/[^a-zA-Z0-9 .,!?-]/u, "")
+          String.length(printable_chars) < String.length(str) / 2
+      end
+    end
   end
 end

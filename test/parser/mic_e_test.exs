@@ -191,8 +191,8 @@ defmodule Aprs.MicETest do
       assert result[:message_type] == :custom
     end
 
-    test "cleans telemetry data and altitude prefix from W5DGK-9 packet" do
-      # This packet has both altitude prefix and telemetry suffix that should be removed
+    test "parses altitude and cleans telemetry data from W5DGK-9 packet" do
+      # This packet has both altitude prefix and telemetry suffix that should be parsed/removed
       packet = "W5DGK-9>S3RS2Y,WIDE1-1,WIDE2-1,qAR,W5NGU-3:`|<yl k/`\"6;}Happy Trails ...146.52 or 469-247-2654_% "
 
       {:ok, parsed} = Aprs.parse(packet)
@@ -204,6 +204,9 @@ defmodule Aprs.MicETest do
       # The comment should have both the altitude prefix ("6;}) and telemetry suffix (_%) removed
       assert parsed.data_extended.comment == "Happy Trails ...146.52 or 469-247-2654"
 
+      # Verify altitude was parsed from the prefix
+      assert parsed.data_extended.altitude == 218
+
       # Verify coordinates
       assert_in_delta Decimal.to_float(parsed.data_extended.latitude), 33.388167, 0.0001
       assert_in_delta Decimal.to_float(parsed.data_extended.longitude), -96.548833, 0.0001
@@ -211,6 +214,31 @@ defmodule Aprs.MicETest do
       # Verify symbol
       assert parsed.data_extended.symbol_table_id == "`"
       assert parsed.data_extended.symbol_code == "/"
+    end
+
+    test "handles KD5OVR-1 packet with encoded data instead of comment" do
+      # This packet has what looks like encoded data after the symbol, not a human-readable comment
+      packet = "KD5OVR-1>SS1R4W,qAR,KC5JMD-2:`|J'mA-k/]\"6M}="
+
+      {:ok, parsed} = Aprs.parse(packet)
+
+      assert parsed.data_type == :mic_e_old
+      assert parsed.sender == "KD5OVR-1"
+      assert parsed.destination == "SS1R4W"
+
+      # The parser should recognize this as encoded data and return empty comment
+      assert parsed.data_extended.comment == ""
+
+      # The altitude should be parsed from the data extension format ]"6M}
+      assert parsed.data_extended.altitude == 236
+
+      # Verify coordinates  
+      assert_in_delta Decimal.to_float(parsed.data_extended.latitude), 33.207833, 0.0001
+      assert_in_delta Decimal.to_float(parsed.data_extended.longitude), -96.7685, 0.0001
+
+      # Verify symbol
+      assert parsed.data_extended.symbol_table_id == "/"
+      assert parsed.data_extended.symbol_code == "k"
     end
   end
 end
