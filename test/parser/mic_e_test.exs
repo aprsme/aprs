@@ -190,5 +190,27 @@ defmodule Aprs.MicETest do
       result = MicE.parse(data, destination)
       assert result[:message_type] == :custom
     end
+
+    test "cleans telemetry data and altitude prefix from W5DGK-9 packet" do
+      # This packet has both altitude prefix and telemetry suffix that should be removed
+      packet = "W5DGK-9>S3RS2Y,WIDE1-1,WIDE2-1,qAR,W5NGU-3:`|<yl k/`\"6;}Happy Trails ...146.52 or 469-247-2654_% "
+
+      {:ok, parsed} = Aprs.parse(packet)
+
+      assert parsed.data_type == :mic_e_old
+      assert parsed.sender == "W5DGK-9"
+      assert parsed.destination == "S3RS2Y"
+
+      # The comment should have both the altitude prefix ("6;}) and telemetry suffix (_%) removed
+      assert parsed.data_extended.comment == "Happy Trails ...146.52 or 469-247-2654"
+
+      # Verify coordinates
+      assert_in_delta Decimal.to_float(parsed.data_extended.latitude), 33.388167, 0.0001
+      assert_in_delta Decimal.to_float(parsed.data_extended.longitude), -96.548833, 0.0001
+
+      # Verify symbol
+      assert parsed.data_extended.symbol_table_id == "`"
+      assert parsed.data_extended.symbol_code == "/"
+    end
   end
 end
