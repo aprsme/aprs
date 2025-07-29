@@ -191,6 +191,9 @@ defmodule Aprs.MicE do
       speed = decode_speed(sp_c, dc_c)
       course = decode_course(dc_c, se_c)
 
+      # Clean up comment by removing telemetry data
+      cleaned_comment = clean_comment(comment)
+
       {:ok,
        %{
          lon_degrees: lon_deg,
@@ -200,7 +203,7 @@ defmodule Aprs.MicE do
          course: course,
          symbol_code: <<symbol_code>>,
          symbol_table_id: <<symbol_table_id>>,
-         comment: comment
+         comment: cleaned_comment
        }}
     end
   end
@@ -263,4 +266,21 @@ defmodule Aprs.MicE do
 
   defp normalize_course(course) when course >= 400, do: course - 400
   defp normalize_course(course), do: course
+
+  @doc false
+  # Clean up comment by removing telemetry data and other suffixes
+  defp clean_comment(comment) do
+    # First, remove telemetry marker and data (_%...)
+    cleaned = String.replace(comment, ~r/_%.*/u, "")
+
+    # Remove Mic-E altitude prefix if present
+    # Format: "`...]}" or similar patterns with backtick and closing brace
+    cleaned =
+      case Regex.run(~r/^[`"].{0,4}\}(.*)$/u, cleaned) do
+        [_full, actual_comment] -> actual_comment
+        _ -> cleaned
+      end
+
+    String.trim(cleaned)
+  end
 end
