@@ -288,9 +288,17 @@ defmodule Aprs.MicE do
           alt = (a1 - 33) * 91 * 91 + (a2 - 33) * 91 + (a3 - 33) - 10_000
           {alt, rest}
 
+        # Altitude with backtick prefix (another variant)
+        <<"`", a1, a2, a3, "}", rest::binary>> when a1 >= 33 and a1 <= 124 ->
+          alt = (a1 - 33) * 91 * 91 + (a2 - 33) * 91 + (a3 - 33) - 10_000
+          {alt, rest}
+
         _ ->
           {nil, cleaned}
       end
+
+    # Clean up common trailing markers
+    cleaned = clean_trailing_markers(cleaned)
 
     # If the remaining "comment" is just encoded data (no readable text), 
     # return empty string instead
@@ -302,6 +310,18 @@ defmodule Aprs.MicE do
       end
 
     {altitude, final_comment}
+  end
+
+  # Clean up common trailing markers from comments
+  defp clean_trailing_markers(str) do
+    str
+    # Remove "^ --" at the end
+    |> String.replace(~r/\^ --$/u, "")
+    # Remove trailing "^"
+    |> String.replace(~r/\^$/u, "")
+    # Remove trailing " --"
+    |> String.replace(~r/ --$/u, "")
+    |> String.trim()
   end
 
   # Check if a string appears to be only encoded data (not human-readable)
