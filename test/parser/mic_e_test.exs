@@ -240,5 +240,24 @@ defmodule Aprs.MicETest do
       assert parsed.data_extended.symbol_table_id == "/"
       assert parsed.data_extended.symbol_code == "k"
     end
+
+    test "handles VE6LY-7 packet with comment parsing correctly" do
+      # This packet contains a human-readable comment that should be parsed correctly
+      # The comment should be "146.760MHzAndy S andy@nsnw.ca" without the trailing "^" and "--"
+      packet = "VE6LY-7>U0TVXY,VE6LY-9,VE7RSS,WIDE2*,qAR,VE7KPZ-10:`/(ql [/>`\"7n}146.760MHzAndy S andy@nsnw.ca^ --"
+
+      {:ok, parsed} = Aprs.parse(packet)
+
+      assert parsed.data_type == :mic_e_old
+      assert parsed.sender == "VE6LY-7"
+      assert parsed.destination == "U0TVXY"
+
+      # The comment should only include the readable part, not the "^" and "--" at the end
+      assert parsed.data_extended.comment == "146.760MHzAndy S andy@nsnw.ca"
+
+      # Verify symbol - In MicE, the symbol_code and symbol_table_id are swapped compared to normal position reports
+      assert parsed.data_extended.symbol_table_id == ">"
+      assert parsed.data_extended.symbol_code == "/"
+    end
   end
 end
