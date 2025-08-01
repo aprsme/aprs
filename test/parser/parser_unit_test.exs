@@ -5,8 +5,8 @@ defmodule Aprs.ParserUnitTest do
     test "parses valid APRS lat/lon" do
       # 4903.50N/12311.12W>
       result = Aprs.parse_position_without_timestamp("4903.50N/12311.12W>comment")
-      assert Decimal.equal?(Decimal.round(result.latitude, 4), Decimal.new("49.0583"))
-      assert Decimal.equal?(Decimal.round(result.longitude, 4), Decimal.new("-123.1853"))
+      assert Float.round(result.latitude, 4) == 49.0583
+      assert Float.round(result.longitude, 4) == -123.1853
     end
 
     test "returns nils for invalid lat/lon" do
@@ -46,8 +46,8 @@ defmodule Aprs.ParserUnitTest do
         )
 
       assert is_map(result)
-      assert Decimal.equal?(Decimal.round(result.latitude, 4), Decimal.new("49.2742"))
-      assert Decimal.equal?(Decimal.round(result.longitude, 4), Decimal.new("-123.1853"))
+      assert Float.round(result.latitude, 4) == 49.2742
+      assert Float.round(result.longitude, 4) == -123.1853
       refute is_nil(result.weather)
       assert result.timestamp == "201750z"
     end

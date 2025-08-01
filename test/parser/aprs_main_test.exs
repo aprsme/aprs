@@ -4,7 +4,7 @@ defmodule Aprs.MainTest do
 
   describe "version/0" do
     test "returns version string" do
-      assert Aprs.version() == "0.1.4"
+      assert Aprs.version() == "0.1.5"
       assert is_binary(Aprs.version())
     end
   end

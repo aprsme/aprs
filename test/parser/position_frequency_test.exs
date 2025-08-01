@@ -29,7 +29,7 @@ defmodule Aprs.Parser.PositionFrequencyTest do
       {:ok, parsed} = Aprs.parse(packet)
 
       assert parsed.data_type == :position_with_message
-      assert parsed.data_extended[:comment] == "/090/045 Moving East at 45kt"
+      assert parsed.data_extended[:comment] == "Moving East at 45kt"
       assert parsed.data_extended[:course] == 90
       assert parsed.data_extended[:speed] == 45.0
     end
