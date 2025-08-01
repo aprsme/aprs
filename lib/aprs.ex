@@ -1098,7 +1098,7 @@ defmodule Aprs do
     case parse_callsign(sender) do
       {:ok, callsign_parts} ->
         base_callsign = List.first(callsign_parts)
-        ssid = extract_ssid(List.last(callsign_parts))
+        ssid = List.last(callsign_parts)
 
         case split_path_for_tunnel(path) do
           {:ok, [destination, digi_path]} ->

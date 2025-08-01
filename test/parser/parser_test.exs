@@ -391,11 +391,44 @@ defmodule Aprs.ParserTest do
       assert result[:data_type] == :user_defined
     end
 
-    # test "returns map for third_party_traffic" do
-    #   result = Aprs.parse_data(:third_party_traffic, "", "}thirdparty")
-    #   assert is_map(result)
-    #   assert result[:data_type] == :third_party_traffic
-    # end
+    test "returns map for third_party_traffic" do
+      result =
+        Aprs.parse_data(
+          :third_party_traffic,
+          "",
+          "}F1IQH>TWPQR3,RS0ISS*,WIDE2-1,qAO,DF1GP-10:`{5Fl -/`439.750MHz t077 -940 michael_1"
+        )
+
+      assert is_map(result)
+      assert result[:data_type] == :third_party_traffic
+    end
+
+    test "handles third-party packet with embedded Mic-E from HB9BA-2" do
+      packet =
+        "HB9BA-2>APDI22,HB9XC-4*,qAS,DB0TN-10:}F1IQH>TWPQR3,RS0ISS*,WIDE2-1,qAO,DF1GP-10:`{5Fl -/`439.750MHz t077 -940 michael_1"
+
+      {:ok, parsed} = Aprs.parse(packet)
+      assert parsed.sender == "HB9BA-2"
+      assert parsed.data_type == :third_party_traffic
+
+      # Check the third-party packet was parsed
+      assert is_map(parsed.data_extended)
+      assert parsed.data_extended.data_type == :third_party_traffic
+      assert is_map(parsed.data_extended.third_party_packet)
+
+      # Check the embedded packet details
+      third_party = parsed.data_extended.third_party_packet
+      assert third_party.sender == "F1IQH"
+      assert third_party.destination == "TWPQR3"
+      assert third_party.data_type == :mic_e_old
+
+      # Check the Mic-E data was parsed
+      assert is_map(third_party.data_extended)
+      assert third_party.data_extended.data_type == :mic_e
+      assert is_struct(third_party.data_extended.latitude, Decimal)
+      assert is_struct(third_party.data_extended.longitude, Decimal)
+      assert third_party.data_extended.comment == "439.750MHz t077 -940 michael_1"
+    end
 
     test "returns map for peet_logging" do
       result = Aprs.parse_data(:peet_logging, "", "*peet")
