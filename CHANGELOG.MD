@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Third-Party Traffic Parsing**: Fixed FunctionClauseError in third-party packet parsing caused by incorrect SSID extraction in tunneled packets
+- **Invalid Position Data Handling**: Added graceful error handling for packets with invalid UTF-8 characters in position data
+  - Packets with invalid characters in compressed positions now return descriptive error messages instead of crashing
+  - Added proper handling of UnicodeConversionError in compressed position helpers
+  - Distinguishes between "Invalid compressed location" and "Invalid uncompressed location" errors
+
+### Added
+- **Enhanced Error Messages**: Position parsing now returns specific error messages for different types of invalid data
+- **UTF-8 Safety**: Added safe_to_charlist function to handle invalid UTF-8 sequences in compressed position data
+- **Comprehensive Test Coverage**: Added tests for various invalid packet formats including:
+  - DB0WV-11 packet with UTF-8 characters in uncompressed position
+  - HB9ZF-12 packet with UTF-8 characters in compressed position  
+  - TSwWV-8 packet with mixed format position data
+  - HB9ELZ-7 packet with malformed UTF-8 encoding
+  - KO6TX-1 third-party traffic packet validation
 
 ## [0.1.4] - 2025-07-07
 
