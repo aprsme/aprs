@@ -429,6 +429,35 @@ defmodule Aprs.ParserTest do
       assert is_struct(third_party.data_extended.longitude, Decimal)
       assert third_party.data_extended.comment == "439.750MHz t077 -940 michael_1"
     end
+    
+    test "handles third-party packet with embedded position from KO6TX-1" do
+      packet =
+        "KO6TX-1>APDW17,KF6ILA-10*,WIDE2-1,qAR,WM6Y-10:}SMS>APOSMS,TCPIH,KO6TX-1*:!4024.51N/14943.02W$SMS Gateway (US, Canada, Australea & UK ONLY) - NA7Q"
+
+      {:ok, parsed} = Aprs.parse(packet)
+      assert parsed.sender == "KO6TX-1"
+      assert parsed.data_type == :third_party_traffic
+
+      # Check the third-party packet was parsed
+      assert is_map(parsed.data_extended)
+      assert parsed.data_extended.data_type == :third_party_traffic
+      assert is_map(parsed.data_extended.third_party_packet)
+
+      # Check the embedded packet details
+      third_party = parsed.data_extended.third_party_packet
+      assert third_party.sender == "SMS"
+      assert third_party.destination == "APOSMS"
+      assert third_party.data_type == :position
+
+      # Check the position data was parsed
+      assert is_map(third_party.data_extended)
+      assert third_party.data_extended.data_type == :position
+      assert is_struct(third_party.data_extended.latitude, Decimal)
+      assert is_struct(third_party.data_extended.longitude, Decimal)
+      assert third_party.data_extended.has_position == true
+      assert third_party.data_extended.symbol_code == "$"
+      assert third_party.data_extended.comment =~ "SMS Gateway"
+    end
 
     test "returns map for peet_logging" do
       result = Aprs.parse_data(:peet_logging, "", "*peet")

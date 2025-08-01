@@ -9,23 +9,54 @@ defmodule Aprs.CompressedPositionHelpers do
 
   @spec convert_compressed_lat(binary()) :: {:ok, float()} | {:error, String.t()}
   def convert_compressed_lat(lat) when is_binary(lat) and byte_size(lat) == 4 do
-    [l1, l2, l3, l4] = to_charlist(lat)
-    value = calculate_base91_value([l1, l2, l3, l4])
-    lat_val = 90 - value / @lat_divisor
-    {:ok, clamp_lat(lat_val)}
+    case safe_to_charlist(lat) do
+      {:ok, [l1, l2, l3, l4]}
+      when l1 >= 33 and l1 <= 126 and
+             l2 >= 33 and l2 <= 126 and
+             l3 >= 33 and l3 <= 126 and
+             l4 >= 33 and l4 <= 126 ->
+        value = calculate_base91_value([l1, l2, l3, l4])
+        lat_val = 90 - value / @lat_divisor
+        {:ok, clamp_lat(lat_val)}
+
+      {:ok, _} ->
+        {:error, "Invalid compressed latitude - contains non-ASCII characters"}
+
+      {:error, _} ->
+        {:error, "Invalid compressed latitude - invalid encoding"}
+    end
   end
 
   def convert_compressed_lat(_), do: {:error, "Invalid compressed latitude"}
 
   @spec convert_compressed_lon(binary()) :: {:ok, float()} | {:error, String.t()}
   def convert_compressed_lon(lon) when is_binary(lon) and byte_size(lon) == 4 do
-    [l1, l2, l3, l4] = to_charlist(lon)
-    value = calculate_base91_value([l1, l2, l3, l4])
-    lon_val = -180 + value / @lon_divisor
-    {:ok, clamp_lon(lon_val)}
+    case safe_to_charlist(lon) do
+      {:ok, [l1, l2, l3, l4]}
+      when l1 >= 33 and l1 <= 126 and
+             l2 >= 33 and l2 <= 126 and
+             l3 >= 33 and l3 <= 126 and
+             l4 >= 33 and l4 <= 126 ->
+        value = calculate_base91_value([l1, l2, l3, l4])
+        lon_val = -180 + value / @lon_divisor
+        {:ok, clamp_lon(lon_val)}
+
+      {:ok, _} ->
+        {:error, "Invalid compressed longitude - contains non-ASCII characters"}
+
+      {:error, _} ->
+        {:error, "Invalid compressed longitude - invalid encoding"}
+    end
   end
 
   def convert_compressed_lon(_), do: {:error, "Invalid compressed longitude"}
+
+  # Safe conversion to charlist that handles invalid UTF-8
+  defp safe_to_charlist(binary) do
+    {:ok, to_charlist(binary)}
+  rescue
+    UnicodeConversionError -> {:error, :invalid_utf8}
+  end
 
   # Optimized base91 calculation
   defp calculate_base91_value([c1, c2, c3, c4]) do

@@ -732,21 +732,24 @@ defmodule Aprs do
 
         Map.merge(base_data, compressed_cs)
 
+      {{:error, lat_error}, _} ->
+        %{
+          data_type: :position_error,
+          error_message: "Invalid compressed location: #{lat_error}",
+          has_position: false
+        }
+
+      {_, {:error, lon_error}} ->
+        %{
+          data_type: :position_error,
+          error_message: "Invalid compressed location: #{lon_error}",
+          has_position: false
+        }
+
       _ ->
         %{
-          latitude: nil,
-          longitude: nil,
-          symbol_table_id: "/",
-          symbol_code: symbol_code,
-          comment: comment,
-          position_format: :compressed,
-          compression_type: compression_type,
-          data_type: :position,
-          compressed?: true,
-          position_ambiguity: Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity(compression_type),
-          dao: nil,
-          course: nil,
-          speed: nil,
+          data_type: :position_error,
+          error_message: "Invalid compressed location",
           has_position: false
         }
     end
@@ -785,21 +788,24 @@ defmodule Aprs do
 
         Map.merge(base_data, compressed_cs)
 
+      {{:error, lat_error}, _} ->
+        %{
+          data_type: :position_error,
+          error_message: "Invalid compressed location: #{lat_error}",
+          has_position: false
+        }
+
+      {_, {:error, lon_error}} ->
+        %{
+          data_type: :position_error,
+          error_message: "Invalid compressed location: #{lon_error}",
+          has_position: false
+        }
+
       _ ->
         %{
-          latitude: nil,
-          longitude: nil,
-          symbol_table_id: "/",
-          symbol_code: symbol_code,
-          comment: comment,
-          position_format: :compressed,
-          compression_type: compression_type,
-          data_type: :position,
-          compressed?: true,
-          position_ambiguity: Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity(compression_type),
-          dao: nil,
-          course: nil,
-          speed: nil,
+          data_type: :position_error,
+          error_message: "Invalid compressed location",
           has_position: false
         }
     end
