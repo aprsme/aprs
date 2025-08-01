@@ -8,15 +8,37 @@ defmodule Aprs.Telemetry do
   """
   @spec parse(String.t()) :: map() | nil
   def parse("T#" <> rest) do
+    parse_telemetry_data(rest)
+  end
+
+  def parse("#" <> rest) do
+    # Handle case where T is already stripped
+    parse_telemetry_data(rest)
+  end
+
+  defp parse_telemetry_data(rest) do
     case String.split(rest, ",") do
-      [seq | [_ | _] = values] ->
+      [seq | values] when length(values) >= 6 ->
+        # Take first 5 as analog values
         analog_values = Enum.take(values, 5)
-        digital_values = values |> Enum.drop(5) |> Enum.take(8)
+        # The 6th element should be the 8-bit digital value string
+        bits_string = Enum.at(values, 5, "00000000")
+
+        # Format analog values as strings with 2 decimal places
+        formatted_vals =
+          Enum.map(analog_values, fn val ->
+            case Float.parse(val) do
+              {float_val, _} -> :erlang.float_to_binary(float_val, decimals: 2)
+              :error -> val
+            end
+          end)
 
         %{
-          sequence_number: Aprs.TelemetryHelpers.parse_telemetry_sequence(seq),
-          analog_values: Aprs.TelemetryHelpers.parse_analog_values(analog_values),
-          digital_values: Aprs.TelemetryHelpers.parse_digital_values(digital_values),
+          telemetry: %{
+            seq: seq,
+            vals: formatted_vals,
+            bits: bits_string
+          },
           data_type: :telemetry,
           raw_data: rest
         }

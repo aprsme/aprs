@@ -32,7 +32,12 @@ defmodule Aprs do
 
       lat = if lat_dir == "S", do: Decimal.negate(lat_val), else: lat_val
       lon = if lon_dir == "W", do: Decimal.negate(lon_val), else: lon_val
-      %{latitude: lat, longitude: lon}
+
+      # Convert to float for FAP compatibility
+      lat_float = Decimal.to_float(lat)
+      lon_float = Decimal.to_float(lon)
+
+      %{latitude: lat_float, longitude: lon_float}
     else
       _ -> %{latitude: nil, longitude: nil}
     end
@@ -705,6 +710,9 @@ defmodule Aprs do
 
     has_position = valid_coordinate?(lat) and valid_coordinate?(lon)
 
+    # Calculate position resolution based on ambiguity
+    posresolution = Aprs.UtilityHelpers.calculate_position_resolution(ambiguity)
+
     base_map = %{
       latitude: lat,
       longitude: lon,
@@ -720,7 +728,9 @@ defmodule Aprs do
       dao: dao_data,
       course: course,
       speed: speed,
-      has_position: has_position
+      has_position: has_position,
+      posresolution: posresolution,
+      format: "uncompressed"
     }
 
     # Check if this is a weather packet and merge accordingly
@@ -762,12 +772,18 @@ defmodule Aprs do
 
         has_position = valid_coordinate?(converted_lat) and valid_coordinate?(converted_lon)
 
+        # Extract telemetry from comment if present
+        {telemetry, cleaned_comment} = Aprs.TelemetryFromComment.extract_telemetry_from_comment(comment)
+
+        # Calculate position resolution for compressed format
+        posresolution = Aprs.UtilityHelpers.calculate_compressed_position_resolution()
+
         base_data = %{
           latitude: converted_lat,
           longitude: converted_lon,
           symbol_table_id: "/",
           symbol_code: symbol_code,
-          comment: comment,
+          comment: cleaned_comment,
           position_format: :compressed,
           compression_type: compression_type,
           compression_info: compression_info,
@@ -775,10 +791,19 @@ defmodule Aprs do
           compressed?: true,
           position_ambiguity: ambiguity,
           dao: nil,
-          has_position: has_position
+          has_position: has_position,
+          posresolution: posresolution,
+          format: "compressed"
         }
 
-        Map.merge(base_data, compressed_cs)
+        # Add telemetry if found
+        data_with_cs = Map.merge(base_data, compressed_cs)
+
+        if telemetry do
+          Map.put(data_with_cs, :telemetry, telemetry)
+        else
+          data_with_cs
+        end
 
       {{:error, lat_error}, _} ->
         %{
@@ -835,12 +860,18 @@ defmodule Aprs do
       {{:ok, converted_lat}, {:ok, converted_lon}} ->
         has_position = valid_coordinate?(converted_lat) and valid_coordinate?(converted_lon)
 
-        %{
+        # Extract telemetry from comment if present
+        {telemetry, cleaned_comment} = Aprs.TelemetryFromComment.extract_telemetry_from_comment(comment)
+
+        # Calculate position resolution for compressed format
+        posresolution = Aprs.UtilityHelpers.calculate_compressed_position_resolution()
+
+        base_data = %{
           latitude: converted_lat,
           longitude: converted_lon,
           symbol_table_id: sym_table_id,
           symbol_code: symbol_code,
-          comment: comment,
+          comment: cleaned_comment,
           position_format: :compressed,
           compression_type: nil,
           data_type: :position,
@@ -849,8 +880,17 @@ defmodule Aprs do
           dao: nil,
           has_position: has_position,
           course: nil,
-          speed: nil
+          speed: nil,
+          posresolution: posresolution,
+          format: "compressed"
         }
+
+        # Add telemetry if found
+        if telemetry do
+          Map.put(base_data, :telemetry, telemetry)
+        else
+          base_data
+        end
 
       {{:error, lat_error}, _} ->
         %{

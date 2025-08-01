@@ -20,12 +20,12 @@ defmodule Aprs.TelemetryTest do
     end
 
     test "parses T# telemetry string with analog and digital values" do
-      result = Telemetry.parse("T#123,1,2,3,4,5,1,0,1,0,1,0,1")
+      result = Telemetry.parse("T#123,1,2,3,4,5,10101010")
       assert is_map(result)
       assert result[:data_type] == :telemetry
-      assert result[:sequence_number] == 123
-      assert is_list(result[:analog_values])
-      assert is_list(result[:digital_values])
+      assert result[:telemetry][:seq] == "123"
+      assert result[:telemetry][:vals] == ["1.00", "2.00", "3.00", "4.00", "5.00"]
+      assert result[:telemetry][:bits] == "10101010"
     end
 
     test "parses :PARM. telemetry parameter names" do
