@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - TSwWV-8 packet with mixed format position data
   - HB9ELZ-7 packet with malformed UTF-8 encoding
   - KO6TX-1 third-party traffic packet validation
+- **Position Resolution Parsing**: Added full support for compressed position resolution (ambiguity) levels 0-4
+  - Extracts position resolution from compression type byte (bits 2-4)
+  - Supports all standard APRS ambiguity levels: exact, 0.1', 1', 10', 1°
+- **Compression Type Details**: Enhanced parsing of compression type byte to extract:
+  - GPS fix type (other, GLL/GGA, RMC)
+  - Position resolution/ambiguity level
+  - Old GPS data flag
+- **Alternate Compressed Formats**: Support for compressed positions with leading symbol table ID (e.g., 'L' format)
 
 ## [0.1.4] - 2025-07-07
 

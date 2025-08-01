@@ -429,7 +429,7 @@ defmodule Aprs.ParserTest do
       assert is_struct(third_party.data_extended.longitude, Decimal)
       assert third_party.data_extended.comment == "439.750MHz t077 -940 michael_1"
     end
-    
+
     test "handles third-party packet with embedded position from KO6TX-1" do
       packet =
         "KO6TX-1>APDW17,KF6ILA-10*,WIDE2-1,qAR,WM6Y-10:}SMS>APOSMS,TCPIH,KO6TX-1*:!4024.51N/14943.02W$SMS Gateway (US, Canada, Australea & UK ONLY) - NA7Q"
