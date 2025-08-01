@@ -599,6 +599,36 @@ defmodule Aprs do
           comment
         )
 
+      # Compressed position with leading symbol table (alternate table)
+      <<sym_table_id::binary-size(1), latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), 
+        symbol_code::binary-size(1), rest::binary>>
+      when byte_size(position_data) >= 10 ->
+        # Check if this is likely an alternate symbol table format
+        # by checking if sym_table_id is a common alternate table char
+        case sym_table_id do
+          <<"L">> ->
+            # This is the specific format we're looking for
+            parse_position_compressed_with_symbol_table(
+              sym_table_id,
+              latitude_compressed,
+              longitude_compressed,
+              symbol_code,
+              rest
+            )
+          <<"\\">> ->
+            # Alternate symbol table
+            parse_position_compressed_with_symbol_table(
+              sym_table_id,
+              latitude_compressed,
+              longitude_compressed,
+              symbol_code,
+              rest
+            )
+          _ ->
+            # Not an alternate table, try other formats
+            parse_position_without_timestamp_fallback(position_data)
+        end
+
       # Fallback: try to parse as compressed position without "/" prefix
       <<latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), symbol_code::binary-size(1),
         cs::binary-size(2), compression_type::binary-size(1), comment::binary>>
@@ -628,6 +658,18 @@ defmodule Aprs do
   # Helper function to try parsing as compressed position without "/" prefix
   defp try_parse_compressed_without_prefix(position_data) do
     case position_data do
+      # Check for alternate symbol table compressed format first
+      <<sym_table_id::binary-size(1), latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), 
+        symbol_code::binary-size(1), rest::binary>>
+      when byte_size(position_data) >= 10 and sym_table_id in [<<"L">>, <<"\\">>] ->
+        parse_position_compressed_with_symbol_table(
+          sym_table_id,
+          latitude_compressed,
+          longitude_compressed,
+          symbol_code,
+          rest
+        )
+        
       <<latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), symbol_code::binary-size(1),
         cs::binary-size(2), compression_type::binary-size(1), comment::binary>>
       when byte_size(position_data) >= 13 ->
@@ -731,6 +773,78 @@ defmodule Aprs do
         }
 
         Map.merge(base_data, compressed_cs)
+
+      {{:error, lat_error}, _} ->
+        %{
+          data_type: :position_error,
+          error_message: "Invalid compressed location: #{lat_error}",
+          has_position: false
+        }
+
+      {_, {:error, lon_error}} ->
+        %{
+          data_type: :position_error,
+          error_message: "Invalid compressed location: #{lon_error}",
+          has_position: false
+        }
+
+      _ ->
+        %{
+          data_type: :position_error,
+          error_message: "Invalid compressed location",
+          has_position: false
+        }
+    end
+  end
+
+  defp parse_position_without_timestamp_fallback(position_data) do
+    # Try the standard compressed format without prefix
+    case position_data do
+      <<latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), symbol_code::binary-size(1),
+        cs::binary-size(2), compression_type::binary-size(1), comment::binary>>
+      when byte_size(position_data) >= 13 ->
+        parse_position_compressed_missing_prefix(
+          latitude_compressed,
+          longitude_compressed,
+          symbol_code,
+          cs,
+          compression_type,
+          comment
+        )
+        
+      _ ->
+        parse_position_malformed(position_data)
+    end
+  end
+
+  defp parse_position_compressed_with_symbol_table(
+         sym_table_id,
+         latitude_compressed,
+         longitude_compressed,
+         symbol_code,
+         comment
+       ) do
+    case {Aprs.CompressedPositionHelpers.convert_compressed_lat(latitude_compressed),
+          Aprs.CompressedPositionHelpers.convert_compressed_lon(longitude_compressed)} do
+      {{:ok, converted_lat}, {:ok, converted_lon}} ->
+        has_position = valid_coordinate?(converted_lat) and valid_coordinate?(converted_lon)
+
+        %{
+          latitude: converted_lat,
+          longitude: converted_lon,
+          symbol_table_id: sym_table_id,
+          symbol_code: symbol_code,
+          comment: comment,
+          position_format: :compressed,
+          compression_type: nil,
+          data_type: :position,
+          compressed?: true,
+          position_ambiguity: 0,
+          dao: nil,
+          has_position: has_position,
+          course: nil,
+          speed: nil
+        }
 
       {{:error, lat_error}, _} ->
         %{
