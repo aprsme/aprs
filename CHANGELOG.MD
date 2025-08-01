@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Standard APRS Parser Fields**: Added comprehensive field compatibility with standard APRS parsers:
+  - `posambiguity`: Position ambiguity level (0-4)
+  - `format`: Position format indicator ("compressed" or "uncompressed")
+  - `alive`: Packet validity indicator (always 1)
+  - `symboltable`: Symbol table identifier
+  - `symbolcode`: Symbol code identifier
+  - `messaging`: APRS messaging capability for compressed positions
+  - `srccallsign`: Source callsign field
+  - `dstcallsign`: Destination callsign field
+  - `body`: Information field content
+  - `origpacket`: Complete original packet string
+  - `header`: Packet header without information field
+- **Weather Data Extraction**: Implemented comprehensive weather data parsing from position comments:
+  - `wx`: Dedicated weather data field extracted from comments
+  - Automatic detection and extraction of weather patterns (temperature, humidity, pressure, wind, rain)
+  - Clean separation of weather data from comment text
+- **Radiorange (RNG) Parsing**: Added support for radio range field extraction from comments
+  - Parses "RNG0001" format and converts to range in miles
+  - Removes RNG data from comment after extraction
+- **Enhanced Comment Processing**: Improved comment parsing with proper whitespace handling and data extraction
+
+### Fixed
+- **PHG Data Format**: Fixed PHG parsing to return string representation (e.g., "1060") instead of map structure for better compatibility
+- **Comment Cleaning**: Improved comment field cleaning to properly extract and remove embedded data (PHG, weather, RNG)
+- **APRS Messaging for Compressed Positions**: Added proper APRS messaging bit extraction from compression type byte
+- **Data Type Consistency**: Maintained proper data_type values for MicE packets (mic_e vs mic_e_old) based on packet format
+
+### Changed
+- **Compressed Position Helpers**: Extended compression type parsing to include APRS messaging capability (bit 6)
+- **MicE Parser**: Enhanced to accept and preserve original data_type classification
+- **PHG Module**: Implemented full PHG/DFS parsing with string output format
+
 ## [0.1.5] - 2025-08-01
 
 ### Fixed
