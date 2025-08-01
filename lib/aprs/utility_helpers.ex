@@ -82,4 +82,44 @@ defmodule Aprs.UtilityHelpers do
 
   @spec validate_timestamp(any()) :: nil
   def validate_timestamp(_time), do: nil
+
+  @doc """
+  Calculate position resolution in meters based on ambiguity level.
+
+  Ambiguity levels and their resolutions:
+  - 0: No ambiguity - 18.52 meters (0.01 minute)
+  - 1: 0.1 minute - 185.2 meters
+  - 2: 1 minute - 1852 meters  
+  - 3: 10 minutes - 18520 meters
+  - 4: 1 degree - 111120 meters
+
+  For compressed positions, the resolution is calculated differently.
+  """
+  @spec calculate_position_resolution(integer()) :: float()
+  def calculate_position_resolution(ambiguity) when is_integer(ambiguity) do
+    case ambiguity do
+      # 0.01 minute at equator
+      0 -> 18.52
+      # 0.1 minute
+      1 -> 185.2
+      # 1 minute
+      2 -> 1852.0
+      # 10 minutes
+      3 -> 18_520.0
+      # 1 degree (60 minutes)
+      4 -> 111_120.0
+      # Default to no ambiguity
+      _ -> 18.52
+    end
+  end
+
+  @doc """
+  Calculate position resolution for compressed positions.
+  Compressed positions have much finer resolution.
+  """
+  @spec calculate_compressed_position_resolution() :: float()
+  def calculate_compressed_position_resolution do
+    # Compressed positions have approximately 0.291 meter resolution
+    0.291
+  end
 end

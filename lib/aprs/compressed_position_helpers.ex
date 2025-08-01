@@ -6,7 +6,7 @@ defmodule Aprs.CompressedPositionHelpers do
   import Bitwise
 
   # Pre-calculated constants for better performance
-  @lat_divisor 456_976
+  @lat_divisor 380_926
   @lon_divisor 190_463
 
   @spec convert_compressed_lat(binary()) :: {:ok, float()} | {:error, String.t()}

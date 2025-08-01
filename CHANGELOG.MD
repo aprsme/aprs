@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Packets with invalid characters in compressed positions now return descriptive error messages instead of crashing
   - Added proper handling of UnicodeConversionError in compressed position helpers
   - Distinguishes between "Invalid compressed location" and "Invalid uncompressed location" errors
+- **Compressed Latitude Calculation**: Fixed incorrect divisor (was 456976, now 380926) for compressed latitude
+- **Telemetry Parsing**: Fixed telemetry parsing to handle both "T#" and "#" prefixes correctly
 
 ### Added
 - **Enhanced Error Messages**: Position parsing now returns specific error messages for different types of invalid data
@@ -31,6 +33,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Position resolution/ambiguity level
   - Old GPS data flag
 - **Alternate Compressed Formats**: Support for compressed positions with leading symbol table ID (e.g., 'L' format)
+- **Position Resolution Field**: Added posresolution field showing position accuracy in meters
+  - Uncompressed positions: 18.52m to 111,120m based on ambiguity
+  - Compressed positions: 0.291m precision
+- **Format Field**: Added format field indicating "compressed" or "uncompressed" position type
+- **Telemetry in Comments**: Extract base91-encoded telemetry data from position comments
+- **Enhanced Telemetry Parsing**: Improved telemetry packet structure with seq, vals, and bits fields
+- **Decimal Coordinate Conversion**: Convert latitude/longitude to float values instead of Decimal structs
 
 ## [0.1.4] - 2025-07-07
 
