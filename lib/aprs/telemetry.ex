@@ -16,41 +16,6 @@ defmodule Aprs.Telemetry do
     parse_telemetry_data(rest)
   end
 
-  defp parse_telemetry_data(rest) do
-    case String.split(rest, ",") do
-      [seq | values] when length(values) >= 6 ->
-        # Take first 5 as analog values
-        analog_values = Enum.take(values, 5)
-        # The 6th element should be the 8-bit digital value string
-        bits_string = Enum.at(values, 5, "00000000")
-
-        # Format analog values as strings with 2 decimal places
-        formatted_vals =
-          Enum.map(analog_values, fn val ->
-            case Float.parse(val) do
-              {float_val, _} -> :erlang.float_to_binary(float_val, decimals: 2)
-              :error -> val
-            end
-          end)
-
-        %{
-          telemetry: %{
-            seq: seq,
-            vals: formatted_vals,
-            bits: bits_string
-          },
-          data_type: :telemetry,
-          raw_data: rest
-        }
-
-      _ ->
-        %{
-          raw_data: rest,
-          data_type: :telemetry
-        }
-    end
-  end
-
   def parse(<<":PARM.", rest::binary>>) do
     %{
       data_type: :telemetry_parameters,
@@ -108,4 +73,39 @@ defmodule Aprs.Telemetry do
   end
 
   def parse(data), do: %{raw_data: data, data_type: :telemetry}
+
+  defp parse_telemetry_data(rest) do
+    case String.split(rest, ",") do
+      [seq | values] when length(values) >= 6 ->
+        # Take first 5 as analog values
+        analog_values = Enum.take(values, 5)
+        # The 6th element should be the 8-bit digital value string
+        bits_string = Enum.at(values, 5, "00000000")
+
+        # Format analog values as strings with 2 decimal places
+        formatted_vals =
+          Enum.map(analog_values, fn val ->
+            case Float.parse(val) do
+              {float_val, _} -> :erlang.float_to_binary(float_val, decimals: 2)
+              :error -> val
+            end
+          end)
+
+        %{
+          telemetry: %{
+            seq: seq,
+            vals: formatted_vals,
+            bits: bits_string
+          },
+          data_type: :telemetry,
+          raw_data: rest
+        }
+
+      _ ->
+        %{
+          raw_data: rest,
+          data_type: :telemetry
+        }
+    end
+  end
 end

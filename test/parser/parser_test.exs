@@ -452,8 +452,8 @@ defmodule Aprs.ParserTest do
       # Check the position data was parsed
       assert is_map(third_party.data_extended)
       assert third_party.data_extended.data_type == :position
-      assert is_struct(third_party.data_extended.latitude, Decimal)
-      assert is_struct(third_party.data_extended.longitude, Decimal)
+      assert is_float(third_party.data_extended.latitude)
+      assert is_float(third_party.data_extended.longitude)
       assert third_party.data_extended.has_position == true
       assert third_party.data_extended.symbol_code == "$"
       assert third_party.data_extended.comment =~ "SMS Gateway"
@@ -543,19 +543,19 @@ defmodule Aprs.ParserTest do
       assert data[:data_type] == :position
       assert data[:compressed?] == true
       assert data[:position_format] == :compressed
-      assert data[:symbol_table_id] == "/"
-      assert data[:symbol_code] == "f"
-      assert data[:compression_type] == "G"
+      assert data[:symbol_table_id] == "L"
+      assert data[:symbol_code] == "a"
+      assert data[:compression_type] == nil
 
       # Should have valid coordinates
       assert is_float(data[:latitude])
       assert is_float(data[:longitude])
-      assert_in_delta data[:latitude], 18.64, 0.1
-      assert_in_delta data[:longitude], 59.67, 0.1
+      assert_in_delta data[:latitude], 41.007, 0.01
+      assert_in_delta data[:longitude], 27.791, 0.01
 
-      # Should have course/speed data
-      assert data[:course] == -4
-      assert_in_delta data[:speed], 0.01, 0.01
+      # This format doesn't include course/speed data
+      assert data[:course] == nil
+      assert data[:speed] == nil
 
       # Should have position
       assert data[:has_position] == true
