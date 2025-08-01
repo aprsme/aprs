@@ -111,13 +111,19 @@ defmodule Aprs.CompressedPositionHelpersTest do
   describe "calculate_compressed_ambiguity/1" do
     property "returns 0-4 based on compression type character" do
       # Test with actual encoded values for position resolution
-      check all {char, expected} <- StreamData.member_of([
-        {"!", 0},  # 0x21 - 33 = 0, bits 2-4 = 000 = 0
-        {"%", 1},  # 0x25 - 33 = 4, bits 2-4 = 001 = 1
-        {")", 2},  # 0x29 - 33 = 8, bits 2-4 = 010 = 2
-        {"-", 3},  # 0x2D - 33 = 12, bits 2-4 = 011 = 3
-        {"1", 4}   # 0x31 - 33 = 16, bits 2-4 = 100 = 4
-      ]) do
+      check all {char, expected} <-
+                  StreamData.member_of([
+                    # 0x21 - 33 = 0, bits 2-4 = 000 = 0
+                    {"!", 0},
+                    # 0x25 - 33 = 4, bits 2-4 = 001 = 1
+                    {"%", 1},
+                    # 0x29 - 33 = 8, bits 2-4 = 010 = 2
+                    {")", 2},
+                    # 0x2D - 33 = 12, bits 2-4 = 011 = 3
+                    {"-", 3},
+                    # 0x31 - 33 = 16, bits 2-4 = 100 = 4
+                    {"1", 4}
+                  ]) do
         result = Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity(char <> "rest")
         assert result == expected
       end
