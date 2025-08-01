@@ -600,7 +600,7 @@ defmodule Aprs do
         )
 
       # Compressed position with leading symbol table (alternate table)
-      <<sym_table_id::binary-size(1), latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), 
+      <<sym_table_id::binary-size(1), latitude_compressed::binary-size(4), longitude_compressed::binary-size(4),
         symbol_code::binary-size(1), rest::binary>>
       when byte_size(position_data) >= 10 ->
         # Check if this is likely an alternate symbol table format
@@ -615,6 +615,7 @@ defmodule Aprs do
               symbol_code,
               rest
             )
+
           <<"\\">> ->
             # Alternate symbol table
             parse_position_compressed_with_symbol_table(
@@ -624,6 +625,7 @@ defmodule Aprs do
               symbol_code,
               rest
             )
+
           _ ->
             # Not an alternate table, try other formats
             parse_position_without_timestamp_fallback(position_data)
@@ -659,7 +661,7 @@ defmodule Aprs do
   defp try_parse_compressed_without_prefix(position_data) do
     case position_data do
       # Check for alternate symbol table compressed format first
-      <<sym_table_id::binary-size(1), latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), 
+      <<sym_table_id::binary-size(1), latitude_compressed::binary-size(4), longitude_compressed::binary-size(4),
         symbol_code::binary-size(1), rest::binary>>
       when byte_size(position_data) >= 10 and sym_table_id in [<<"L">>, <<"\\">>] ->
         parse_position_compressed_with_symbol_table(
@@ -669,7 +671,7 @@ defmodule Aprs do
           symbol_code,
           rest
         )
-        
+
       <<latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), symbol_code::binary-size(1),
         cs::binary-size(2), compression_type::binary-size(1), comment::binary>>
       when byte_size(position_data) >= 13 ->
@@ -753,7 +755,10 @@ defmodule Aprs do
           Aprs.CompressedPositionHelpers.convert_compressed_lon(longitude_compressed)} do
       {{:ok, converted_lat}, {:ok, converted_lon}} ->
         compressed_cs = Aprs.CompressedPositionHelpers.convert_compressed_cs(cs)
-        ambiguity = Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity(compression_type)
+
+        # Parse full compression type information
+        compression_info = Aprs.CompressedPositionHelpers.parse_compression_type(compression_type)
+        ambiguity = compression_info.position_resolution
 
         has_position = valid_coordinate?(converted_lat) and valid_coordinate?(converted_lon)
 
@@ -765,6 +770,7 @@ defmodule Aprs do
           comment: comment,
           position_format: :compressed,
           compression_type: compression_type,
+          compression_info: compression_info,
           data_type: :position,
           compressed?: true,
           position_ambiguity: ambiguity,
@@ -811,7 +817,7 @@ defmodule Aprs do
           compression_type,
           comment
         )
-        
+
       _ ->
         parse_position_malformed(position_data)
     end
@@ -881,7 +887,10 @@ defmodule Aprs do
           Aprs.CompressedPositionHelpers.convert_compressed_lon(longitude_compressed)} do
       {{:ok, converted_lat}, {:ok, converted_lon}} ->
         compressed_cs = Aprs.CompressedPositionHelpers.convert_compressed_cs(cs)
-        ambiguity = Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity(compression_type)
+
+        # Parse full compression type information
+        compression_info = Aprs.CompressedPositionHelpers.parse_compression_type(compression_type)
+        ambiguity = compression_info.position_resolution
 
         has_position = valid_coordinate?(converted_lat) and valid_coordinate?(converted_lon)
 
@@ -893,6 +902,7 @@ defmodule Aprs do
           comment: comment,
           position_format: :compressed,
           compression_type: compression_type,
+          compression_info: compression_info,
           data_type: :position,
           compressed?: true,
           position_ambiguity: ambiguity,

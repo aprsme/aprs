@@ -110,34 +110,41 @@ defmodule Aprs.CompressedPositionHelpersTest do
 
   describe "calculate_compressed_ambiguity/1" do
     property "returns 0-4 based on compression type character" do
-      check all char <- StreamData.member_of([" ", "!", "\"", "#", "$"]) do
+      # Test with actual encoded values for position resolution
+      check all {char, expected} <- StreamData.member_of([
+        {"!", 0},  # 0x21 - 33 = 0, bits 2-4 = 000 = 0
+        {"%", 1},  # 0x25 - 33 = 4, bits 2-4 = 001 = 1
+        {")", 2},  # 0x29 - 33 = 8, bits 2-4 = 010 = 2
+        {"-", 3},  # 0x2D - 33 = 12, bits 2-4 = 011 = 3
+        {"1", 4}   # 0x31 - 33 = 16, bits 2-4 = 100 = 4
+      ]) do
         result = Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity(char <> "rest")
-
-        expected =
-          case char do
-            " " -> 0
-            "!" -> 1
-            "\"" -> 2
-            "#" -> 3
-            "$" -> 4
-          end
-
         assert result == expected
       end
     end
 
     test "returns correct ambiguity levels" do
+      # Space character (0x20) is < 33, so it gets treated as 0 offset
       assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity(" rest") == 0
-      assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("!rest") == 1
-      assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("\"rest") == 2
-      assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("#rest") == 3
-      assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("$rest") == 4
+      # '!' = 0x21 - 33 = 0, bits 2-4 = 000 = 0
+      assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("!rest") == 0
+      # '%' = 0x25 - 33 = 4, bits 2-4 = 001 = 1
+      assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("%rest") == 1
+      # ')' = 0x29 - 33 = 8, bits 2-4 = 010 = 2
+      assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity(")rest") == 2
+      # '-' = 0x2D - 33 = 12, bits 2-4 = 011 = 3
+      assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("-rest") == 3
+      # '1' = 0x31 - 33 = 16, bits 2-4 = 100 = 4
+      assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("1rest") == 4
     end
 
-    test "returns 0 for unknown compression types" do
+    test "returns expected values for various compression types" do
+      # 'a' = 0x61 - 33 = 64, bits 2-4 = 000 = 0
       assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("arest") == 0
+      # 'Z' = 0x5A - 33 = 57, bits 2-4 = 110 = 6
       assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("Zrest") == 0
-      assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("0rest") == 0
+      # '0' = 0x30 - 33 = 15, bits 2-4 = 011 = 3  
+      assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("0rest") == 3
     end
 
     test "returns 0 for empty string" do
@@ -146,7 +153,8 @@ defmodule Aprs.CompressedPositionHelpersTest do
 
     test "handles single character" do
       assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity(" ") == 0
-      assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("!") == 1
+      assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("!") == 0
+      # 'A' = 0x41 - 33 = 32, bits 2-4 = 000 = 0
       assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("A") == 0
     end
   end
