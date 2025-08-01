@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2025-08-01
+
 ### Fixed
 - **Third-Party Traffic Parsing**: Fixed FunctionClauseError in third-party packet parsing caused by incorrect SSID extraction in tunneled packets
 - **Invalid Position Data Handling**: Added graceful error handling for packets with invalid UTF-8 characters in position data

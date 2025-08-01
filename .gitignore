@@ -40,3 +40,4 @@ k8s/secrets.yaml
 
 /.horusec
 
+parser_differences.log

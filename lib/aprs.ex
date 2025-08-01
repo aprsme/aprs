@@ -11,7 +11,7 @@ defmodule Aprs do
   alias Aprs.Telemetry
   alias Aprs.Weather
 
-  @version "0.1.4"
+  @version "0.1.5"
 
   @doc """
   Returns the current version of the APRS library as a static string.
