@@ -136,19 +136,36 @@ defmodule Aprs do
     data_without_type = extract_data_without_type(data_trimmed)
     data_extended = parse_data(data_type, destination, data_without_type)
 
-    {:ok,
-     %{
-       id: generate_packet_id(),
-       sender: sender,
-       path: path,
-       destination: destination,
-       information_field: data_trimmed,
-       data_type: data_type,
-       base_callsign: List.first(callsign_parts),
-       ssid: extract_ssid(callsign_parts),
-       data_extended: data_extended,
-       received_at: DateTime.truncate(DateTime.utc_now(), :microsecond)
-     }}
+    # Add standard APRS fields to the main packet structure
+    base_packet = %{
+      id: generate_packet_id(),
+      sender: sender,
+      path: path,
+      destination: destination,
+      information_field: data_trimmed,
+      data_type: data_type,
+      base_callsign: List.first(callsign_parts),
+      ssid: extract_ssid(callsign_parts),
+      data_extended: data_extended,
+      received_at: DateTime.truncate(DateTime.utc_now(), :microsecond),
+      # Standard APRS parser fields
+      srccallsign: sender,
+      dstcallsign: destination,
+      body: data_trimmed,
+      origpacket: sender <> ">" <> destination <> if(path == "", do: "", else: "," <> path) <> ":" <> data_trimmed,
+      header: sender <> ">" <> destination <> if(path == "", do: "", else: "," <> path),
+      alive: 1
+    }
+
+    # Merge data_extended fields into main packet
+    final_packet =
+      if is_map(data_extended) do
+        Map.merge(base_packet, data_extended)
+      else
+        base_packet
+      end
+
+    {:ok, final_packet}
   rescue
     _ -> {:error, :invalid_packet}
   end
@@ -295,8 +312,8 @@ defmodule Aprs do
 
   @spec parse_data(atom(), String.t(), String.t()) :: map() | nil
   def parse_data(:empty, _destination, _data), do: %{data_type: :empty}
-  def parse_data(:mic_e, destination, data), do: MicE.parse(data, destination)
-  def parse_data(:mic_e_old, destination, data), do: MicE.parse(data, destination)
+  def parse_data(:mic_e, destination, data), do: MicE.parse(data, destination, :mic_e)
+  def parse_data(:mic_e_old, destination, data), do: MicE.parse(data, destination, :mic_e_old)
   def parse_data(:object, _destination, data), do: Object.parse(data)
   def parse_data(:item, _destination, data), do: Item.parse(data)
   def parse_data(:weather, _destination, data), do: Weather.parse(data)
@@ -381,7 +398,7 @@ defmodule Aprs do
 
   def parse_data(:position_with_message, _destination, data) do
     result = parse_position_with_message_without_timestamp(data)
-    %{result | data_type: :position}
+    %{result | data_type: :position_with_message}
   end
 
   def parse_data(:timestamped_position, _destination, data) do
@@ -571,6 +588,76 @@ defmodule Aprs do
     end
   end
 
+  # Helper to extract PHG string from comment (for compatibility)
+  @spec extract_phg_string(String.t()) :: String.t() | nil
+  defp extract_phg_string(comment) do
+    case Regex.run(~r"PHG(\d{4})", comment) do
+      [_, phg_digits] -> phg_digits
+      _ -> nil
+    end
+  end
+
+  # Helper to extract radiorange (RNG) from comment and clean it
+  @spec extract_radiorange_and_clean_comment(String.t()) :: {String.t() | nil, String.t()}
+  defp extract_radiorange_and_clean_comment(comment) do
+    case Regex.run(~r"RNG(\d{4})", comment) do
+      [full_match, range_digits] ->
+        # Convert to range in miles (APRS standard)
+        range_miles = String.to_integer(range_digits)
+        cleaned_comment = comment |> String.replace(full_match, "") |> String.trim()
+        {Integer.to_string(range_miles), cleaned_comment}
+
+      _ ->
+        {nil, comment}
+    end
+  end
+
+  # Helper to extract weather data from comment and clean it
+  @spec extract_weather_and_clean_comment(String.t()) :: {map() | nil, String.t()}
+  defp extract_weather_and_clean_comment(comment) do
+    if Weather.weather_packet_comment?(comment) do
+      weather_data = Weather.parse_weather_data(comment)
+
+      # Extract all weather parameters and remove them from comment
+      cleaned_comment =
+        comment
+        # timestamp
+        |> remove_weather_pattern(~r/_\d{8}/)
+        # wind direction/speed  
+        |> remove_weather_pattern(~r/\d{3}\/\d{3}/)
+        # wind gust
+        |> remove_weather_pattern(~r/g\d{3}/)
+        # temperature
+        |> remove_weather_pattern(~r/t-?\d{3}/)
+        # rain 1h
+        |> remove_weather_pattern(~r/r\d{3}/)
+        # rain 24h
+        |> remove_weather_pattern(~r/p\d{3}/)
+        # rain since midnight
+        |> remove_weather_pattern(~r/P\d{3}/)
+        # humidity
+        |> remove_weather_pattern(~r/h\d{2}/)
+        # pressure
+        |> remove_weather_pattern(~r/b\d{5}/)
+        # luminosity
+        |> remove_weather_pattern(~r/L\d{3}/)
+        # luminosity (lowercase)
+        |> remove_weather_pattern(~r/l\d{3}/)
+        # snow
+        |> remove_weather_pattern(~r/s\d{3}/)
+        |> String.trim()
+
+      {weather_data, cleaned_comment}
+    else
+      {nil, comment}
+    end
+  end
+
+  # Helper to remove weather patterns from comment
+  defp remove_weather_pattern(comment, pattern) do
+    String.replace(comment, pattern, "")
+  end
+
   # Patch parse_position_without_timestamp to include course/speed
   @spec parse_position_without_timestamp(String.t()) :: map()
   def parse_position_without_timestamp(position_data) do
@@ -702,11 +789,18 @@ defmodule Aprs do
     # Extract altitude and clean the comment
     {altitude, comment_after_altitude} = extract_altitude_and_clean_comment(comment)
 
-    # Extract PHG data but don't remove it from comment
-    {phg_data, _comment_after_phg} = extract_phg_data(comment_after_altitude)
+    # Extract PHG data and get both the structured data and string representation
+    {_phg_data, comment_after_phg} = extract_phg_data(comment_after_altitude)
+    phg_string = extract_phg_string(comment_after_altitude)
+
+    # Extract RNG (radio range) data and clean comment
+    {radiorange, comment_after_rng} = extract_radiorange_and_clean_comment(comment_after_phg)
+
+    # Extract weather data from comment and clean it
+    {weather_data, comment_after_weather} = extract_weather_and_clean_comment(comment_after_rng)
 
     # Extract course and speed from the cleaned comment and clean it further
-    {course, speed, comment_cleaned} = extract_course_speed_and_clean_comment(comment_after_altitude)
+    {course, speed, comment_cleaned} = extract_course_speed_and_clean_comment(comment_after_weather)
 
     has_position = valid_coordinate?(lat) and valid_coordinate?(lon)
 
@@ -719,9 +813,11 @@ defmodule Aprs do
       timestamp: nil,
       symbol_table_id: sym_table_id,
       symbol_code: symbol_code,
-      comment: comment_cleaned,
+      # Ensure proper trimming
+      comment: String.trim(comment_cleaned),
       altitude: altitude,
-      phg: phg_data,
+      # Use string representation only
+      phg: phg_string,
       aprs_messaging?: false,
       compressed?: false,
       position_ambiguity: ambiguity,
@@ -730,7 +826,14 @@ defmodule Aprs do
       speed: speed,
       has_position: has_position,
       posresolution: posresolution,
-      format: "uncompressed"
+      format: "uncompressed",
+      # Standard parser fields
+      posambiguity: ambiguity,
+      symboltable: sym_table_id,
+      symbolcode: symbol_code,
+      messaging: 0,
+      radiorange: radiorange,
+      wx: weather_data
     }
 
     # Check if this is a weather packet and merge accordingly
@@ -756,7 +859,13 @@ defmodule Aprs do
       dao: nil,
       course: nil,
       speed: nil,
-      has_position: has_position
+      has_position: has_position,
+      format: "uncompressed",
+      # Standard parser fields
+      posambiguity: ambiguity,
+      symboltable: sym_table_id,
+      symbolcode: "_",
+      messaging: 0
     }
   end
 
@@ -793,7 +902,12 @@ defmodule Aprs do
           dao: nil,
           has_position: has_position,
           posresolution: posresolution,
-          format: "compressed"
+          format: "compressed",
+          # Standard parser fields
+          posambiguity: ambiguity,
+          symboltable: "/",
+          symbolcode: symbol_code,
+          messaging: compression_info.aprs_messaging
         }
 
         # Add telemetry if found
@@ -882,7 +996,12 @@ defmodule Aprs do
           course: nil,
           speed: nil,
           posresolution: posresolution,
-          format: "compressed"
+          format: "compressed",
+          # Standard parser fields
+          posambiguity: 0,
+          symboltable: sym_table_id,
+          symbolcode: symbol_code,
+          messaging: 0
         }
 
         # Add telemetry if found

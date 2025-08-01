@@ -139,6 +139,7 @@ defmodule Aprs.CompressedPositionHelpers do
   - gps_fix_type: NMEA source/GPS fix type (0-3)
   - position_resolution: Position ambiguity level (0-4)
   - old_gps_data: Whether this is old GPS data
+  - aprs_messaging: APRS messaging capability (bit 6)
   """
   @spec parse_compression_type(binary()) :: map()
   def parse_compression_type(<<char::8, _rest::binary>>) do
@@ -153,11 +154,14 @@ defmodule Aprs.CompressedPositionHelpers do
     resolution = type_value >>> 2 &&& 0x07
     # Bit 5
     old_data = type_value >>> 5 &&& 0x01
+    # Bit 6 - APRS messaging capability
+    messaging = type_value >>> 6 &&& 0x01
 
     %{
       gps_fix_type: decode_gps_fix_type(gps_fix),
       position_resolution: map_resolution_to_ambiguity(resolution),
-      old_gps_data: old_data == 1
+      old_gps_data: old_data == 1,
+      aprs_messaging: messaging
     }
   end
 
@@ -165,7 +169,8 @@ defmodule Aprs.CompressedPositionHelpers do
     %{
       gps_fix_type: :unknown,
       position_resolution: 0,
-      old_gps_data: false
+      old_gps_data: false,
+      aprs_messaging: 0
     }
   end
 

@@ -4,7 +4,9 @@ defmodule Aprs.MicE do
   """
 
   @spec parse(binary(), String.t()) :: map()
-  def parse(_data, nil) do
+  def parse(data, destination, data_type \\ :mic_e)
+
+  def parse(_data, nil, _data_type) do
     %{
       latitude: nil,
       longitude: nil,
@@ -13,7 +15,7 @@ defmodule Aprs.MicE do
     }
   end
 
-  def parse(data, destination) do
+  def parse(data, destination, data_type) do
     with {:ok, dest_info} <- parse_destination(destination),
          {:ok, _info_info} <- parse_information(data, dest_info.longitude_offset) do
       lat =
@@ -58,7 +60,7 @@ defmodule Aprs.MicE do
         symbol_table_id: info_info.symbol_table_id,
         comment: info_info.comment,
         altitude: info_info.altitude,
-        data_type: :mic_e
+        data_type: data_type
       }
     else
       _error ->

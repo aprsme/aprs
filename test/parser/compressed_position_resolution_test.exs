@@ -111,14 +111,16 @@ defmodule Aprs.CompressedPositionResolutionTest do
       assert Aprs.CompressedPositionHelpers.parse_compression_type(" ") == %{
                gps_fix_type: :other,
                position_resolution: 0,
-               old_gps_data: false
+               old_gps_data: false,
+               aprs_messaging: 0
              }
 
       # '!' (0x21) = offset 0
       assert Aprs.CompressedPositionHelpers.parse_compression_type("!") == %{
                gps_fix_type: :other,
                position_resolution: 0,
-               old_gps_data: false
+               old_gps_data: false,
+               aprs_messaging: 0
              }
 
       # Complex example: 'S' (0x53 = 83)
@@ -129,7 +131,8 @@ defmodule Aprs.CompressedPositionResolutionTest do
       assert Aprs.CompressedPositionHelpers.parse_compression_type("S") == %{
                gps_fix_type: :rmc,
                position_resolution: 4,
-               old_gps_data: true
+               old_gps_data: true,
+               aprs_messaging: 0
              }
     end
   end
