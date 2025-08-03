@@ -109,3 +109,10 @@ All parsed packets return a standardized map structure with:
 - Implement comprehensive error handling
 - Run `mix format` before committing
 - Address all Dialyzer warnings
+
+## Parser Compatibility Notes
+
+- **Speed and Altitude**: Leave speed and altitude values as they are decoded from the packet. Do not convert units.
+- **Field Names**: Use proper snake_case field names like `symbol_table_id` and `symbol_code` rather than concatenated names
+- **UTF-8 Handling**: If the Elixir parser correctly decodes UTF-8, leave it as is. Only adjust if the comment content itself needs fixing.
+- **Type Names**: Map internal type names to standard APRS types (e.g., `position_with_message` → `location`)

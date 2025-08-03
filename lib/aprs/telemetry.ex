@@ -98,7 +98,9 @@ defmodule Aprs.Telemetry do
             bits: bits_string
           },
           data_type: :telemetry,
-          raw_data: rest
+          raw_data: rest,
+          # FAP compatibility
+          mbits: bits_string
         }
 
       _ ->

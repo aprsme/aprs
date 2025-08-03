@@ -101,9 +101,9 @@ defmodule Aprs.MainTest do
     end
 
     test "handles malformed packets" do
-      assert {:error, "Invalid packet format"} = Aprs.split_packet("N0CALL:data")
-      assert {:error, "Invalid packet format"} = Aprs.split_packet("N0CALL>APRS")
-      assert {:error, "Invalid packet format"} = Aprs.split_packet("N0CALL>")
+      assert {:error, :invalid_packet} = Aprs.split_packet("N0CALL:data")
+      assert {:error, :invalid_packet} = Aprs.split_packet("N0CALL>APRS")
+      assert {:error, :invalid_packet} = Aprs.split_packet("N0CALL>")
       # This one actually works because empty sender is valid
       assert {:ok, ["", "APRS", "data"]} = Aprs.split_packet(">APRS:data")
     end

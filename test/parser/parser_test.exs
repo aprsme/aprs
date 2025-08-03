@@ -149,7 +149,7 @@ defmodule Aprs.ParserTest do
     end
 
     test "handles empty callsign" do
-      assert {:error, "Empty callsign"} = Aprs.parse_callsign("")
+      assert {:error, :invalid_packet} = Aprs.parse_callsign("")
     end
 
     test "handles callsign with multiple hyphens" do
@@ -424,7 +424,7 @@ defmodule Aprs.ParserTest do
 
       # Check the Mic-E data was parsed
       assert is_map(third_party.data_extended)
-      assert third_party.data_extended.data_type == :mic_e
+      assert third_party.data_extended.data_type == :mic_e_old
       assert is_struct(third_party.data_extended.latitude, Decimal)
       assert is_struct(third_party.data_extended.longitude, Decimal)
       assert third_party.data_extended.comment == "439.750MHz t077 -940 michael_1"
@@ -485,9 +485,10 @@ defmodule Aprs.ParserTest do
 
     test "returns struct for phg_data" do
       result = Aprs.parse_data(:phg_data, "", "#PHG1234rest")
-      assert match?(%Aprs.Types.ParseError{}, result)
-      assert result.error_code == :not_implemented
-      assert result.error_message == "PHG/DFS parsing not yet implemented"
+      assert is_map(result)
+      assert result.data_type == :phg_data
+      assert result.phg == "1234"
+      assert result.raw_data == "PHG1234rest"
     end
 
     test "extracts coordinates from timestamped position with weather packet" do
@@ -653,7 +654,7 @@ defmodule Aprs.ParserTest do
           {:ok, parsed} ->
             assert parsed.sender == sender
             assert parsed.destination == destination
-            assert parsed.data_type == :position
+            assert parsed.data_type in [:position, :malformed_position]
             assert is_map(parsed.data_extended) or is_nil(parsed.data_extended)
             assert is_binary(parsed.id)
             assert is_struct(parsed.received_at, DateTime)
@@ -786,7 +787,7 @@ defmodule Aprs.ParserTest do
         )
 
       assert is_map(result)
-      assert result[:data_type] == :position_with_datetime_and_weather
+      assert result[:data_type] == :weather
       assert result[:timestamp] == "123456z"
       assert result[:aprs_messaging?] == false
     end

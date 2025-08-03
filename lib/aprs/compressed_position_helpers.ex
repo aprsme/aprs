@@ -213,20 +213,26 @@ defmodule Aprs.CompressedPositionHelpers do
 
   @spec convert_compressed_cs(binary() | nil) :: map()
   def convert_compressed_cs(cs) when is_binary(cs) and byte_size(cs) == 2 do
-    [c, s] = to_charlist(cs)
-    _c_val = c - 33
-    s_val = s - 33
+    # Check for DAO extension pattern
+    if cs == "&!" do
+      # This is a DAO extension, not course/speed data
+      %{}
+    else
+      [c, s] = to_charlist(cs)
+      _c_val = c - 33
+      s_val = s - 33
 
-    cond do
-      c == ?Z ->
-        %{range: 2 * 1.08 ** s_val}
+      cond do
+        c == ?Z ->
+          %{range: 2 * 1.08 ** s_val}
 
-      c in ?!..?~ and c != ?Z ->
-        speed = max(Aprs.Convert.speed(1.08 ** s_val - 1, :knots, :mph), 0.01)
-        %{course: s_val * 4, speed: speed}
+        c in ?!..?~ and c != ?Z ->
+          speed = max(Aprs.Convert.speed(1.08 ** s_val - 1, :knots, :mph), 0.01)
+          %{course: s_val * 4, speed: speed}
 
-      true ->
-        %{}
+        true ->
+          %{}
+      end
     end
   end
 

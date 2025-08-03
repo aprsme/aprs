@@ -13,7 +13,7 @@ defmodule Aprs.AX25 do
         {:error, "Invalid callsign format"}
 
       byte_size(callsign) == 0 ->
-        {:error, "Empty callsign"}
+        {:error, :invalid_packet}
 
       String.contains?(callsign, "-") ->
         case String.split(callsign, "-") do

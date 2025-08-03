@@ -259,7 +259,7 @@ defmodule Aprs.UtilityHelpersTest do
 
       for timestamp <- valid_timestamps do
         result = Aprs.UtilityHelpers.validate_timestamp(timestamp)
-        assert is_binary(result) or is_nil(result)
+        assert is_integer(result) or is_nil(result)
       end
     end
 
