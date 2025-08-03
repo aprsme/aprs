@@ -238,9 +238,10 @@ defmodule Aprs.HelpersTest do
     end
 
     test "validate_timestamp handles valid input" do
-      time = "123456"
+      # Use a valid APRS timestamp format (DDHHMM)
+      time = "021234"  # Day 02, 12:34
       result = Aprs.UtilityHelpers.validate_timestamp(time)
-      assert result == nil
+      assert is_integer(result)
     end
 
     test "count_leading_braces handles valid input" do

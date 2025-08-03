@@ -25,7 +25,7 @@ defmodule Aprs.Weather do
   def parse_from_comment(comment) when is_binary(comment) do
     if weather_packet_comment?(comment) do
       weather_data = parse_weather_data(comment)
-      Map.merge(%{data_type: :weather, comment: comment}, weather_data)
+      Map.merge(%{comment: comment, data_type: :weather}, weather_data)
     end
   end
 
@@ -88,13 +88,19 @@ defmodule Aprs.Weather do
     }
 
     # Ensure all keys are atoms in the result
-    result = %{timestamp: timestamp, data_type: :weather, raw_weather_data: weather_data}
+    result = %{timestamp: timestamp, raw_weather_data: weather_data}
 
-    weather_values
-    |> Enum.reduce(result, fn {key, value}, acc ->
-      put_weather_value(acc, key, value)
-    end)
-    |> atomize_keys_recursive()
+    full_weather_data =
+      weather_values
+      |> Enum.reduce(result, fn {key, value}, acc ->
+        put_weather_value(acc, key, value)
+      end)
+      |> atomize_keys_recursive()
+
+    # Add wx field for FAP compatibility (contains all weather values)
+    full_weather_data
+    |> Map.put(:wx, weather_values)
+    |> Map.put(:data_type, :weather)
   end
 
   defp put_weather_value(acc, _key, nil), do: acc
