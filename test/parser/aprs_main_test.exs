@@ -349,10 +349,8 @@ defmodule Aprs.MainTest do
       case Aprs.parse("N0CALL>APRS:" <> msg_without_ack) do
         {:ok, result} ->
           assert result.data_type == :message
-
-          if result.data_extended do
-            assert result.data_extended.message_number == nil
-          end
+          assert result.data_extended.message == "Hello world"
+          assert result.data_extended.addressee == "N0CALL"
 
         {:error, _} ->
           :ok
@@ -395,7 +393,7 @@ defmodule Aprs.MainTest do
             assert result.data_type == :user_defined
 
             if result.data_extended do
-              # Check if it has user_id (properly formatted) or user_data (malformed)
+              # Check if it has user_id or user_data
               if Map.has_key?(result.data_extended, :user_id) do
                 assert result.data_extended.user_id in ["A", "B", "C", "X"]
               else
