@@ -86,8 +86,7 @@ defmodule Aprs.Object do
     result =
       Map.merge(
         %{
-          object_name: object_name,
-          objectname: object_name,
+          object_name: String.trim(object_name),
           live_killed: live_killed,
           alive: if(live_killed == "*", do: 1, else: 0),
           timestamp: unix_timestamp,
@@ -170,7 +169,6 @@ defmodule Aprs.Object do
         # For now, return a placeholder timestamp
         # In a real implementation, this would calculate the actual Unix timestamp
         # based on the current month/year and the day/hour/min provided
-        # For FAP compatibility testing, we'll use a recent timestamp
         # This is just a placeholder - real implementation would calculate properly
         1_754_096_220
 

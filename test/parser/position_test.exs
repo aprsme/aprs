@@ -117,7 +117,7 @@ defmodule Aprs.PositionTest do
       # Check if we have extended data
       if parsed[:data_extended] do
         data = parsed[:data_extended]
-        # The packet should have location data but it's not being decoded properly
+        # The packet should have location data but it's not being decoded
         # This test will help us understand what's happening
         assert data[:data_type] == :mic_e_old
         # VE6LY-7 is in southern France, so longitude should be positive (east)

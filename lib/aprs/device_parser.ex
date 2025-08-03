@@ -1,6 +1,6 @@
 defmodule Aprs.DeviceParser do
   @moduledoc """
-  Extracts device identifier (TOCALL or Mic-E) from APRS packets, matching FAP logic.
+  Extracts device identifier (TOCALL or Mic-E) from APRS packets.
   """
 
   # Minimal legacy Mic-E device map (expand as needed)
@@ -55,12 +55,12 @@ defmodule Aprs.DeviceParser do
   end
 
   @doc """
-  Decode a Mic-E destination to its corresponding TOCALL (matches FAP/APRS spec).
+  Decode a Mic-E destination to its corresponding TOCALL.
   """
   @spec decode_mic_e_tocall(String.t()) :: String.t()
   def decode_mic_e_tocall(dest) when is_binary(dest) and byte_size(dest) == 6 do
     <<c1, c2, c3, c4, c5, c6>> = dest
-    # Special case for Kenwood TH-D74 (FAP logic)
+    # Special case for Kenwood TH-D74
     case dest do
       "T5TYR4" ->
         "APK004"
@@ -88,7 +88,7 @@ defmodule Aprs.DeviceParser do
 
   def decode_mic_e_tocall(dest), do: String.slice(dest, 0, 6)
 
-  # Full Mic-E prefix mapping (per APRS/FAP spec, partial list for demo)
+  # Full Mic-E prefix mapping (per APRS spec, partial list for demo)
   @mic_e_prefix_map %{
     # Kenwood
     "T5T" => "APK",
@@ -116,7 +116,7 @@ defmodule Aprs.DeviceParser do
     Map.get(@mic_e_prefix_map, three)
   end
 
-  # Suffix calculation (matches FAP logic)
+  # Suffix calculation
   @spec mic_e_suffix(byte(), byte(), byte()) :: String.t() | nil
   defp mic_e_suffix(c4, c5, c6) do
     d1 = mic_e_digit(c4)
@@ -128,7 +128,7 @@ defmodule Aprs.DeviceParser do
     end
   end
 
-  # FAP/Spec: '0'..'9' => 0..9, 'A'..'J' => 0..9, 'P'..'Y' => 0..9
+  # APRS Spec: '0'..'9' => 0..9, 'A'..'J' => 0..9, 'P'..'Y' => 0..9
   @spec mic_e_digit(byte()) :: integer() | nil
   defp mic_e_digit(char) when char in ?0..?9, do: char - ?0
   defp mic_e_digit(char) when char in ?A..?J, do: char - ?A

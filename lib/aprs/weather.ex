@@ -97,7 +97,7 @@ defmodule Aprs.Weather do
       end)
       |> atomize_keys_recursive()
 
-    # Add wx field for FAP compatibility (contains all weather values)
+    # Add wx field (contains all weather values)
     full_weather_data
     |> Map.put(:wx, weather_values)
     |> Map.put(:data_type, :weather)

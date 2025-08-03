@@ -203,28 +203,19 @@ defmodule Aprs.FieldMappingTest do
   end
 
   describe "real-world packet with DAO extension" do
-    test "parses DAO extension and matches FAP output" do
+    test "parses DAO extension" do
       packet =
         "OE5DXL-11>APLWS2,qAO,OE5DXL-14:;X1323381 *005602h4742.81N/01918.44EO244/036/A=111870!wuG!Clb=-29.9m/s p=7.1hPa t=-32.2C h=1.5% 403.70MHz Type=RS41-SGP (RS41,RS92,C34,C50,DFM,M10,iMET,MRZ,IMS)"
 
       assert {:ok, parsed} = Aprs.parse(packet)
-      # FAP output: 'daodatumbyte' => 'W'
       assert parsed.daodatumbyte == "W"
-      # FAP output: 'objectname' => 'X1323381 '
-      assert parsed.objectname == "X1323381 "
-      # FAP output: 'format' => 'uncompressed'
+      assert parsed.object_name == "X1323381"
       assert parsed.format == "uncompressed"
-      # FAP output: 'symboltable' => '/'
       assert parsed.symboltable == "/"
-      # FAP output: 'symbolcode' => 'O'
       assert parsed.symbolcode == "O"
-      # FAP output: 'latitude' => '47.7136538461538'
-      # Note: Our parser has less precision than FAP due to DAO processing differences
       assert_in_delta String.to_float("#{parsed.latitude}"), 47.71365, 0.001
-      # FAP output: 'longitude' => '19.3074029304029'
       assert_in_delta String.to_float("#{parsed.longitude}"), 19.30740, 0.001
 
-      # FAP output: 'comment' => 'Clb=-29.9m/s p=7.1hPa t=-32.2C h=1.5% 403.70MHz Type=RS41-SGP (RS41,RS92,C34,C50,DFM,M10,iMET,MRZ,IMS)'
       assert parsed.comment =~ "Clb=-29.9m/s"
       assert parsed.comment =~ "Type=RS41-SGP"
     end

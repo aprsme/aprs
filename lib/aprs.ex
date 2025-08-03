@@ -151,8 +151,15 @@ defmodule Aprs do
           {:ok, packet()} | {:error, :invalid_packet}
   defp build_packet_data(sender, path, destination, data, data_type, callsign_parts) do
     data_trimmed = trim_binary(data)
-    data_without_type = extract_data_without_type(data_trimmed)
-    data_extended = parse_data(data_type, destination, data_without_type)
+    # For messages and items, we need to keep the type indicator
+    data_for_parsing =
+      if data_type in [:message, :item] do
+        data_trimmed
+      else
+        extract_data_without_type(data_trimmed)
+      end
+
+    data_extended = parse_data(data_type, destination, data_for_parsing)
 
     # Parse digipeaters from path
     digipeaters = parse_digipeaters(path)
@@ -527,7 +534,7 @@ defmodule Aprs do
   def parse_data(:third_party_traffic, _destination, data), do: parse_third_party_traffic(data)
 
   def parse_data(:message, _destination, data) do
-    case Regex.run(~r/^:([^:]+):(.+?)(\{(\d+)\})?$/s, data) do
+    case Regex.run(~r/^:([^:]+):(.*?)(\{(\d+)\})?$/s, data) do
       [_, addressee, message_text, _full_ack, message_number] ->
         trimmed_text = String.trim(message_text)
 
@@ -552,7 +559,13 @@ defmodule Aprs do
         }
 
       _ ->
-        nil
+        # Return a basic message structure even if parsing fails
+        %{
+          data_type: :message,
+          addressee: nil,
+          message: nil,
+          error: "Failed to parse message format"
+        }
     end
   end
 
