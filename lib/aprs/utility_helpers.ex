@@ -90,25 +90,24 @@ defmodule Aprs.UtilityHelpers do
           [_, day, hour, minute] ->
             # Convert to Unix timestamp (approximate - using current month/year)
             now = DateTime.utc_now()
-            
+
             day_int = String.to_integer(day)
             hour_int = String.to_integer(hour)
             minute_int = String.to_integer(minute)
-            
+
             # Validate components
             if day_int >= 1 and day_int <= 31 and
-               hour_int >= 0 and hour_int <= 23 and 
-               minute_int >= 0 and minute_int <= 59 do
+                 hour_int >= 0 and hour_int <= 23 and
+                 minute_int >= 0 and minute_int <= 59 do
               case Date.new(now.year, now.month, day_int) do
                 {:ok, date} ->
                   {:ok, time} = Time.new(hour_int, minute_int, 0)
                   {:ok, datetime} = DateTime.new(date, time)
                   DateTime.to_unix(datetime)
+
                 _ ->
                   nil
               end
-            else
-              nil
             end
 
           _ ->
@@ -122,20 +121,18 @@ defmodule Aprs.UtilityHelpers do
             case Regex.run(~r/^(\d{2})(\d{2})(\d{2})h$/, time) do
               [_, hour, minute, second] ->
                 # Convert to Unix timestamp (today's date)
-                
+
                 hour_int = String.to_integer(hour)
                 minute_int = String.to_integer(minute)
                 second_int = String.to_integer(second)
-                
+
                 # Validate time components
-                if hour_int >= 0 and hour_int <= 23 and 
-                   minute_int >= 0 and minute_int <= 59 and
-                   second_int >= 0 and second_int <= 59 do
+                if hour_int >= 0 and hour_int <= 23 and
+                     minute_int >= 0 and minute_int <= 59 and
+                     second_int >= 0 and second_int <= 59 do
                   {:ok, time} = Time.new(hour_int, minute_int, second_int)
                   {:ok, datetime} = DateTime.new(Date.utc_today(), time)
                   DateTime.to_unix(datetime)
-                else
-                  nil
                 end
 
               _ ->
@@ -147,25 +144,24 @@ defmodule Aprs.UtilityHelpers do
               [_, day, hour, minute] ->
                 # Convert to Unix timestamp (current month/year)
                 now = DateTime.utc_now()
-                
+
                 day_int = String.to_integer(day)
                 hour_int = String.to_integer(hour)
                 minute_int = String.to_integer(minute)
-                
+
                 # Validate components
                 if day_int >= 1 and day_int <= 31 and
-                   hour_int >= 0 and hour_int <= 23 and 
-                   minute_int >= 0 and minute_int <= 59 do
+                     hour_int >= 0 and hour_int <= 23 and
+                     minute_int >= 0 and minute_int <= 59 do
                   case Date.new(now.year, now.month, day_int) do
                     {:ok, date} ->
                       {:ok, time} = Time.new(hour_int, minute_int, 0)
                       {:ok, datetime} = DateTime.new(date, time)
                       DateTime.to_unix(datetime)
+
                     _ ->
                       nil
                   end
-                else
-                  nil
                 end
 
               _ ->
