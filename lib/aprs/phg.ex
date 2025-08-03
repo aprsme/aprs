@@ -10,7 +10,7 @@ defmodule Aprs.PHG do
   def parse(phg_str) when is_binary(phg_str) do
     # Remove leading # if present
     phg_str = String.replace_prefix(phg_str, "#", "")
-    
+
     case Regex.run(~r"^PHG(\d)(\d)(\d)(\d)", phg_str) do
       [_full_match, p, h, g, d] ->
         # Return the PHG string directly for compatibility

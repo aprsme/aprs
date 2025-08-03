@@ -158,11 +158,12 @@ defmodule Aprs do
     digipeaters = parse_digipeaters(path)
 
     # Use data_type from data_extended if available (e.g., weather packets)
-    final_data_type = if is_map(data_extended) && Map.has_key?(data_extended, :data_type) do
-      data_extended.data_type
-    else
-      data_type
-    end
+    final_data_type =
+      if is_map(data_extended) && Map.has_key?(data_extended, :data_type) do
+        data_extended.data_type
+      else
+        data_type
+      end
 
     # Add standard APRS fields to the main packet structure
     base_packet = %{
@@ -561,6 +562,7 @@ defmodule Aprs do
 
   def parse_data(:position, _destination, <<"/", _::binary>> = data) do
     result = parse_position_without_timestamp(data)
+
     if is_nil(result) do
       %{data_type: :malformed_position, error: "Failed to parse position with timestamp"}
     else
@@ -571,13 +573,15 @@ defmodule Aprs do
 
   def parse_data(:position, _destination, data) do
     result = parse_position_without_timestamp(data)
+
     if is_nil(result) do
       %{data_type: :malformed_position, error: "Failed to parse position"}
     else
       data_type = Map.get(result, :data_type, :position)
-      if data_type == :malformed_position do 
-        result 
-      else 
+
+      if data_type == :malformed_position do
+        result
+      else
         Map.put(result, :data_type, :position)
       end
     end
@@ -585,6 +589,7 @@ defmodule Aprs do
 
   def parse_data(:position_with_message, _destination, data) do
     result = parse_position_with_message_without_timestamp(data)
+
     if is_nil(result) do
       %{data_type: :malformed_position, error: "Failed to parse position with message"}
     else
@@ -663,21 +668,23 @@ defmodule Aprs do
       ) do
     pos = parse_aprs_position(latitude, longitude)
     weather_data = Weather.parse_weather_data(weather_report)
-    
+
     # Remove timestamp from weather data to preserve the position timestamp
     weather_data_without_timestamp = Map.delete(weather_data, :timestamp)
 
-    %{
-      latitude: pos.latitude,
-      longitude: pos.longitude,
-      timestamp: time,
-      symbol_table_id: sym_table_id,
-      symbol_code: symbol_code,
-      weather: weather_data_without_timestamp,
-      data_type: :weather,
-      aprs_messaging?: aprs_messaging?
-    }
-    |> Map.merge(weather_data_without_timestamp)
+    Map.merge(
+      %{
+        latitude: pos.latitude,
+        longitude: pos.longitude,
+        timestamp: time,
+        symbol_table_id: sym_table_id,
+        symbol_code: symbol_code,
+        weather: weather_data_without_timestamp,
+        data_type: :weather,
+        aprs_messaging?: aprs_messaging?
+      },
+      weather_data_without_timestamp
+    )
   end
 
   @spec decode_compressed_position(binary()) :: map()
@@ -876,8 +883,8 @@ defmodule Aprs do
         end
 
       # Compressed format with DAO extension - Symbol table first: TYYYYXXXXC>&!...
-      <<sym_table::binary-size(1), latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), 
-        cs_byte::binary-size(1), symbol_code::binary-size(1), "&!", comment::binary>> 
+      <<sym_table::binary-size(1), latitude_compressed::binary-size(4), longitude_compressed::binary-size(4),
+        cs_byte::binary-size(1), symbol_code::binary-size(1), "&!", comment::binary>>
       when byte_size(position_data) >= 13 ->
         # Parse with symbol table and course/speed
         parse_position_compressed_with_full_data(
@@ -885,14 +892,16 @@ defmodule Aprs do
           latitude_compressed,
           longitude_compressed,
           symbol_code,
-          cs_byte <> " ",  # Course/speed with padding
-          " ",             # No compression type with DAO
+          # Course/speed with padding
+          cs_byte <> " ",
+          # No compression type with DAO
+          " ",
           comment
         )
 
       # Check for DAO extension in standard compressed format: /YYYYXXXXS>&!...
       <<"/", latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), symbol_code::binary-size(1),
-        cs::binary-size(2), compression_type::binary-size(1), comment::binary>> 
+        cs::binary-size(2), compression_type::binary-size(1), comment::binary>>
       when cs == "&!" ->
         # This is a DAO extension pattern where symbol is at standard position
         # but cs contains "&!" marker
@@ -900,14 +909,17 @@ defmodule Aprs do
           latitude_compressed,
           longitude_compressed,
           symbol_code,
-          "",  # No real course/speed
-          " ",  # No compression type
-          compression_type <> comment  # Keep the byte that was compression_type
+          # No real course/speed
+          "",
+          # No compression type
+          " ",
+          # Keep the byte that was compression_type
+          compression_type <> comment
         )
 
       # Compressed format with DAO extension: /YYYYXXXX>&!HDDDDD...
-      <<"/", latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), symbol_code::binary-size(1),
-        "&!", comment::binary>> ->
+      <<"/", latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), symbol_code::binary-size(1), "&!",
+        comment::binary>> ->
         parse_position_compressed(
           latitude_compressed,
           longitude_compressed,
@@ -932,7 +944,7 @@ defmodule Aprs do
         )
 
       # Compressed format with "!" prefix and DAO extension: !YYYYXXXXC>&!...
-      <<"!", latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), cs_byte::binary-size(1), 
+      <<"!", latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), cs_byte::binary-size(1),
         symbol_code::binary-size(1), "&!", comment::binary>> ->
         # Special DAO format where symbol comes after course/speed byte
         parse_position_compressed(
@@ -991,8 +1003,8 @@ defmodule Aprs do
         end
 
       # Special case: if bytes 9-10 are '&!', this is a DAO extension
-      <<latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), symbol_code::binary-size(1),
-        "&!", comment::binary>> ->
+      <<latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), symbol_code::binary-size(1), "&!",
+        comment::binary>> ->
         # IO.puts("[DEBUG] Matched DAO extension pattern starting with &!")
         # The compression type should be space (no compression type byte)
         # Use the first character of comment as compression type fallback
@@ -1039,15 +1051,17 @@ defmodule Aprs do
     case position_data do
       # Handle "/" symbol table compressed positions with DAO check
       <<"/", latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), symbol_code::binary-size(1),
-        cs::binary-size(2), compression_type::binary-size(1), comment::binary>> 
+        cs::binary-size(2), compression_type::binary-size(1), comment::binary>>
       when cs == "&!" ->
         parse_position_compressed_with_full_data(
           "/",
           latitude_compressed,
           longitude_compressed,
           symbol_code,
-          "",  # No real course/speed
-          " ",  # No compression type
+          # No real course/speed
+          "",
+          # No compression type
+          " ",
           compression_type <> comment
         )
 
@@ -1318,11 +1332,11 @@ defmodule Aprs do
           messaging: compression_info.aprs_messaging
         }
 
-        base_data = 
-          if telemetry != nil do
-            Map.put(base_data, :telemetry, telemetry)
-          else
+        base_data =
+          if telemetry == nil do
             base_data
+          else
+            Map.put(base_data, :telemetry, telemetry)
           end
 
         # Add course and speed if available
@@ -1511,6 +1525,7 @@ defmodule Aprs do
   @spec parse_position_with_message_without_timestamp(String.t()) :: map()
   def parse_position_with_message_without_timestamp(position_data) do
     result = parse_position_without_timestamp(position_data)
+
     if is_nil(result) do
       nil
     else
@@ -1531,7 +1546,16 @@ defmodule Aprs do
         build_position_result(aprs_messaging?, lat, lon, time, sym_table_id, symbol_code, comment, data_type)
 
       _ ->
-        handle_invalid_position_data(aprs_messaging?, time, latitude, sym_table_id, longitude, symbol_code, comment, data_type)
+        handle_invalid_position_data(
+          aprs_messaging?,
+          time,
+          latitude,
+          sym_table_id,
+          longitude,
+          symbol_code,
+          comment,
+          data_type
+        )
     end
   end
 
@@ -1542,7 +1566,16 @@ defmodule Aprs do
     }
   end
 
-  defp handle_invalid_position_data(aprs_messaging?, time, latitude, sym_table_id, longitude, symbol_code, comment, _data_type) do
+  defp handle_invalid_position_data(
+         aprs_messaging?,
+         time,
+         latitude,
+         sym_table_id,
+         longitude,
+         symbol_code,
+         comment,
+         _data_type
+       ) do
     # Fallback: try to extract lat/lon using regex if binary pattern match fails
     regex =
       ~r/^(?<time>\w{7})(?<lat>\d{4,5}\.\d+[NS])(?<sym_table>.)(?<lon>\d{5,6}\.\d+[EW])(?<sym_code>.)(?<comment>.*)$/
@@ -1920,6 +1953,7 @@ defmodule Aprs do
       weather_data = extract_weather_data(sym_table_id, symbol_code, comment)
       # Remove timestamp from weather data to preserve the position timestamp
       weather_data_without_timestamp = Map.delete(weather_data, :timestamp)
+
       base_map
       |> Map.merge(weather_data_without_timestamp)
       |> Map.put(:data_type, :weather)
@@ -1944,5 +1978,4 @@ defmodule Aprs do
       weather_map -> weather_map
     end
   end
-
 end
