@@ -57,24 +57,21 @@ defmodule Aprs.DeviceParser do
   @doc """
   Decode a Mic-E destination to its corresponding TOCALL.
   """
+  # Map of Kenwood TH-D74 special cases
+  @kenwood_th_d74_map %{
+    "T5TYR4" => "APK004",
+    "T5TYR3" => "APK003",
+    "T5TYR2" => "APK002",
+    "T5TYR1" => "APK001"
+  }
+
   @spec decode_mic_e_tocall(String.t()) :: String.t()
   def decode_mic_e_tocall(dest) when is_binary(dest) and byte_size(dest) == 6 do
-    <<c1, c2, c3, c4, c5, c6>> = dest
-    # Special case for Kenwood TH-D74
-    case dest do
-      "T5TYR4" ->
-        "APK004"
-
-      "T5TYR3" ->
-        "APK003"
-
-      "T5TYR2" ->
-        "APK002"
-
-      "T5TYR1" ->
-        "APK001"
-
-      _ ->
+    # Check for special Kenwood TH-D74 cases first
+    case Map.get(@kenwood_th_d74_map, dest) do
+      nil ->
+        # Standard mic-e decoding
+        <<c1, c2, c3, c4, c5, c6>> = dest
         prefix = mic_e_prefix(<<c1, c2, c3>>)
         suffix = mic_e_suffix(c4, c5, c6)
 
@@ -83,6 +80,9 @@ defmodule Aprs.DeviceParser do
         else
           dest
         end
+
+      kenwood_id ->
+        kenwood_id
     end
   end
 

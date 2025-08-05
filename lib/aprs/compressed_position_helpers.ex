@@ -70,21 +70,31 @@ defmodule Aprs.CompressedPositionHelpers do
 
   @doc false
   def clamp_lat(lat_val) do
-    cond do
-      lat_val < -90.0 -> -90.0
-      lat_val > 90.0 -> 90.0
-      true -> lat_val
-    end
+    lat_val
+    |> max(-90.0)
+    |> min(90.0)
   end
 
   @doc false
   def clamp_lon(lon_val) do
-    cond do
-      lon_val < -180.0 -> -180.0
-      lon_val > 180.0 -> 180.0
-      true -> lon_val
-    end
+    lon_val
+    |> max(-180.0)
+    |> min(180.0)
   end
+
+  # Map of resolution values to ambiguity levels
+  @resolution_to_ambiguity %{
+    # No ambiguity
+    0 => 0,
+    # 0.1 minute
+    1 => 1,
+    # 1 minute
+    2 => 2,
+    # 10 minutes
+    3 => 3,
+    # 1 degree
+    4 => 4
+  }
 
   @doc """
   Calculate position resolution (ambiguity) from the compression type byte.
@@ -111,21 +121,8 @@ defmodule Aprs.CompressedPositionHelpers do
     # Shift right by 2 bits and mask with 0b111 (7)
     resolution = type_value >>> 2 &&& 0x07
 
-    # Map to standard ambiguity levels (0-4)
-    case resolution do
-      # No ambiguity
-      0 -> 0
-      # 0.1 minute
-      1 -> 1
-      # 1 minute  
-      2 -> 2
-      # 10 minutes
-      3 -> 3
-      # 1 degree
-      4 -> 4
-      # Default to no ambiguity for invalid values
-      _ -> 0
-    end
+    # Map to standard ambiguity levels (0-4), default to 0 for invalid values
+    Map.get(@resolution_to_ambiguity, resolution, 0)
   end
 
   def calculate_compressed_ambiguity("") do

@@ -243,25 +243,31 @@ defmodule Aprs do
     end
   end
 
+  # Map of internal data_type atoms to standard type strings
+  @standard_type_map %{
+    position: "location",
+    position_with_message: "location",
+    timestamped_position: "location",
+    timestamped_position_with_message: "location",
+    position_with_datetime_and_weather: "wx",
+    weather: "wx",
+    object: "object",
+    item: "item",
+    message: "message",
+    telemetry: "telemetry",
+    status: "status",
+    station_capabilities: "capabilities",
+    mic_e: "location",
+    mic_e_old: "location",
+    mic_e_error: "location",
+    malformed_position: "location"
+  }
+
   # Convert internal data_type atoms to standard type strings
   @spec atom_to_standard_type(atom()) :: String.t()
-  defp atom_to_standard_type(:position), do: "location"
-  defp atom_to_standard_type(:position_with_message), do: "location"
-  defp atom_to_standard_type(:timestamped_position), do: "location"
-  defp atom_to_standard_type(:timestamped_position_with_message), do: "location"
-  defp atom_to_standard_type(:position_with_datetime_and_weather), do: "wx"
-  defp atom_to_standard_type(:weather), do: "wx"
-  defp atom_to_standard_type(:object), do: "object"
-  defp atom_to_standard_type(:item), do: "item"
-  defp atom_to_standard_type(:message), do: "message"
-  defp atom_to_standard_type(:telemetry), do: "telemetry"
-  defp atom_to_standard_type(:status), do: "status"
-  defp atom_to_standard_type(:station_capabilities), do: "capabilities"
-  defp atom_to_standard_type(:mic_e), do: "location"
-  defp atom_to_standard_type(:mic_e_old), do: "location"
-  defp atom_to_standard_type(:mic_e_error), do: "location"
-  defp atom_to_standard_type(:malformed_position), do: "location"
-  defp atom_to_standard_type(type), do: Atom.to_string(type)
+  defp atom_to_standard_type(type) do
+    Map.get(@standard_type_map, type, Atom.to_string(type))
+  end
 
   # Parse digipeaters from path string
   @spec parse_digipeaters(String.t()) :: [map()]
@@ -462,23 +468,12 @@ defmodule Aprs do
   # weird case right now. It seems like its for a specific type of old
   # TNC hardware that probably doesn't even exist anymore.
   @spec parse_datatype(String.t()) :: atom()
-  def parse_datatype(data) when is_binary(data) and byte_size(data) > 0 do
-    # Special cases for multi-character prefixes
-    cond do
-      String.starts_with?(data, "#DFS") ->
-        :df_report
+  def parse_datatype("#DFS" <> _rest), do: :df_report
+  def parse_datatype("#PHG" <> _rest), do: :phg_data
+  def parse_datatype("#" <> _rest), do: :phg_data
 
-      String.starts_with?(data, "#PHG") ->
-        :phg_data
-
-      String.starts_with?(data, "#") ->
-        :phg_data
-
-      true ->
-        # Get first character and look up in map
-        <<first_char::binary-size(1), _::binary>> = data
-        Map.get(@datatype_map, first_char, :unknown_datatype)
-    end
+  def parse_datatype(<<first_char::binary-size(1), _::binary>> = data) when is_binary(data) do
+    Map.get(@datatype_map, first_char, :unknown_datatype)
   end
 
   def parse_datatype(_), do: :unknown_datatype

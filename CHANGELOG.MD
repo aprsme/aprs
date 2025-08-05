@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Code Quality**: Refactored conditional logic throughout the codebase to use more functional patterns:
+  - Replaced `cond` statements with pattern matching and guard clauses
+  - Extracted static mappings into module attributes for better maintainability
+  - Simplified complex conditionals using built-in functions like `min/max`
+  - Broke up large functions into smaller, focused helper functions
+  - Improved readability and testability of the codebase
+
 ### Added
 - **Standard APRS Parser Fields**: Added comprehensive field compatibility with standard APRS parsers:
   - `posambiguity`: Position ambiguity level (0-4)

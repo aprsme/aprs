@@ -3,6 +3,20 @@ defmodule Aprs.UtilityHelpers do
   Utility and ambiguity helpers for APRS.
   """
 
+  # Map of ambiguity levels to resolution in meters
+  @position_resolution_map %{
+    # 0.01 minute at equator
+    0 => 18.52,
+    # 0.1 minute
+    1 => 185.2,
+    # 1 minute
+    2 => 1852.0,
+    # 10 minutes
+    3 => 18_520.0,
+    # 1 degree (60 minutes)
+    4 => 111_120.0
+  }
+
   @spec count_spaces(String.t()) :: non_neg_integer()
   def count_spaces(str) do
     # More efficient than String.graphemes() |> Enum.count()
@@ -82,102 +96,94 @@ defmodule Aprs.UtilityHelpers do
 
   @spec validate_timestamp(String.t()) :: integer() | nil
   def validate_timestamp(time) when is_binary(time) do
-    # Parse APRS timestamp formats
+    # Parse APRS timestamp formats based on length
     case String.length(time) do
-      # DHM format (day/hour/minute)
-      6 ->
-        case Regex.run(~r/^(\d{2})(\d{2})(\d{2})$/, time) do
-          [_, day, hour, minute] ->
-            # Convert to Unix timestamp (approximate - using current month/year)
-            now = DateTime.utc_now()
+      6 -> parse_dhm_format(time)
+      7 -> parse_7_char_format(time)
+      _ -> nil
+    end
+  end
 
-            day_int = String.to_integer(day)
-            hour_int = String.to_integer(hour)
-            minute_int = String.to_integer(minute)
+  def validate_timestamp(_), do: nil
 
-            # Validate components
-            if day_int >= 1 and day_int <= 31 and
-                 hour_int >= 0 and hour_int <= 23 and
-                 minute_int >= 0 and minute_int <= 59 do
-              case Date.new(now.year, now.month, day_int) do
-                {:ok, date} ->
-                  {:ok, time} = Time.new(hour_int, minute_int, 0)
-                  {:ok, datetime} = DateTime.new(date, time)
-                  DateTime.to_unix(datetime)
-
-                _ ->
-                  nil
-              end
-            end
-
-          _ ->
-            nil
-        end
-
-      # HMS format (hour/minute/second) or Zulu time
-      7 ->
-        cond do
-          String.ends_with?(time, "h") ->
-            case Regex.run(~r/^(\d{2})(\d{2})(\d{2})h$/, time) do
-              [_, hour, minute, second] ->
-                # Convert to Unix timestamp (today's date)
-
-                hour_int = String.to_integer(hour)
-                minute_int = String.to_integer(minute)
-                second_int = String.to_integer(second)
-
-                # Validate time components
-                if hour_int >= 0 and hour_int <= 23 and
-                     minute_int >= 0 and minute_int <= 59 and
-                     second_int >= 0 and second_int <= 59 do
-                  {:ok, time} = Time.new(hour_int, minute_int, second_int)
-                  {:ok, datetime} = DateTime.new(Date.utc_today(), time)
-                  DateTime.to_unix(datetime)
-                end
-
-              _ ->
-                nil
-            end
-
-          String.ends_with?(time, "z") ->
-            case Regex.run(~r/^(\d{2})(\d{2})(\d{2})z$/, time) do
-              [_, day, hour, minute] ->
-                # Convert to Unix timestamp (current month/year)
-                now = DateTime.utc_now()
-
-                day_int = String.to_integer(day)
-                hour_int = String.to_integer(hour)
-                minute_int = String.to_integer(minute)
-
-                # Validate components
-                if day_int >= 1 and day_int <= 31 and
-                     hour_int >= 0 and hour_int <= 23 and
-                     minute_int >= 0 and minute_int <= 59 do
-                  case Date.new(now.year, now.month, day_int) do
-                    {:ok, date} ->
-                      {:ok, time} = Time.new(hour_int, minute_int, 0)
-                      {:ok, datetime} = DateTime.new(date, time)
-                      DateTime.to_unix(datetime)
-
-                    _ ->
-                      nil
-                  end
-                end
-
-              _ ->
-                nil
-            end
-
-          true ->
-            nil
-        end
+  # Parse DHM format (day/hour/minute)
+  defp parse_dhm_format(time) do
+    case Regex.run(~r/^(\d{2})(\d{2})(\d{2})$/, time) do
+      [_, day, hour, minute] ->
+        build_timestamp_from_dhm(day, hour, minute)
 
       _ ->
         nil
     end
   end
 
-  def validate_timestamp(_), do: nil
+  defp build_timestamp_from_dhm(day, hour, minute) do
+    now = DateTime.utc_now()
+    day_int = String.to_integer(day)
+    hour_int = String.to_integer(hour)
+    minute_int = String.to_integer(minute)
+
+    if valid_day?(day_int) and valid_hour?(hour_int) and valid_minute?(minute_int) do
+      case Date.new(now.year, now.month, day_int) do
+        {:ok, date} ->
+          {:ok, time} = Time.new(hour_int, minute_int, 0)
+          {:ok, datetime} = DateTime.new(date, time)
+          DateTime.to_unix(datetime)
+
+        _ ->
+          nil
+      end
+    end
+  end
+
+  # Parse 7-character format (HMS or Zulu)
+  defp parse_7_char_format(time) do
+    cond do
+      String.ends_with?(time, "h") -> parse_hms_format(time)
+      String.ends_with?(time, "z") -> parse_zulu_format(time)
+      true -> nil
+    end
+  end
+
+  # Parse HMS format (hour/minute/second)
+  defp parse_hms_format(time) do
+    case Regex.run(~r/^(\d{2})(\d{2})(\d{2})h$/, time) do
+      [_, hour, minute, second] ->
+        build_timestamp_from_hms(hour, minute, second)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp build_timestamp_from_hms(hour, minute, second) do
+    hour_int = String.to_integer(hour)
+    minute_int = String.to_integer(minute)
+    second_int = String.to_integer(second)
+
+    if valid_hour?(hour_int) and valid_minute?(minute_int) and valid_second?(second_int) do
+      {:ok, time} = Time.new(hour_int, minute_int, second_int)
+      {:ok, datetime} = DateTime.new(Date.utc_today(), time)
+      DateTime.to_unix(datetime)
+    end
+  end
+
+  # Parse Zulu format (day/hour/minute)
+  defp parse_zulu_format(time) do
+    case Regex.run(~r/^(\d{2})(\d{2})(\d{2})z$/, time) do
+      [_, day, hour, minute] ->
+        build_timestamp_from_dhm(day, hour, minute)
+
+      _ ->
+        nil
+    end
+  end
+
+  # Validation helpers
+  defp valid_day?(day), do: day >= 1 and day <= 31
+  defp valid_hour?(hour), do: hour >= 0 and hour <= 23
+  defp valid_minute?(minute), do: minute >= 0 and minute <= 59
+  defp valid_second?(second), do: second >= 0 and second <= 59
 
   @doc """
   Calculate position resolution in meters based on ambiguity level.
@@ -193,20 +199,7 @@ defmodule Aprs.UtilityHelpers do
   """
   @spec calculate_position_resolution(integer()) :: float()
   def calculate_position_resolution(ambiguity) when is_integer(ambiguity) do
-    case ambiguity do
-      # 0.01 minute at equator
-      0 -> 18.52
-      # 0.1 minute
-      1 -> 185.2
-      # 1 minute
-      2 -> 1852.0
-      # 10 minutes
-      3 -> 18_520.0
-      # 1 degree (60 minutes)
-      4 -> 111_120.0
-      # Default to no ambiguity
-      _ -> 18.52
-    end
+    Map.get(@position_resolution_map, ambiguity, 18.52)
   end
 
   @doc """
