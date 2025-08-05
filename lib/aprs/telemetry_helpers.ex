@@ -7,7 +7,7 @@ defmodule Aprs.TelemetryHelpers do
   def parse_telemetry_sequence(seq) do
     case Integer.parse(seq) do
       {num, _} -> num
-      :error -> nil
+      _ -> nil
     end
   end
 
@@ -22,7 +22,7 @@ defmodule Aprs.TelemetryHelpers do
   defp parse_analog_value(value) do
     case Float.parse(value) do
       {float_val, _} -> float_val
-      :error -> nil
+      _ -> nil
     end
   end
 
@@ -49,10 +49,10 @@ defmodule Aprs.TelemetryHelpers do
       {float_val, _} ->
         float_val
 
-      :error ->
+      _ ->
         case Integer.parse(coeff) do
           {int_val, _} -> int_val
-          :error -> coeff
+          _ -> coeff
         end
     end
   end

@@ -19,10 +19,7 @@ defmodule Aprs.DeviceParser do
   @spec extract_device_identifier(map() | String.t()) :: String.t() | nil
   def extract_device_identifier(%{data_type: :mic_e, destination: dest, data_extended: %{comment: comment}})
       when is_binary(dest) and is_binary(comment) do
-    case identify_mic_e_legacy_device(comment) do
-      nil -> decode_mic_e_tocall(dest)
-      tocall -> tocall
-    end
+    identify_mic_e_legacy_device(comment) || decode_mic_e_tocall(dest)
   end
 
   def extract_device_identifier(%{data_type: :mic_e, destination: dest}) when is_binary(dest) do
@@ -68,25 +65,22 @@ defmodule Aprs.DeviceParser do
   @spec decode_mic_e_tocall(String.t()) :: String.t()
   def decode_mic_e_tocall(dest) when is_binary(dest) and byte_size(dest) == 6 do
     # Check for special Kenwood TH-D74 cases first
-    case Map.get(@kenwood_th_d74_map, dest) do
-      nil ->
-        # Standard mic-e decoding
-        <<c1, c2, c3, c4, c5, c6>> = dest
-        prefix = mic_e_prefix(<<c1, c2, c3>>)
-        suffix = mic_e_suffix(c4, c5, c6)
-
-        if prefix && suffix do
-          prefix <> suffix
-        else
-          dest
-        end
-
-      kenwood_id ->
-        kenwood_id
-    end
+    Map.get(@kenwood_th_d74_map, dest) || decode_standard_mic_e(dest)
   end
 
   def decode_mic_e_tocall(dest), do: String.slice(dest, 0, 6)
+
+  defp decode_standard_mic_e(dest) do
+    <<c1, c2, c3, c4, c5, c6>> = dest
+    prefix = mic_e_prefix(<<c1, c2, c3>>)
+    suffix = mic_e_suffix(c4, c5, c6)
+
+    if prefix && suffix do
+      prefix <> suffix
+    else
+      dest
+    end
+  end
 
   # Full Mic-E prefix mapping (per APRS spec, partial list for demo)
   @mic_e_prefix_map %{

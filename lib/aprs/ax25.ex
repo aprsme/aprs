@@ -8,14 +8,14 @@ defmodule Aprs.AX25 do
   """
   @spec parse_callsign(String.t()) :: {:ok, {String.t(), String.t()}} | {:error, String.t()}
   def parse_callsign(callsign) when is_binary(callsign) and byte_size(callsign) > 0 do
-    if String.contains?(callsign, "-") do
-      case String.split(callsign, "-") do
-        [base, ssid] -> {:ok, {base, ssid}}
-        _ -> {:ok, {callsign, "0"}}
+    result =
+      if String.contains?(callsign, "-") do
+        String.split(callsign, "-")
+      else
+        [callsign]
       end
-    else
-      {:ok, {callsign, "0"}}
-    end
+
+    format_callsign_result(result, callsign)
   end
 
   def parse_callsign(callsign) when is_binary(callsign) and byte_size(callsign) == 0 do
@@ -25,6 +25,10 @@ defmodule Aprs.AX25 do
   def parse_callsign(_) do
     {:error, "Invalid callsign format"}
   end
+
+  defp format_callsign_result([base, ssid], _), do: {:ok, {base, ssid}}
+  defp format_callsign_result([base], _), do: {:ok, {base, "0"}}
+  defp format_callsign_result(_, original), do: {:ok, {original, "0"}}
 
   @doc """
   Parse and validate an AX.25 path. Returns {:ok, [String.t()]} or {:error, reason}.

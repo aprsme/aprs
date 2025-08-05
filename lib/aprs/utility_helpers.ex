@@ -36,30 +36,31 @@ defmodule Aprs.UtilityHelpers do
     lat_spaces = count_spaces(latitude)
     lon_spaces = count_spaces(longitude)
 
-    # Use a more efficient lookup
-    case {lat_spaces, lon_spaces} do
-      {0, 0} -> 0
-      {1, 1} -> 1
-      {2, 2} -> 2
-      {3, 3} -> 3
-      {4, 4} -> 4
-      _ -> 0
+    # Return the ambiguity level if lat and lon spaces match, otherwise 0
+    if lat_spaces == lon_spaces and lat_spaces in 0..4 do
+      lat_spaces
+    else
+      0
     end
   end
 
   @spec find_matches(Regex.t(), String.t()) :: map()
   def find_matches(regex, text) do
-    case Regex.names(regex) do
-      [] ->
-        matches = Regex.run(regex, text)
-
-        Enum.reduce(Enum.with_index(matches), %{}, fn {match, index}, acc ->
-          Map.put(acc, index, match)
-        end)
-
-      _ ->
-        Regex.named_captures(regex, text)
+    if Regex.names(regex) == [] do
+      regex
+      |> Regex.run(text)
+      |> indexed_matches_to_map()
+    else
+      Regex.named_captures(regex, text)
     end
+  end
+
+  defp indexed_matches_to_map(nil), do: %{}
+
+  defp indexed_matches_to_map(matches) do
+    matches
+    |> Enum.with_index()
+    |> Map.new(fn {match, index} -> {index, match} end)
   end
 
   @spec validate_position_data(String.t(), String.t()) ::
