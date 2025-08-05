@@ -165,12 +165,7 @@ defmodule Aprs.MicE do
   end
 
   defp determine_message_type([d1, d2, d3]) do
-    cond do
-      d1.msg_type != nil -> d1.msg_type
-      d2.msg_type != nil -> d2.msg_type
-      d3.msg_type != nil -> d3.msg_type
-      true -> nil
-    end
+    Enum.find_value([d1, d2, d3], fn d -> d.msg_type end)
   end
 
   defp decode_digit(char) do
@@ -214,28 +209,17 @@ defmodule Aprs.MicE do
 
   defp decode_lon_deg(lon_deg_c, lon_offset) do
     # Start with base longitude from the character
-    longitude = lon_deg_c - 28
-
-    # Add offset if character 5 of destination is >= 'P' (0x50)
-    longitude =
-      if lon_offset == 100 do
-        longitude + 100
-      else
-        longitude
-      end
-
-    # Apply standard adjustments
-    cond do
-      longitude >= 180 and longitude <= 189 ->
-        longitude - 80
-
-      longitude >= 190 and longitude <= 199 ->
-        longitude - 190
-
-      true ->
-        longitude
-    end
+    (lon_deg_c - 28)
+    |> add_longitude_offset(lon_offset)
+    |> apply_longitude_adjustment()
   end
+
+  defp add_longitude_offset(longitude, 100), do: longitude + 100
+  defp add_longitude_offset(longitude, _), do: longitude
+
+  defp apply_longitude_adjustment(longitude) when longitude >= 180 and longitude <= 189, do: longitude - 80
+  defp apply_longitude_adjustment(longitude) when longitude >= 190 and longitude <= 199, do: longitude - 190
+  defp apply_longitude_adjustment(longitude), do: longitude
 
   defp decode_lon_min(lon_min_c) do
     case lon_min_c - 28 do
