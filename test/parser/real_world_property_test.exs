@@ -255,8 +255,8 @@ defmodule Aprs.RealWorldPropertyTest do
 
   describe "real-world callsign variations" do
     property "handles various callsign formats with SSIDs" do
-      check all prefix <- member_of(["A", "K", "W", "N", "VE", "G", "F", "DL", "JA", "VK"]),
-                suffix <- string(:alphanumeric, min_length: 1, max_length: 3),
+      check all prefix <- member_of(["A", "K", "W", "N", "VE", "G", "F", "DL", "JA", "VK", "EA", "YM", "TA", "SP", "OK"]),
+                suffix <- string(:alphanumeric, min_length: 1, max_length: 4),
                 ssid <- integer(0..15),
                 has_ssid <- boolean() do
         callsign =
@@ -277,7 +277,7 @@ defmodule Aprs.RealWorldPropertyTest do
     end
 
     property "handles tactical callsigns and special formats" do
-      check all tactical <- member_of(["WIDE", "RELAY", "TRACE", "ECHO", "GATE", "DIGI"]),
+      check all tactical <- member_of(["WIDE", "RELAY", "TRACE", "ECHO", "GATE", "DIGI", "BEACON", "WX"]),
                 number <- integer(1..99),
                 has_number <- boolean() do
         callsign =
@@ -288,6 +288,17 @@ defmodule Aprs.RealWorldPropertyTest do
           end
 
         packet = "TEST>APRS,#{callsign}*:>Status"
+
+        result = parse_packet(packet)
+        assert result == nil or is_map(result)
+      end
+    end
+
+    property "handles special system callsigns" do
+      check all system <- member_of(["RS0ISS", "APRSIS", "TCPIP", "LOCAL", "RFONLY", "NOGATE"]),
+                has_asterisk <- boolean() do
+        path = if has_asterisk, do: "#{system}*", else: system
+        packet = "TEST>APRS,#{path}:>System status"
 
         result = parse_packet(packet)
         assert result == nil or is_map(result)
@@ -312,6 +323,135 @@ defmodule Aprs.RealWorldPropertyTest do
 
         if result != nil && result.data_type == :position do
           assert result.data_extended.latitude != nil
+        end
+      end
+    end
+  end
+
+  describe "real-world packet variations from packets.csv" do
+    property "handles D-STAR gateway packets" do
+      check all callsign <- string(:alphanumeric, min_length: 3, max_length: 6),
+                ssid <- member_of(["B", "C", "D", "G", "S"]),
+                freq <- float(min: 144.0, max: 450.0),
+                offset <- float(min: -10.0, max: 10.0) do
+        # D-STAR format like "!4205.91ND07917.77W&RNG0001/A=000010 70cm Voice (D-Star) 446.42500MHz +0.0000MHz"
+        comment =
+          "RNG0001/A=000010 70cm Voice (D-Star) #{:erlang.float_to_binary(freq, decimals: 5)}MHz #{if offset >= 0, do: "+", else: ""}#{:erlang.float_to_binary(offset, decimals: 4)}MHz"
+
+        packet = "#{callsign}-#{ssid}>APDG02,TCPIP*,qAC,#{callsign}-#{ssid}S:!4205.91ND07917.77W&#{comment}"
+
+        result = parse_packet(packet)
+        assert result == nil or is_map(result)
+      end
+    end
+
+    property "handles LoRa iGate packets" do
+      check all voltage <- float(min: 0.0, max: 5.0),
+                has_gps <- boolean() do
+        # LoRa format like "!L4G-{MWS)a xGLoRa APRS / iGATE QTH  Batt=4.12V"
+        lora_data =
+          if has_gps do
+            "!L4G-{MWS)a xGLoRa APRS / iGATE QTH  Batt=#{:erlang.float_to_binary(voltage, decimals: 2)}V"
+          else
+            "!L4G-{MWS)_ xGLoRa APRS Batt=#{:erlang.float_to_binary(voltage, decimals: 2)}V"
+          end
+
+        packet = "MW7VHD-13>APLRG1,WIDE1-1,qAO,GW0KAX-10:#{lora_data}"
+
+        result = parse_packet(packet)
+        assert result == nil or is_map(result)
+      end
+    end
+
+    property "handles telemetry with text descriptions" do
+      check all seq <- integer(0..999),
+                values <- list_of(integer(0..999), length: 5),
+                has_description <- boolean() do
+        # Format like "T#066,161,058,000,086,000,00000000"
+        seq_str = String.pad_leading(to_string(seq), 3, "0")
+        val_str = Enum.map_join(values, ",", &String.pad_leading(to_string(&1), 3, "0"))
+
+        data =
+          if has_description do
+            "T##{seq_str},#{val_str},00000000 Battery OK"
+          else
+            "T##{seq_str},#{val_str},00000000"
+          end
+
+        packet = "MNARCH>APMI04,TCPIP*,qAC,T2VAN:#{data}"
+
+        result = parse_packet(packet)
+        assert result == nil or is_map(result)
+      end
+    end
+
+    property "handles WPSD (Pi-Star) status messages" do
+      check all url <- member_of(["https://wpsd.radio", "https://pi-star.uk", "wpsd.local"]) do
+        packet = "DO7DH-10>APDG03,qAS,DO7DH:>Powered by WPSD (#{url})"
+
+        result = parse_packet(packet)
+
+        if result != nil && result.data_type == :status do
+          assert String.contains?(result.data_extended[:status] || result.data_extended[:status_text] || "", "WPSD")
+        end
+      end
+    end
+
+    property "handles WX3in1 weather station packets" do
+      check all voltage <- float(min: 10.0, max: 15.0),
+                temp_c <- float(min: -40.0, max: 60.0),
+                has_position <- boolean() do
+        comment =
+          if has_position do
+            "@032035z4709.26N/00949.44E&WX3in1Plus2.0 U=#{:erlang.float_to_binary(voltage, decimals: 1)}V,T=#{:erlang.float_to_binary(temp_c, decimals: 1)}C"
+          else
+            "WX3in1Plus2.0 U=#{:erlang.float_to_binary(voltage, decimals: 1)}V,T=#{:erlang.float_to_binary(temp_c, decimals: 1)}C"
+          end
+
+        packet = "OE9XVD-6>APMI06,TCPIP*,qAC,T2AUSTRIA:#{comment}"
+
+        result = parse_packet(packet)
+        assert result == nil or is_map(result)
+      end
+    end
+
+    property "handles multi-language comments" do
+      check all lang <- member_of([:english, :spanish, :german, :japanese, :chinese]),
+                message_type <- member_of([:status, :beacon, :info]) do
+        text =
+          case lang do
+            :english -> "APRS iGate Online"
+            :spanish -> "Estación APRS activa"
+            :german -> "APRS Station aktiv"
+            :japanese -> "APRS 運用中"
+            :chinese -> "APRS 网关在线"
+          end
+
+        data =
+          case message_type do
+            :status -> ">#{text}"
+            :beacon -> "!4903.50N/07201.75W>#{text}"
+            :info -> ":ALL      :#{text}"
+          end
+
+        packet = "TEST>APRS:#{data}"
+
+        result = parse_packet(packet)
+        assert result == nil or is_map(result)
+      end
+    end
+
+    property "handles packets with software version info" do
+      check all software <- member_of(["DireWolf", "aprx", "YAAC", "Xastir", "UI-View", "APRSISCE"]),
+                version <- string(:alphanumeric, min_length: 1, max_length: 5) do
+        # Various software announcement formats
+        status = "#{software} #{version} on Linux"
+        packet = "TEST>APRS:>#{status}"
+
+        result = parse_packet(packet)
+
+        if result != nil && result.data_type == :status do
+          assert String.contains?(result.data_extended[:status] || result.data_extended[:status_text] || "", software)
         end
       end
     end
