@@ -7,11 +7,11 @@ defmodule Aprs.NMEAHelpers do
   def parse_nmea_coordinate(value, direction) when is_binary(value) and is_binary(direction) do
     case Float.parse(value) do
       {coord, _} ->
-        coord = coord / 100.0
-        coord = apply_nmea_direction(coord, direction)
-        handle_coordinate_result(coord)
+        normalized = coord / 100.0
+        result = apply_nmea_direction(normalized, direction)
+        handle_coordinate_result(result)
 
-      :error ->
+      _ ->
         {:error, "Invalid coordinate value"}
     end
   end
@@ -22,15 +22,11 @@ defmodule Aprs.NMEAHelpers do
   defp handle_coordinate_result(coord) when is_tuple(coord), do: coord
   defp handle_coordinate_result(coord), do: {:ok, coord}
 
-  defp apply_nmea_direction(coord, direction) do
-    case direction do
-      "N" -> coord
-      "S" -> -coord
-      "E" -> coord
-      "W" -> -coord
-      _ -> {:error, "Invalid coordinate direction"}
-    end
-  end
+  defp apply_nmea_direction(coord, "N"), do: coord
+  defp apply_nmea_direction(coord, "S"), do: -coord
+  defp apply_nmea_direction(coord, "E"), do: coord
+  defp apply_nmea_direction(coord, "W"), do: -coord
+  defp apply_nmea_direction(_, _), do: {:error, "Invalid coordinate direction"}
 
   @spec parse_nmea_sentence(any()) :: {:error, String.t()}
   def parse_nmea_sentence(_sentence) do
