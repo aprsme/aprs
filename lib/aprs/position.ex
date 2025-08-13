@@ -40,28 +40,43 @@ defmodule Aprs.Position do
   def parse_aprs_position(lat_str, lon_str) do
     import Decimal, only: [new: 1, add: 2, negate: 1]
 
-    lat =
-      case Regex.run(~r/^(\d{2})(\d{2}\.\d+)([NS])$/, lat_str) do
-        [_, degrees, minutes, direction] ->
-          lat_val = add(new(degrees), Decimal.div(new(minutes), new("60")))
-          if direction == "S", do: negate(lat_val), else: lat_val
-
-        _ ->
-          nil
-      end
-
-    lon =
-      case Regex.run(~r/^(\d{3})(\d{2}\.\d+)([EW])$/, lon_str) do
-        [_, degrees, minutes, direction] ->
-          lon_val = add(new(degrees), Decimal.div(new(minutes), new("60")))
-          if direction == "W", do: negate(lon_val), else: lon_val
-
-        _ ->
-          nil
-      end
+    lat = parse_latitude(lat_str)
+    lon = parse_longitude(lon_str)
 
     %{latitude: lat, longitude: lon}
   end
+
+  @spec parse_latitude(String.t()) :: Decimal.t() | nil
+  defp parse_latitude(lat_str) do
+    case Regex.run(~r/^(\d{2})(\d{2}\.\d+)([NS])$/, lat_str) do
+      [_, degrees, minutes, direction] ->
+        lat_val = Decimal.add(Decimal.new(degrees), Decimal.div(Decimal.new(minutes), Decimal.new("60")))
+        apply_latitude_direction(lat_val, direction)
+
+      _ ->
+        nil
+    end
+  end
+
+  @spec parse_longitude(String.t()) :: Decimal.t() | nil
+  defp parse_longitude(lon_str) do
+    case Regex.run(~r/^(\d{3})(\d{2}\.\d+)([EW])$/, lon_str) do
+      [_, degrees, minutes, direction] ->
+        lon_val = Decimal.add(Decimal.new(degrees), Decimal.div(Decimal.new(minutes), Decimal.new("60")))
+        apply_longitude_direction(lon_val, direction)
+
+      _ ->
+        nil
+    end
+  end
+
+  @spec apply_latitude_direction(Decimal.t(), String.t()) :: Decimal.t()
+  defp apply_latitude_direction(value, "S"), do: Decimal.negate(value)
+  defp apply_latitude_direction(value, _), do: value
+
+  @spec apply_longitude_direction(Decimal.t(), String.t()) :: Decimal.t()
+  defp apply_longitude_direction(value, "W"), do: Decimal.negate(value)
+  defp apply_longitude_direction(value, _), do: value
 
   @ambiguity_levels %{
     {0, 0} => 0,
