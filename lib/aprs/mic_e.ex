@@ -74,23 +74,22 @@ defmodule Aprs.MicE do
   end
 
   defp parse_destination(destination) do
-    if byte_size(destination) == 6 do
-      try do
-        <<c1, c2, c3, c4, c5, c6>> = destination
-
-        digits = decode_destination_digits([c1, c2, c3, c4, c5, c6])
-        lat_info = calculate_latitude_info(digits, c4)
-        lon_info = calculate_longitude_info(c5, c6)
-        message_info = extract_message_info(digits)
-
-        {:ok, Map.merge(lat_info, Map.merge(lon_info, message_info))}
-      rescue
-        _ -> {:error, :invalid_character_in_destination}
-      end
-    else
-      {:error, :invalid_destination_length}
-    end
+    parse_destination_by_size(destination, byte_size(destination))
   end
+
+  @spec parse_destination_by_size(binary(), integer()) :: {:ok, map()} | {:error, atom()}
+  defp parse_destination_by_size(<<c1, c2, c3, c4, c5, c6>>, 6) do
+    digits = decode_destination_digits([c1, c2, c3, c4, c5, c6])
+    lat_info = calculate_latitude_info(digits, c4)
+    lon_info = calculate_longitude_info(c5, c6)
+    message_info = extract_message_info(digits)
+
+    {:ok, Map.merge(lat_info, Map.merge(lon_info, message_info))}
+  rescue
+    _ -> {:error, :invalid_character_in_destination}
+  end
+
+  defp parse_destination_by_size(_, _), do: {:error, :invalid_destination_length}
 
   defp decode_destination_digits([c1, c2, c3, d4, d5, d6]) do
     [
@@ -177,34 +176,35 @@ defmodule Aprs.MicE do
     end
   end
 
-  defp parse_information(data, lon_offset) do
-    if byte_size(data) < 8 do
-      {:error, :invalid_information_field_length}
-    else
-      <<lon_deg_c, lon_min_c, lon_hmin_c, sp_c, dc_c, se_c, symbol_code, symbol_table_id, comment::binary>> = data
+  defp parse_information(data, _lon_offset) when byte_size(data) < 8 do
+    {:error, :invalid_information_field_length}
+  end
 
-      lon_deg = decode_lon_deg(lon_deg_c, lon_offset)
-      lon_min = decode_lon_min(lon_min_c)
-      lon_hmin = lon_hmin_c - 28
-      speed = decode_speed(sp_c, dc_c)
-      course = decode_course(dc_c, se_c)
+  defp parse_information(
+         <<lon_deg_c, lon_min_c, lon_hmin_c, sp_c, dc_c, se_c, symbol_code, symbol_table_id, comment::binary>>,
+         lon_offset
+       ) do
+    lon_deg = decode_lon_deg(lon_deg_c, lon_offset)
+    lon_min = decode_lon_min(lon_min_c)
+    lon_hmin = lon_hmin_c - 28
+    speed = decode_speed(sp_c, dc_c)
+    course = decode_course(dc_c, se_c)
 
-      # Parse altitude and clean up comment
-      {altitude, cleaned_comment} = parse_altitude_and_clean_comment(comment)
+    # Parse altitude and clean up comment
+    {altitude, cleaned_comment} = parse_altitude_and_clean_comment(comment)
 
-      {:ok,
-       %{
-         lon_degrees: lon_deg,
-         lon_minutes: lon_min,
-         lon_hundredths: lon_hmin,
-         speed: speed,
-         course: course,
-         symbol_code: <<symbol_code>>,
-         symbol_table_id: <<symbol_table_id>>,
-         comment: cleaned_comment,
-         altitude: altitude
-       }}
-    end
+    {:ok,
+     %{
+       lon_degrees: lon_deg,
+       lon_minutes: lon_min,
+       lon_hundredths: lon_hmin,
+       speed: speed,
+       course: course,
+       symbol_code: <<symbol_code>>,
+       symbol_table_id: <<symbol_table_id>>,
+       comment: cleaned_comment,
+       altitude: altitude
+     }}
   end
 
   defp decode_lon_deg(lon_deg_c, lon_offset) do
@@ -222,11 +222,12 @@ defmodule Aprs.MicE do
   defp apply_longitude_adjustment(longitude), do: longitude
 
   defp decode_lon_min(lon_min_c) do
-    case lon_min_c - 28 do
-      m when m >= 60 -> m - 60
-      m -> m
-    end
+    normalize_minutes(lon_min_c - 28)
   end
+
+  @spec normalize_minutes(integer()) :: integer()
+  defp normalize_minutes(m) when m >= 60, do: m - 60
+  defp normalize_minutes(m), do: m
 
   defp decode_speed(sp_c, dc_c) do
     sp = sp_c - 28
@@ -288,12 +289,7 @@ defmodule Aprs.MicE do
 
     # If the remaining "comment" is just encoded data (no readable text), 
     # return empty string instead
-    final_comment =
-      if is_encoded_data_only?(cleaned) do
-        ""
-      else
-        String.trim(cleaned)
-      end
+    final_comment = format_final_comment(cleaned, is_encoded_data_only?(cleaned))
 
     {altitude, final_comment}
   end
@@ -310,26 +306,19 @@ defmodule Aprs.MicE do
     |> String.trim()
   end
 
+  @spec format_final_comment(String.t(), boolean()) :: String.t()
+  defp format_final_comment(_cleaned, true), do: ""
+  defp format_final_comment(cleaned, false), do: String.trim(cleaned)
+
   # Check if a string appears to be only encoded data (not human-readable)
+  defp is_encoded_data_only?(str) when byte_size(str) <= 1, do: true
+  defp is_encoded_data_only?(<<"]", _rest::binary>>), do: true
+  defp is_encoded_data_only?(<<"=", _rest::binary>>), do: true
+
   defp is_encoded_data_only?(str) do
-    # Empty or very short strings
-    if String.length(str) <= 1 do
-      true
-    else
-      # Check if it starts with data indicators or contains mostly non-printable/special chars
-      case str do
-        <<"]", _rest::binary>> ->
-          true
-
-        <<"=", _rest::binary>> ->
-          true
-
-        _ ->
-          # Check if it's mostly special characters and no spaces or readable text
-          # A real comment would typically have spaces and alphanumeric characters
-          printable_chars = String.replace(str, ~r/[^a-zA-Z0-9 .,!?-]/u, "")
-          String.length(printable_chars) < String.length(str) / 2
-      end
-    end
+    # Check if it's mostly special characters and no spaces or readable text
+    # A real comment would typically have spaces and alphanumeric characters
+    printable_chars = String.replace(str, ~r/[^a-zA-Z0-9 .,!?-]/u, "")
+    String.length(printable_chars) < String.length(str) / 2
   end
 end

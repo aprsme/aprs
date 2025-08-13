@@ -25,10 +25,16 @@ defmodule Aprs.Object do
           cs::binary-size(2), compression_type::binary-size(1), comment::binary>> ->
           try do
             converted_lat =
-              Aprs.CompressedPositionHelpers.convert_compressed_lat(latitude_compressed)
+              case Aprs.CompressedPositionHelpers.convert_compressed_lat(latitude_compressed) do
+                {:ok, lat} -> lat
+                {:error, _} -> nil
+              end
 
             converted_lon =
-              Aprs.CompressedPositionHelpers.convert_compressed_lon(longitude_compressed)
+              case Aprs.CompressedPositionHelpers.convert_compressed_lon(longitude_compressed) do
+                {:ok, lon} -> lon
+                {:error, _} -> nil
+              end
 
             compressed_cs = Aprs.CompressedPositionHelpers.convert_compressed_cs(cs)
 
@@ -107,47 +113,89 @@ defmodule Aprs.Object do
 
   # Parse object extensions from comment field (course/speed, altitude, etc)
   defp parse_object_extensions(data) do
-    # Check for course/speed pattern (e.g., "244/036/A=111870")
-    case Regex.run(~r/^(\d{3})\/(\d{3})(.*)/, data) do
-      [_, course_str, speed_str, rest] ->
-        course = String.to_integer(course_str)
-        speed_knots = String.to_integer(speed_str)
-        # Check for altitude and DAO
-        {altitude, comment, dao_byte} = parse_altitude_from_comment(rest)
-        {course, speed_knots, altitude, comment, dao_byte}
-
-      _ ->
-        # No course/speed, check for altitude and DAO directly
-        {altitude, comment, dao_byte} = parse_altitude_from_comment(data)
-        {nil, nil, altitude, comment, dao_byte}
-    end
+    parse_course_speed(data)
   end
 
-  # Parse altitude from comment (e.g., "/A=111870" or " A=111870")
+  # Parse course/speed pattern using binary matching
+  defp parse_course_speed(<<c1::8, c2::8, c3::8, ?/, s1::8, s2::8, s3::8, rest::binary>>)
+       when c1 >= ?0 and c1 <= ?9 and c2 >= ?0 and c2 <= ?9 and c3 >= ?0 and c3 <= ?9 and s1 >= ?0 and s1 <= ?9 and
+              s2 >= ?0 and s2 <= ?9 and s3 >= ?0 and s3 <= ?9 do
+    course = (c1 - ?0) * 100 + (c2 - ?0) * 10 + (c3 - ?0)
+    speed = (s1 - ?0) * 100 + (s2 - ?0) * 10 + (s3 - ?0)
+    {altitude, comment, dao_byte} = parse_altitude_from_comment(rest)
+    {course, speed, altitude, comment, dao_byte}
+  end
+
+  defp parse_course_speed(data) do
+    # No course/speed, check for altitude and DAO directly
+    {altitude, comment, dao_byte} = parse_altitude_from_comment(data)
+    {nil, nil, altitude, comment, dao_byte}
+  end
+
+  # Parse altitude from comment using binary pattern matching
   defp parse_altitude_from_comment(data) do
-    case Regex.run(~r/[\/\s]A=(-?\d+)(.*)/, data) do
-      [_, alt_str, rest] ->
-        # Store altitude in feet
-        altitude_feet = String.to_integer(alt_str)
-        # Extract DAO extension immediately after altitude
-        {dao_byte, final_comment} = parse_dao_from_comment(rest)
-        {altitude_feet, String.trim(final_comment), dao_byte}
-
-      _ ->
-        {nil, String.trim(data), nil}
-    end
+    parse_altitude_prefix(data)
   end
 
-  # Parse DAO extension from comment
-  defp parse_dao_from_comment(data) do
-    case Regex.run(~r/!([a-zA-Z0-9])([a-zA-Z0-9])([a-zA-Z0-9])!/, data) do
-      [full_match, dao_datum, _, _] ->
-        cleaned = String.replace(data, full_match, "")
-        {String.upcase(dao_datum), cleaned}
+  # Handle "/A=" prefix
+  defp parse_altitude_prefix(<<?/, ?A, ?=, rest::binary>>) do
+    parse_altitude_value(rest, <<>>)
+  end
 
-      _ ->
-        {nil, data}
-    end
+  # Handle " A=" prefix (space instead of slash)
+  defp parse_altitude_prefix(<<?\s, ?A, ?=, rest::binary>>) do
+    parse_altitude_value(rest, <<>>)
+  end
+
+  # No altitude found
+  defp parse_altitude_prefix(data) do
+    {nil, String.trim(data), nil}
+  end
+
+  # Parse altitude value with optional negative sign
+  defp parse_altitude_value(<<?-, rest::binary>>, _acc) do
+    parse_altitude_digits(rest, <<?->>)
+  end
+
+  defp parse_altitude_value(data, _acc) do
+    parse_altitude_digits(data, <<>>)
+  end
+
+  # Parse altitude digits
+  defp parse_altitude_digits(<<d::8, rest::binary>>, acc) when d >= ?0 and d <= ?9 do
+    parse_altitude_digits(rest, acc <> <<d>>)
+  end
+
+  defp parse_altitude_digits(rest, acc) when byte_size(acc) > 0 do
+    altitude = String.to_integer(acc)
+    {dao_byte, final_comment} = parse_dao_from_comment(rest)
+    {altitude, String.trim(final_comment), dao_byte}
+  end
+
+  defp parse_altitude_digits(rest, _acc) do
+    {nil, String.trim(rest), nil}
+  end
+
+  # Parse DAO extension from comment using binary pattern matching
+  defp parse_dao_from_comment(data) do
+    parse_dao_scan(data, <<>>)
+  end
+
+  defp parse_dao_scan(<<?!, d1::8, d2::8, d3::8, ?!, rest::binary>>, acc)
+       when ((d1 >= ?a and d1 <= ?z) or (d1 >= ?A and d1 <= ?Z) or (d1 >= ?0 and d1 <= ?9)) and
+              ((d2 >= ?a and d2 <= ?z) or (d2 >= ?A and d2 <= ?Z) or (d2 >= ?0 and d2 <= ?9)) and
+              ((d3 >= ?a and d3 <= ?z) or (d3 >= ?A and d3 <= ?Z) or (d3 >= ?0 and d3 <= ?9)) do
+    # Found DAO pattern, return first character as datum byte
+    dao_datum = <<d1>>
+    {String.upcase(dao_datum), acc <> rest}
+  end
+
+  defp parse_dao_scan(<<char::8, rest::binary>>, acc) do
+    parse_dao_scan(rest, acc <> <<char>>)
+  end
+
+  defp parse_dao_scan(<<>>, acc) do
+    {nil, acc}
   end
 
   # Add course, speed, and altitude to the result map if present
@@ -161,19 +209,15 @@ defmodule Aprs.Object do
   defp maybe_add_field(map, _key, nil), do: map
   defp maybe_add_field(map, key, value), do: Map.put(map, key, value)
 
-  # Parse object timestamp to Unix timestamp
-  defp parse_object_timestamp(timestamp) do
-    # Object timestamps are in format DDHHMM[z|h|/]
-    case Regex.run(~r/^(\d{2})(\d{2})(\d{2})([zh\/])$/, timestamp) do
-      [_, _day_str, _hour_str, _min_str, _time_indicator] ->
-        # For now, return a placeholder timestamp
-        # In a real implementation, this would calculate the actual Unix timestamp
-        # based on the current month/year and the day/hour/min provided
-        # This is just a placeholder - real implementation would calculate properly
-        1_754_096_220
-
-      _ ->
-        nil
-    end
+  # Parse object timestamp to Unix timestamp using binary pattern matching
+  defp parse_object_timestamp(<<d1::8, d2::8, h1::8, h2::8, m1::8, m2::8, tz::8>>)
+       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and h1 >= ?0 and h1 <= ?9 and h2 >= ?0 and h2 <= ?9 and
+              m1 >= ?0 and m1 <= ?9 and m2 >= ?0 and m2 <= ?9 and tz in [?z, ?h, ?/] do
+    # For now, return a placeholder timestamp
+    # In a real implementation, this would calculate the actual Unix timestamp
+    # based on the current month/year and the day/hour/min provided
+    1_754_096_220
   end
+
+  defp parse_object_timestamp(_), do: nil
 end

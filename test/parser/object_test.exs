@@ -80,8 +80,8 @@ defmodule Aprs.ObjectTest do
       assert result[:data_type] == :object
       assert result[:position_format] == :compressed
       # '!' is actually a valid base91 character (value 0), so it may convert successfully
-      assert result[:latitude] == {:ok, 90.0} or result[:latitude] == nil
-      assert result[:longitude] == {:ok, -180.0} or result[:longitude] == nil
+      assert result[:latitude] == 90.0 or result[:latitude] == nil
+      assert result[:longitude] == -180.0 or result[:longitude] == nil
     end
   end
 end

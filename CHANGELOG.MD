@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2025-08-13
+
 ### Changed
+- **Performance Optimization**: Refactored parsing modules to use binary pattern matching instead of regex:
+  - Replaced all regex patterns with efficient binary pattern matching in weather parsing modules
+  - Converted PHG data parsing from regex to binary pattern matching for better performance
+  - Refactored object parsing to use binary pattern matching for course/speed, altitude, and DAO parsing
+  - Updated position parsing in main module and position.ex to use binary pattern matching
+  - Converted utility helpers coordinate and timestamp parsing to binary pattern matching
+  - Eliminated regex compilation overhead and improved memory efficiency
+  - Improved type safety with compile-time pattern validation
 - **Code Quality**: Refactored conditional logic throughout the codebase to use more functional patterns:
   - Replaced `cond` statements with pattern matching and guard clauses
   - Eliminated most `case` statements in favor of `with` expressions, pattern matching, and functional alternatives
