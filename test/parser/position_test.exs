@@ -136,8 +136,8 @@ defmodule Aprs.PositionTest do
   describe "from_aprs/2" do
     test "delegates to parse_aprs_position" do
       result = Position.from_aprs("4903.50N", "07201.75W")
-      refute is_nil(result.latitude)
-      refute is_nil(result.longitude)
+      assert result.latitude
+      assert result.longitude
       assert Decimal.equal?(Decimal.round(result.latitude, 6), Decimal.new("49.058333"))
       assert Decimal.equal?(Decimal.round(result.longitude, 6), Decimal.new("-72.029167"))
     end

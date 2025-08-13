@@ -203,7 +203,7 @@ defmodule Aprs.MainTest do
     test "handles raw_gps_ultimeter with parsing errors" do
       result = Aprs.parse_data(:raw_gps_ultimeter, "APRS", "INVALID_NMEA")
       assert result.data_type == :raw_gps_ultimeter
-      refute is_nil(result.error)
+      assert result.error
       assert result.latitude == nil
       assert result.longitude == nil
     end
@@ -220,7 +220,7 @@ defmodule Aprs.MainTest do
       case Aprs.parse(packet) do
         {:ok, result} ->
           assert result.data_type == :third_party_traffic
-          refute is_nil(result.data_extended)
+          assert result.data_extended
 
         {:error, _} ->
           # May fail due to complex parsing
@@ -255,7 +255,7 @@ defmodule Aprs.MainTest do
         case Aprs.parse(packet) do
           {:ok, result} ->
             if result.data_extended do
-              refute is_nil(result.data_extended.error)
+              assert result.data_extended.error
             end
 
           {:error, _} ->
@@ -503,7 +503,7 @@ defmodule Aprs.MainTest do
 
     test "handles tunneled packet with invalid header format" do
       result = Aprs.parse_data(:third_party_traffic, "APRS", "INVALIDHEADER:test")
-      refute is_nil(result.error)
+      assert result.error
     end
 
     test "handles network tunnel parsing" do
@@ -534,8 +534,8 @@ defmodule Aprs.MainTest do
       compressed = <<?/, "5L!!", "<*e7", ">", "12", "34", "rest">>
       result = Aprs.decode_compressed_position(compressed)
       assert is_map(result)
-      refute is_nil(result.latitude)
-      refute is_nil(result.longitude)
+      assert result.latitude
+      assert result.longitude
       assert result.symbol_code == ">"
     end
   end
@@ -640,7 +640,7 @@ defmodule Aprs.MainTest do
       valid_pos = "092345z1234.56N/12345.67W-Test"
       result = Aprs.parse_position_with_timestamp(false, valid_pos, :timestamped_position)
       assert is_map(result)
-      refute is_nil(result.timestamp)
+      assert result.timestamp
     end
   end
 
@@ -665,7 +665,7 @@ defmodule Aprs.MainTest do
   describe "third party and network tunnel parsing" do
     test "parse_third_party_traffic handles invalid tunneled header" do
       result = Aprs.parse_data(:third_party_traffic, "APRS", "invalid>header>data")
-      refute is_nil(result.error)
+      assert result.error
     end
 
     test "parse_third_party_traffic handles tunneled packet with invalid callsign" do
@@ -699,13 +699,13 @@ defmodule Aprs.MainTest do
       # Test the weather detection in timestamped_position_with_message
       weather_data = "092345z1234.56N/12345.67W__12345678c000s000g000"
       result = Aprs.parse_data(:timestamped_position_with_message, "APRS", weather_data)
-      refute is_nil(result.has_location)
+      assert result.has_location
     end
 
     test "handles timestamped position with invalid format" do
       # Test short/invalid timestamped position
       result = Aprs.parse_data(:timestamped_position_with_message, "APRS", "short")
-      refute is_nil(result.has_location)
+      assert result.has_location
     end
   end
 

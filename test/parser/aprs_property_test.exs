@@ -41,11 +41,11 @@ defmodule Aprs.PropertyTest do
         packet = "TEST>APRS:!#{lat}#{symbol_table}#{lon}#{symbol_code}#{comment}"
 
         result = parse_packet(packet)
-        assert result != nil
+        assert result
         assert result.data_type == :position
         assert result.data_extended.symbol_table_id == symbol_table
         # Symbol code might be converted by parser (e.g., space to underscore)
-        assert result.data_extended.symbol_code != nil
+        assert result.data_extended.symbol_code
       end
     end
 
@@ -74,7 +74,7 @@ defmodule Aprs.PropertyTest do
         packet = "TEST>APRS:!4903.50N#{separator}07201.75W>#{comment}"
 
         result = parse_packet(packet)
-        assert result != nil
+        assert result
         assert result.data_type == :position
       end
     end
@@ -186,7 +186,7 @@ defmodule Aprs.PropertyTest do
         packet = "TEST>APRS:!4048.16N/08007.56W#{weather_data}"
 
         result = parse_packet(packet)
-        assert result != nil
+        assert result
       end
     end
   end
@@ -208,7 +208,7 @@ defmodule Aprs.PropertyTest do
         result = parse_packet(packet)
         # Compressed positions should be 13 characters after the data type indicator
         if String.length("#{symbol_table}#{lat_chars}#{lon_chars}#{symbol_code}#{cs_chars}#{type_char}") == 13 do
-          assert result != nil
+          assert result
         end
       end
     end
@@ -301,7 +301,7 @@ defmodule Aprs.PropertyTest do
         packet = "TEST>APRS::TEST     :PARM.#{params}"
 
         result = parse_packet(packet)
-        assert result != nil
+        assert result
       end
     end
   end
