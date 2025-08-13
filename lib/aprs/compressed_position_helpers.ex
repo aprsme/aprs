@@ -115,7 +115,7 @@ defmodule Aprs.CompressedPositionHelpers do
   def calculate_compressed_ambiguity(<<char::8, _rest::binary>>) do
     # The compression type is offset by 33 to make it printable ASCII
     # Special case for space character which is 0x20 (32)
-    type_value = if char < 33, do: 0, else: char - 33
+    type_value = calculate_type_value(char)
 
     # Extract bits 2-4 for position resolution
     # Shift right by 2 bits and mask with 0b111 (7)
@@ -142,7 +142,7 @@ defmodule Aprs.CompressedPositionHelpers do
   def parse_compression_type(<<char::8, _rest::binary>>) do
     # The compression type is offset by 33 to make it printable ASCII
     # Special case for space character which is 0x20 (32)
-    type_value = if char < 33, do: 0, else: char - 33
+    type_value = calculate_type_value(char)
 
     # Extract individual bit fields
     # Bits 0-1
@@ -171,36 +171,34 @@ defmodule Aprs.CompressedPositionHelpers do
     }
   end
 
-  defp decode_gps_fix_type(value) do
-    case value do
-      # Compressed from other source
-      0 -> :other
-      # From GLL or GGA NMEA sentence
-      1 -> :gll_gga
-      # From RMC NMEA sentence  
-      2 -> :rmc
-      # Unknown/reserved
-      3 -> :unknown
-      _ -> :unknown
-    end
-  end
+  @spec calculate_type_value(integer()) :: integer()
+  defp calculate_type_value(char) when char < 33, do: 0
+  defp calculate_type_value(char), do: char - 33
 
-  defp map_resolution_to_ambiguity(resolution) do
-    case resolution do
-      # No ambiguity
-      0 -> 0
-      # 0.1 minute
-      1 -> 1
-      # 1 minute  
-      2 -> 2
-      # 10 minutes
-      3 -> 3
-      # 1 degree
-      4 -> 4
-      # Default to no ambiguity for invalid values
-      _ -> 0
-    end
-  end
+  @spec decode_gps_fix_type(integer()) :: atom()
+  # Compressed from other source
+  defp decode_gps_fix_type(0), do: :other
+  # From GLL or GGA NMEA sentence
+  defp decode_gps_fix_type(1), do: :gll_gga
+  # From RMC NMEA sentence  
+  defp decode_gps_fix_type(2), do: :rmc
+  # Unknown/reserved
+  defp decode_gps_fix_type(3), do: :unknown
+  defp decode_gps_fix_type(_), do: :unknown
+
+  @spec map_resolution_to_ambiguity(integer()) :: integer()
+  # No ambiguity
+  defp map_resolution_to_ambiguity(0), do: 0
+  # 0.1 minute
+  defp map_resolution_to_ambiguity(1), do: 1
+  # 1 minute  
+  defp map_resolution_to_ambiguity(2), do: 2
+  # 10 minutes
+  defp map_resolution_to_ambiguity(3), do: 3
+  # 1 degree
+  defp map_resolution_to_ambiguity(4), do: 4
+  # Default to no ambiguity for invalid values
+  defp map_resolution_to_ambiguity(_), do: 0
 
   @doc false
   def convert_to_base91(<<value::binary-size(4)>>) do
@@ -209,29 +207,25 @@ defmodule Aprs.CompressedPositionHelpers do
   end
 
   @spec convert_compressed_cs(binary() | nil) :: map()
-  def convert_compressed_cs(cs) when is_binary(cs) and byte_size(cs) == 2 do
-    # Check for DAO extension pattern
-    if cs == "&!" do
-      # This is a DAO extension, not course/speed data
-      %{}
-    else
-      [c, s] = to_charlist(cs)
-      _c_val = c - 33
-      s_val = s - 33
+  # Check for DAO extension pattern
+  def convert_compressed_cs("&!"), do: %{}
 
-      cond do
-        c == ?Z ->
-          %{range: 2 * 1.08 ** s_val}
-
-        c in ?!..?~ and c != ?Z ->
-          speed = max(Aprs.Convert.speed(1.08 ** s_val - 1, :knots, :mph), 0.01)
-          %{course: s_val * 4, speed: speed}
-
-        true ->
-          %{}
-      end
-    end
+  def convert_compressed_cs(<<c, s>> = cs) when is_binary(cs) do
+    s_val = s - 33
+    decode_course_speed(c, s_val)
   end
 
   def convert_compressed_cs(_), do: %{}
+
+  @spec decode_course_speed(integer(), integer()) :: map()
+  defp decode_course_speed(?Z, s_val) do
+    %{range: 2 * 1.08 ** s_val}
+  end
+
+  defp decode_course_speed(c, s_val) when c in ?!..?~ and c != ?Z do
+    speed = max(Aprs.Convert.speed(1.08 ** s_val - 1, :knots, :mph), 0.01)
+    %{course: s_val * 4, speed: speed}
+  end
+
+  defp decode_course_speed(_, _), do: %{}
 end

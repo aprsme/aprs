@@ -11,7 +11,7 @@ defmodule Aprs do
   alias Aprs.Telemetry
   alias Aprs.Weather
 
-  @version "0.1.6"
+  @version "0.1.5"
 
   @doc """
   Returns the current version of the APRS library as a static string.
@@ -19,11 +19,11 @@ defmodule Aprs do
   @spec version() :: String.t()
   def version, do: @version
 
-  # Simple APRS position parsing using binary pattern matching
+  # Simple APRS position parsing to replace parse_aprs_position
   @spec parse_aprs_position(String.t(), String.t()) :: %{latitude: coordinate(), longitude: coordinate()}
   defp parse_aprs_position(lat, lon) do
-    with {:ok, lat_deg, lat_min, lat_dir} <- parse_latitude_binary(lat),
-         {:ok, lon_deg, lon_min, lon_dir} <- parse_longitude_binary(lon) do
+    with [_, lat_deg, lat_min, lat_dir] <- Regex.run(~r/^(\d{2})(\d{2}\.\d+)([NS])$/, lat),
+         [_, lon_deg, lon_min, lon_dir] <- Regex.run(~r/^(\d{3})(\d{2}\.\d+)([EW])$/, lon) do
       lat_val =
         Decimal.add(Decimal.new(lat_deg), Decimal.div(Decimal.new(lat_min), Decimal.new("60")))
 
@@ -42,28 +42,6 @@ defmodule Aprs do
       _ -> %{latitude: nil, longitude: nil}
     end
   end
-
-  # Parse latitude using binary pattern matching
-  defp parse_latitude_binary(<<d1::8, d2::8, m1::8, m2::8, ?., f1::8, f2::8, dir::8>>)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and m1 >= ?0 and m1 <= ?9 and m2 >= ?0 and m2 <= ?9 and
-              f1 >= ?0 and f1 <= ?9 and f2 >= ?0 and f2 <= ?9 and dir in [?N, ?S] do
-    degrees = <<d1, d2>>
-    minutes = <<m1, m2, ?., f1, f2>>
-    {:ok, degrees, minutes, <<dir>>}
-  end
-
-  defp parse_latitude_binary(_), do: :error
-
-  # Parse longitude using binary pattern matching
-  defp parse_longitude_binary(<<d1::8, d2::8, d3::8, m1::8, m2::8, ?., f1::8, f2::8, dir::8>>)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 and m1 >= ?0 and m1 <= ?9 and
-              m2 >= ?0 and m2 <= ?9 and f1 >= ?0 and f1 <= ?9 and f2 >= ?0 and f2 <= ?9 and dir in [?E, ?W] do
-    degrees = <<d1, d2, d3>>
-    minutes = <<m1, m2, ?., f1, f2>>
-    {:ok, degrees, minutes, <<dir>>}
-  end
-
-  defp parse_longitude_binary(_), do: :error
 
   @spec apply_direction(Decimal.t(), String.t()) :: Decimal.t()
   defp apply_direction(value, "S"), do: Decimal.negate(value)
@@ -117,18 +95,20 @@ defmodule Aprs do
       {:error, :invalid_packet}
   end
 
-  def parse(_), do: {:error, :invalid_packet}
-
   @spec parse_with_encoding(String.t(), boolean()) :: parse_result()
   defp parse_with_encoding(message, true), do: do_parse(message)
-  # Try to fix invalid UTF-8 by replacing invalid bytes
   defp parse_with_encoding(message, false) do
-    fixed_message = String.replace(message, ~r/[^\x00-\x7F]/, "?")
-    do_parse(fixed_message)
-  rescue
-    _ ->
-      {:error, :invalid_utf8}
+    # Try to fix invalid UTF-8 by replacing invalid bytes
+    try do
+      fixed_message = String.replace(message, ~r/[^\x00-\x7F]/, "?")
+      do_parse(fixed_message)
+    rescue
+      _ ->
+        {:error, :invalid_utf8}
+    end
   end
+
+  def parse(_), do: {:error, :invalid_packet}
 
   @spec do_parse(String.t()) :: parse_result()
   defp do_parse(message) do
@@ -590,14 +570,6 @@ defmodule Aprs do
     |> handle_position_result(:position)
   end
 
-  @spec handle_position_result(map() | nil, atom()) :: map()
-  defp handle_position_result(nil, data_type) do
-    %{data_type: :malformed_position, error: "Failed to parse #{data_type}"}
-  end
-
-  defp handle_position_result(%{data_type: :malformed_position} = result, _data_type), do: result
-  defp handle_position_result(result, data_type), do: Map.put(result, :data_type, data_type)
-
   @spec handle_position_with_timestamp_result(map() | nil) :: map()
   defp handle_position_with_timestamp_result(nil) do
     %{data_type: :malformed_position, error: "Failed to parse position with timestamp"}
@@ -750,8 +722,7 @@ defmodule Aprs do
     end
   end
 
-  @spec validate_and_extract_course_speed(String.t(), String.t(), integer(), float()) ::
-          {integer() | nil, float() | nil, String.t()}
+  @spec validate_and_extract_course_speed(String.t(), String.t(), integer(), float()) :: {integer() | nil, float() | nil, String.t()}
   defp validate_and_extract_course_speed(comment, full_match, course, speed)
        when course >= 0 and course <= 360 and speed < 300 do
     cleaned_comment = comment |> String.replace(full_match, "") |> String.trim()
@@ -851,7 +822,6 @@ defmodule Aprs do
 
   @spec process_weather_comment(String.t(), boolean()) :: {map() | nil, String.t()}
   defp process_weather_comment(comment, false), do: {nil, comment}
-
   defp process_weather_comment(comment, true) do
     weather_data = Weather.parse_weather_data(comment)
 
@@ -894,57 +864,23 @@ defmodule Aprs do
 
   # Patch parse_position_without_timestamp to include course/speed
   @spec parse_position_without_timestamp(String.t()) :: map()
-  def parse_position_without_timestamp(
-        <<latitude::binary-size(8), sym_table_id::binary-size(1), longitude::binary-size(9), symbol_code::binary-size(1),
-          comment::binary>> = position_data
-      ) do
-    parse_uncompressed_with_validation(
-      position_data,
-      latitude,
-      sym_table_id,
-      longitude,
-      symbol_code,
-      comment,
-      valid_aprs_coordinate?(latitude, longitude)
-    )
+  def parse_position_without_timestamp(<<latitude::binary-size(8), sym_table_id::binary-size(1), longitude::binary-size(9), symbol_code::binary-size(1),
+        comment::binary>> = position_data) do
+    parse_uncompressed_with_validation(position_data, latitude, sym_table_id, longitude, symbol_code, comment, valid_aprs_coordinate?(latitude, longitude))
   end
 
-  @spec parse_uncompressed_with_validation(
-          String.t(),
-          String.t(),
-          String.t(),
-          String.t(),
-          String.t(),
-          String.t(),
-          boolean()
-        ) :: map()
+  @spec parse_uncompressed_with_validation(String.t(), String.t(), String.t(), String.t(), String.t(), String.t(), boolean()) :: map()
   defp parse_uncompressed_with_validation(_position_data, latitude, sym_table_id, longitude, symbol_code, comment, true) do
     parse_position_uncompressed(latitude, sym_table_id, longitude, symbol_code, comment)
   end
 
-  defp parse_uncompressed_with_validation(
-         position_data,
-         _latitude,
-         _sym_table_id,
-         _longitude,
-         _symbol_code,
-         _comment,
-         false
-       ) do
+  defp parse_uncompressed_with_validation(position_data, _latitude, _sym_table_id, _longitude, _symbol_code, _comment, false) do
     # Try compressed position without "/" prefix as fallback
     try_parse_compressed_without_prefix(position_data)
   end
 
-  def parse_position_without_timestamp(
-        <<latitude::binary-size(8), sym_table_id::binary-size(1), longitude::binary-size(9)>> = position_data
-      ) do
-    parse_short_uncompressed_with_validation(
-      position_data,
-      latitude,
-      sym_table_id,
-      longitude,
-      valid_aprs_coordinate?(latitude, longitude)
-    )
+  def parse_position_without_timestamp(<<latitude::binary-size(8), sym_table_id::binary-size(1), longitude::binary-size(9)>> = position_data) do
+    parse_short_uncompressed_with_validation(position_data, latitude, sym_table_id, longitude, valid_aprs_coordinate?(latitude, longitude))
   end
 
   @spec parse_short_uncompressed_with_validation(String.t(), String.t(), String.t(), String.t(), boolean()) :: map()
@@ -957,29 +893,171 @@ defmodule Aprs do
     try_parse_compressed_without_prefix(position_data)
   end
 
-  # Helper function to validate APRS coordinates using binary pattern matching
+      # Compressed format with DAO extension - Symbol table first: TYYYYXXXXC>&!...
+      <<sym_table::binary-size(1), latitude_compressed::binary-size(4), longitude_compressed::binary-size(4),
+        cs_byte::binary-size(1), symbol_code::binary-size(1), "&!", comment::binary>>
+      when byte_size(position_data) >= 13 ->
+        # Parse with symbol table and course/speed
+        parse_position_compressed_with_full_data(
+          sym_table,
+          latitude_compressed,
+          longitude_compressed,
+          symbol_code,
+          # Course/speed with padding
+          cs_byte <> " ",
+          # No compression type with DAO
+          " ",
+          comment
+        )
+
+      # Check for DAO extension in standard compressed format: /YYYYXXXXS>&!...
+      <<"/", latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), symbol_code::binary-size(1),
+        cs::binary-size(2), compression_type::binary-size(1), comment::binary>>
+      when cs == "&!" ->
+        # This is a DAO extension pattern where symbol is at standard position
+        # but cs contains "&!" marker
+        parse_position_compressed(
+          latitude_compressed,
+          longitude_compressed,
+          symbol_code,
+          # No real course/speed
+          "",
+          # No compression type
+          " ",
+          # Keep the byte that was compression_type
+          compression_type <> comment
+        )
+
+      # Compressed format with DAO extension: /YYYYXXXX>&!HDDDDD...
+      <<"/", latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), symbol_code::binary-size(1), "&!",
+        comment::binary>> ->
+        parse_position_compressed(
+          latitude_compressed,
+          longitude_compressed,
+          symbol_code,
+          # No course/speed data with DAO extension
+          "",
+          # Use space as default compression type  
+          " ",
+          "&!" <> comment
+        )
+
+      # Standard compressed format: /YYYYXXXXSCTHHHHHH...
+      <<"/", latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), symbol_code::binary-size(1),
+        cs::binary-size(2), compression_type::binary-size(1), comment::binary>> ->
+        parse_position_compressed(
+          latitude_compressed,
+          longitude_compressed,
+          symbol_code,
+          cs,
+          compression_type,
+          comment
+        )
+
+      # Compressed format with "!" prefix and DAO extension: !YYYYXXXXC>&!...
+      <<"!", latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), cs_byte::binary-size(1),
+        symbol_code::binary-size(1), "&!", comment::binary>> ->
+        # Special DAO format where symbol comes after course/speed byte
+        parse_position_compressed(
+          latitude_compressed,
+          longitude_compressed,
+          symbol_code,
+          # Use cs_byte as course/speed with empty second byte
+          cs_byte <> " ",
+          # No compression type with DAO
+          " ",
+          comment
+        )
+
+      # Standard compressed format with "!" prefix: !YYYYXXXXSCTHHHHHH...
+      <<"!", latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), symbol_code::binary-size(1),
+        cs::binary-size(2), compression_type::binary-size(1), comment::binary>> ->
+        parse_position_compressed(
+          latitude_compressed,
+          longitude_compressed,
+          symbol_code,
+          cs,
+          compression_type,
+          comment
+        )
+
+  # Compressed position with leading symbol table (alternate table)
+  def parse_position_without_timestamp(<<sym_table_id::binary-size(1), latitude_compressed::binary-size(4), longitude_compressed::binary-size(4),
+        symbol_code::binary-size(1), rest::binary>> = position_data) when byte_size(position_data) >= 10 do
+    parse_position_by_symbol_table(position_data, sym_table_id, latitude_compressed, longitude_compressed, symbol_code, rest)
+  end
+
+  @spec parse_position_by_symbol_table(String.t(), String.t(), String.t(), String.t(), String.t(), String.t()) :: map()
+  defp parse_position_by_symbol_table(_position_data, <<"L">> = sym_table_id, latitude_compressed, longitude_compressed, symbol_code, rest) do
+    # This is the specific format we're looking for
+    parse_position_compressed_with_symbol_table(
+      sym_table_id,
+      latitude_compressed,
+      longitude_compressed,
+      symbol_code,
+      rest
+    )
+  end
+
+  defp parse_position_by_symbol_table(_position_data, <<"\\">> = sym_table_id, latitude_compressed, longitude_compressed, symbol_code, rest) do
+    # Alternate symbol table
+    parse_position_compressed_with_symbol_table(
+      sym_table_id,
+      latitude_compressed,
+      longitude_compressed,
+      symbol_code,
+      rest
+    )
+  end
+
+  defp parse_position_by_symbol_table(position_data, _, _, _, _, _) do
+    # Not an alternate table, try other formats
+    parse_position_without_timestamp_fallback(position_data)
+  end
+
+      # Special case: if bytes 9-10 are '&!', this is a DAO extension
+      <<latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), symbol_code::binary-size(1), "&!",
+        comment::binary>> ->
+        # IO.puts("[DEBUG] Matched DAO extension pattern starting with &!")
+        # The compression type should be space (no compression type byte)
+        # Use the first character of comment as compression type fallback
+
+        parse_position_compressed_missing_prefix(
+          latitude_compressed,
+          longitude_compressed,
+          symbol_code,
+          # No course/speed data when DAO extension is present
+          "",
+          # Use space as compression type
+          " ",
+          "&!" <> comment
+        )
+
+      # Normal case (but not starting with "/")
+      <<latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), symbol_code::binary-size(1),
+        cs::binary-size(2), compression_type::binary-size(1), rest::binary>>
+      when byte_size(position_data) >= 13 and not (binary_part(position_data, 0, 1) == "/") ->
+        parse_position_compressed_missing_prefix(
+          latitude_compressed,
+          longitude_compressed,
+          symbol_code,
+          cs,
+          compression_type,
+          rest
+        )
+
+      _ ->
+        parse_position_malformed(position_data)
+    end
+  end
+
+  # Helper function to validate APRS coordinates
   @spec valid_aprs_coordinate?(String.t(), String.t()) :: boolean()
   defp valid_aprs_coordinate?(lat, lon) do
-    lat_valid = valid_latitude_format?(lat)
-    lon_valid = valid_longitude_format?(lon)
+    lat_valid = Regex.match?(~r/^\d{4}\.\d{2}[NS]$/, lat)
+    lon_valid = Regex.match?(~r/^\d{5}\.\d{2}[EW]$/, lon)
     lat_valid and lon_valid
   end
-
-  defp valid_latitude_format?(<<d1::8, d2::8, m1::8, m2::8, ?., f1::8, f2::8, dir::8>>)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and m1 >= ?0 and m1 <= ?9 and m2 >= ?0 and m2 <= ?9 and
-              f1 >= ?0 and f1 <= ?9 and f2 >= ?0 and f2 <= ?9 and dir in [?N, ?S] do
-    true
-  end
-
-  defp valid_latitude_format?(_), do: false
-
-  defp valid_longitude_format?(<<d1::8, d2::8, d3::8, m1::8, m2::8, ?., f1::8, f2::8, dir::8>>)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 and m1 >= ?0 and m1 <= ?9 and
-              m2 >= ?0 and m2 <= ?9 and f1 >= ?0 and f1 <= ?9 and f2 >= ?0 and f2 <= ?9 and dir in [?E, ?W] do
-    true
-  end
-
-  defp valid_longitude_format?(_), do: false
 
   # Helper function to try parsing as compressed position without "/" prefix
   defp try_parse_compressed_without_prefix(position_data) do
@@ -1124,6 +1202,102 @@ defmodule Aprs do
       posambiguity: ambiguity,
       messaging: 0
     }
+  end
+
+  defp parse_position_compressed(latitude_compressed, longitude_compressed, symbol_code, cs, compression_type, comment) do
+    # IO.puts("parse_position_compressed called with comment: #{comment}")
+
+    case {Aprs.CompressedPositionHelpers.convert_compressed_lat(latitude_compressed),
+          Aprs.CompressedPositionHelpers.convert_compressed_lon(longitude_compressed)} do
+      {{:ok, converted_lat}, {:ok, converted_lon}} ->
+        compressed_cs = Aprs.CompressedPositionHelpers.convert_compressed_cs(cs)
+
+        # Parse full compression type information
+        compression_info = Aprs.CompressedPositionHelpers.parse_compression_type(compression_type)
+        ambiguity = compression_info.position_resolution
+
+        has_position = valid_coordinate?(converted_lat) and valid_coordinate?(converted_lon)
+
+        # Extract telemetry from comment if present
+        {telemetry, cleaned_comment} = Aprs.TelemetryFromComment.extract_telemetry_from_comment(comment)
+
+        # Parse DAO extension from comment
+        {dao_data, cleaned_comment_after_dao} = parse_dao_extension(cleaned_comment)
+
+        # Calculate position resolution for compressed format
+        posresolution = Aprs.UtilityHelpers.calculate_compressed_position_resolution()
+
+        base_data = %{
+          latitude: converted_lat,
+          longitude: converted_lon,
+          symbol_table_id: "/",
+          symbol_code: symbol_code,
+          comment: cleaned_comment_after_dao,
+          position_format: :compressed,
+          compression_type: compression_type,
+          compression_info: compression_info,
+          data_type: :position,
+          compressed?: true,
+          position_ambiguity: ambiguity,
+          dao: dao_data,
+          has_position: has_position,
+          posresolution: posresolution,
+          format: "compressed",
+          # Standard parser fields
+          posambiguity: ambiguity,
+          messaging: if(compression_info.aprs_messaging, do: 1, else: 0)
+        }
+
+        # Add telemetry if found
+        data_with_cs = Map.merge(base_data, compressed_cs)
+
+        if telemetry do
+          Map.put(data_with_cs, :telemetry, telemetry)
+        else
+          data_with_cs
+        end
+
+      {{:error, lat_error}, _} ->
+        %{
+          data_type: :position_error,
+          error_message: "Invalid compressed location: #{lat_error}",
+          has_position: false
+        }
+
+      {_, {:error, lon_error}} ->
+        %{
+          data_type: :position_error,
+          error_message: "Invalid compressed location: #{lon_error}",
+          has_position: false
+        }
+
+      _ ->
+        %{
+          data_type: :position_error,
+          error_message: "Invalid compressed location",
+          has_position: false
+        }
+    end
+  end
+
+  defp parse_position_without_timestamp_fallback(position_data) do
+    # Try the standard compressed format without prefix
+    case position_data do
+      <<latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), symbol_code::binary-size(1),
+        cs::binary-size(2), compression_type::binary-size(1), comment::binary>>
+      when byte_size(position_data) >= 13 ->
+        parse_position_compressed_missing_prefix(
+          latitude_compressed,
+          longitude_compressed,
+          symbol_code,
+          cs,
+          compression_type,
+          comment
+        )
+
+      _ ->
+        parse_position_malformed(position_data)
+    end
   end
 
   defp parse_position_compressed_with_full_data(
@@ -1785,6 +1959,10 @@ defmodule Aprs do
   defp valid_coordinate?(coord) do
     is_number(coord) or is_struct(coord, Decimal)
   end
+
+  @spec add_telemetry_if_present(map(), map() | nil) :: map()
+  defp add_telemetry_if_present(base_data, nil), do: base_data
+  defp add_telemetry_if_present(base_data, telemetry), do: Map.put(base_data, :telemetry, telemetry)
 
   # Extract common weather merging logic
   @spec merge_weather_if_present(map(), String.t(), String.t(), String.t()) :: map()

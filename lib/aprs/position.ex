@@ -38,8 +38,6 @@ defmodule Aprs.Position do
 
   @doc false
   def parse_aprs_position(lat_str, lon_str) do
-    import Decimal, only: [new: 1, add: 2, negate: 1]
-
     lat = parse_latitude(lat_str)
     lon = parse_longitude(lon_str)
 
@@ -48,8 +46,8 @@ defmodule Aprs.Position do
 
   @spec parse_latitude(String.t()) :: Decimal.t() | nil
   defp parse_latitude(lat_str) do
-    case Regex.run(~r/^(\d{2})(\d{2}\.\d+)([NS])$/, lat_str) do
-      [_, degrees, minutes, direction] ->
+    case parse_latitude_binary(lat_str) do
+      {:ok, degrees, minutes, direction} ->
         lat_val = Decimal.add(Decimal.new(degrees), Decimal.div(Decimal.new(minutes), Decimal.new("60")))
         apply_latitude_direction(lat_val, direction)
 
@@ -60,8 +58,8 @@ defmodule Aprs.Position do
 
   @spec parse_longitude(String.t()) :: Decimal.t() | nil
   defp parse_longitude(lon_str) do
-    case Regex.run(~r/^(\d{3})(\d{2}\.\d+)([EW])$/, lon_str) do
-      [_, degrees, minutes, direction] ->
+    case parse_longitude_binary(lon_str) do
+      {:ok, degrees, minutes, direction} ->
         lon_val = Decimal.add(Decimal.new(degrees), Decimal.div(Decimal.new(minutes), Decimal.new("60")))
         apply_longitude_direction(lon_val, direction)
 
@@ -69,6 +67,64 @@ defmodule Aprs.Position do
         nil
     end
   end
+
+  # Parse latitude using binary pattern matching
+  defp parse_latitude_binary(<<d1::8, d2::8, m1::8, m2::8, ?., rest::binary>>)
+       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and m1 >= ?0 and m1 <= ?9 and m2 >= ?0 and m2 <= ?9 do
+    case parse_lat_fraction_and_dir(rest) do
+      {:ok, fraction, dir} ->
+        degrees = <<d1, d2>>
+        minutes = <<m1, m2, ?., fraction::binary>>
+        {:ok, degrees, minutes, dir}
+
+      _ ->
+        :error
+    end
+  end
+
+  defp parse_latitude_binary(_), do: :error
+
+  # Parse longitude using binary pattern matching
+  defp parse_longitude_binary(<<d1::8, d2::8, d3::8, m1::8, m2::8, ?., rest::binary>>)
+       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 and m1 >= ?0 and m1 <= ?9 and
+              m2 >= ?0 and m2 <= ?9 do
+    case parse_lon_fraction_and_dir(rest) do
+      {:ok, fraction, dir} ->
+        degrees = <<d1, d2, d3>>
+        minutes = <<m1, m2, ?., fraction::binary>>
+        {:ok, degrees, minutes, dir}
+
+      _ ->
+        :error
+    end
+  end
+
+  defp parse_longitude_binary(_), do: :error
+
+  # Parse fraction and direction for latitude
+  defp parse_lat_fraction_and_dir(data), do: parse_fraction_and_dir(data, [?N, ?S])
+
+  # Parse fraction and direction for longitude
+  defp parse_lon_fraction_and_dir(data), do: parse_fraction_and_dir(data, [?E, ?W])
+
+  # Generic fraction and direction parser
+  defp parse_fraction_and_dir(data, valid_dirs) do
+    parse_fraction_digits(data, <<>>, valid_dirs)
+  end
+
+  defp parse_fraction_digits(<<d::8, rest::binary>>, acc, valid_dirs) when d >= ?0 and d <= ?9 do
+    parse_fraction_digits(rest, acc <> <<d>>, valid_dirs)
+  end
+
+  defp parse_fraction_digits(<<dir::8>>, acc, valid_dirs) when byte_size(acc) > 0 do
+    if dir in valid_dirs do
+      {:ok, acc, <<dir>>}
+    else
+      :error
+    end
+  end
+
+  defp parse_fraction_digits(_, _, _), do: :error
 
   @spec apply_latitude_direction(Decimal.t(), String.t()) :: Decimal.t()
   defp apply_latitude_direction(value, "S"), do: Decimal.negate(value)

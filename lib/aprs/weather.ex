@@ -7,9 +7,15 @@ defmodule Aprs.Weather do
   Parse an APRS weather report string. Returns a struct or error.
   """
   @spec parse(String.t()) :: map() | nil
-  def parse("_" <> <<timestamp::binary-size(8), rest::binary>>) do
+  def parse("_" <> <<timestamp::binary-size(7), rest::binary>>) do
     weather_data = parse_weather_data(rest)
     Map.merge(%{timestamp: timestamp, data_type: :weather}, weather_data)
+  end
+
+  def parse("c" <> rest) do
+    # Complete weather format without timestamp
+    weather_data = parse_weather_data(rest)
+    Map.merge(%{data_type: :weather}, weather_data)
   end
 
   def parse(data) do
@@ -23,47 +29,97 @@ defmodule Aprs.Weather do
   """
   @spec parse_from_comment(String.t()) :: map() | nil
   def parse_from_comment(comment) when is_binary(comment) do
-    if weather_packet_comment?(comment) do
-      weather_data = parse_weather_data(comment)
-      Map.merge(%{comment: comment, data_type: :weather}, weather_data)
-    end
+    parse_comment_with_weather_check(comment, weather_packet_comment?(comment))
   end
 
   def parse_from_comment(_), do: nil
 
+  @spec parse_comment_with_weather_check(String.t(), boolean()) :: map() | nil
+  defp parse_comment_with_weather_check(_comment, false), do: nil
+
+  defp parse_comment_with_weather_check(comment, true) do
+    weather_data = parse_weather_data(comment)
+    Map.merge(%{comment: comment, data_type: :weather}, weather_data)
+  end
+
   @doc """
-  Check if a comment contains weather data patterns.
+  Check if a comment contains weather data patterns using binary pattern matching.
   """
   @spec weather_packet_comment?(String.t()) :: boolean()
   def weather_packet_comment?(comment) when is_binary(comment) do
-    # Look for common weather data patterns in comments
-    # Note: We explicitly check for weather-specific patterns to avoid
-    # misidentifying position packets with course/speed (xxx/xxx) as weather
-    weather_patterns = [
-      # Temperature (must have 't' prefix)
-      ~r/t\d{3}/,
-      # Humidity (must have 'h' prefix)
-      ~r/h\d{2}/,
-      # Pressure (must have 'b' prefix)
-      ~r/b\d{5}/,
-      # Rain (must have 'r' prefix)
-      ~r/r\d{3}/,
-      # Wind gust (must have 'g' prefix)
-      ~r/g\d{3}/,
-      # Rain 24h (must have 'p' prefix)
-      ~r/p\d{3}/,
-      # Rain since midnight (must have 'P' prefix)
-      ~r/P\d{3}/,
-      # Snow (must have 's' prefix)
-      ~r/s\d{3}/
-    ]
-
-    # Only consider it a weather packet if it has at least one weather-specific pattern
-    # This prevents position packets with course/speed (xxx/xxx) from being misidentified
-    Enum.any?(weather_patterns, &Regex.match?(&1, comment))
+    # Check for weather-specific patterns to avoid misidentifying position packets
+    has_weather_pattern?(comment)
   end
 
   def weather_packet_comment?(_), do: false
+
+  # Use binary pattern matching to check for weather patterns
+  defp has_weather_pattern?(data), do: check_weather_patterns(data)
+
+  defp check_weather_patterns(<<>>), do: false
+
+  # Temperature pattern (t followed by 3 digits)
+  defp check_weather_patterns(<<?t, d1::8, d2::8, d3::8, _::binary>>)
+       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 do
+    true
+  end
+
+  # Temperature pattern with negative (t- followed by 3 digits)
+  defp check_weather_patterns(<<?t, ?-, d1::8, d2::8, d3::8, _::binary>>)
+       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 do
+    true
+  end
+
+  # Humidity pattern (h followed by 2 digits)
+  defp check_weather_patterns(<<?h, d1::8, d2::8, _::binary>>) when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 do
+    true
+  end
+
+  # Pressure pattern (b followed by 5 digits)
+  defp check_weather_patterns(<<?b, d1::8, d2::8, d3::8, d4::8, d5::8, _::binary>>)
+       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 and d4 >= ?0 and d4 <= ?9 and
+              d5 >= ?0 and d5 <= ?9 do
+    true
+  end
+
+  # Rain 1h pattern (r followed by 3 digits)
+  defp check_weather_patterns(<<?r, d1::8, d2::8, d3::8, _::binary>>)
+       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 do
+    true
+  end
+
+  # Wind gust pattern (g followed by 3 digits)
+  defp check_weather_patterns(<<?g, d1::8, d2::8, d3::8, _::binary>>)
+       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 do
+    true
+  end
+
+  # Rain 24h pattern (p followed by 3 digits)
+  defp check_weather_patterns(<<?p, d1::8, d2::8, d3::8, _::binary>>)
+       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 do
+    true
+  end
+
+  # Rain since midnight pattern (P followed by 3 digits)
+  defp check_weather_patterns(<<?P, d1::8, d2::8, d3::8, _::binary>>)
+       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 do
+    true
+  end
+
+  # Snow pattern (s followed by 3 digits)
+  defp check_weather_patterns(<<?s, d1::8, d2::8, d3::8, _::binary>>)
+       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 do
+    true
+  end
+
+  # Luminosity pattern (l or L followed by 3 digits)
+  defp check_weather_patterns(<<marker::8, d1::8, d2::8, d3::8, _::binary>>)
+       when marker in [?l, ?L] and d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 do
+    true
+  end
+
+  # Continue scanning
+  defp check_weather_patterns(<<_::8, rest::binary>>), do: check_weather_patterns(rest)
 
   @doc """
   Parses a weather data string into a map of weather values.
@@ -103,16 +159,22 @@ defmodule Aprs.Weather do
     |> Map.put(:data_type, :weather)
   end
 
-  defp put_weather_value(acc, _key, nil), do: acc
+  # Always put the key in the map, even if the value is nil
   defp put_weather_value(acc, key, value), do: Map.put(acc, key, value)
 
   # Recursively convert all string keys in a map to atoms
   defp atomize_keys_recursive(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_binary(k) -> {String.to_atom(k), atomize_keys_recursive(v)}
-      {k, v} -> {k, atomize_keys_recursive(v)}
-    end)
+    Map.new(map, &atomize_key_value_pair/1)
   end
 
   defp atomize_keys_recursive(other), do: other
+
+  @spec atomize_key_value_pair({any(), any()}) :: {atom(), any()}
+  defp atomize_key_value_pair({k, v}) when is_binary(k) do
+    {String.to_atom(k), atomize_keys_recursive(v)}
+  end
+
+  defp atomize_key_value_pair({k, v}) do
+    {k, atomize_keys_recursive(v)}
+  end
 end

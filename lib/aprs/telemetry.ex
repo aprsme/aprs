@@ -53,26 +53,29 @@ defmodule Aprs.Telemetry do
   end
 
   def parse(<<":BITS.", rest::binary>>) do
-    case String.split(rest, ",", trim: true) do
-      [bits_sense | project_names] ->
-        %{
-          data_type: :telemetry_bits,
-          bits_sense: String.to_charlist(bits_sense),
-          project_names: project_names,
-          raw_data: rest
-        }
-
-      [] ->
-        %{
-          data_type: :telemetry_bits,
-          bits_sense: [],
-          project_names: [],
-          raw_data: rest
-        }
-    end
+    parse_bits_data(String.split(rest, ",", trim: true), rest)
   end
 
   def parse(data), do: %{raw_data: data, data_type: :telemetry}
+
+  @spec parse_bits_data(list(), String.t()) :: map()
+  defp parse_bits_data([bits_sense | project_names], rest) do
+    %{
+      data_type: :telemetry_bits,
+      bits_sense: String.to_charlist(bits_sense),
+      project_names: project_names,
+      raw_data: rest
+    }
+  end
+
+  defp parse_bits_data([], rest) do
+    %{
+      data_type: :telemetry_bits,
+      bits_sense: [],
+      project_names: [],
+      raw_data: rest
+    }
+  end
 
   defp parse_telemetry_data(rest) do
     case String.split(rest, ",") do
@@ -83,13 +86,7 @@ defmodule Aprs.Telemetry do
         bits_string = Enum.at(values, 5, "00000000")
 
         # Format analog values as strings with 2 decimal places
-        formatted_vals =
-          Enum.map(analog_values, fn val ->
-            case Float.parse(val) do
-              {float_val, _} -> :erlang.float_to_binary(float_val, decimals: 2)
-              :error -> val
-            end
-          end)
+        formatted_vals = Enum.map(analog_values, &format_analog_value/1)
 
         %{
           telemetry: %{
@@ -108,6 +105,14 @@ defmodule Aprs.Telemetry do
           raw_data: rest,
           data_type: :telemetry
         }
+    end
+  end
+
+  @spec format_analog_value(String.t()) :: String.t()
+  defp format_analog_value(val) do
+    case Float.parse(val) do
+      {float_val, _} -> :erlang.float_to_binary(float_val, decimals: 2)
+      :error -> val
     end
   end
 end
