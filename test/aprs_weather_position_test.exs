@@ -14,8 +14,8 @@ defmodule Aprs.WeatherPositionTest do
 
       # For now, just check that we have position data
       weather_data = parsed.data_extended
-      assert weather_data.latitude != nil
-      assert weather_data.longitude != nil
+      assert weather_data.latitude
+      assert weather_data.longitude
       # The timestamp is converted to Unix time in the current implementation
       assert is_integer(weather_data.time)
 
@@ -40,8 +40,8 @@ defmodule Aprs.WeatherPositionTest do
       assert parsed.data_type == :weather
 
       weather_data = parsed.data_extended
-      assert weather_data.latitude != nil
-      assert weather_data.longitude != nil
+      assert weather_data.latitude
+      assert weather_data.longitude
       assert is_integer(weather_data.time)
 
       # Weather parsing assertions will be added when weather parsing is implemented
@@ -64,8 +64,8 @@ defmodule Aprs.WeatherPositionTest do
 
       # Should have position and comment
       weather_data = parsed.data_extended
-      assert weather_data.latitude != nil
-      assert weather_data.longitude != nil
+      assert weather_data.latitude
+      assert weather_data.longitude
       assert is_integer(weather_data.time)
       assert weather_data.comment == "Test comment"
     end

@@ -26,8 +26,8 @@ defmodule Aprs.ObjectTest do
       assert is_map(result)
       assert result[:data_type] == :object
       assert result[:position_format] == :uncompressed
-      refute is_nil(result[:latitude])
-      refute is_nil(result[:longitude])
+      assert result[:latitude]
+      assert result[:longitude]
     end
 
     test "parses compressed object position" do

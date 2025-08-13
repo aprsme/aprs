@@ -146,8 +146,8 @@ defmodule Aprs.MicEPropertyTest do
 
         if result != nil && result.data_type == :mic_e do
           # Check symbol was parsed
-          assert result.data_extended[:symbol_table_id] != nil
-          assert result.data_extended[:symbol_code] != nil
+          assert result.data_extended[:symbol_table_id]
+          assert result.data_extended[:symbol_code]
         end
       end
     end
@@ -224,7 +224,7 @@ defmodule Aprs.MicEPropertyTest do
         result = parse_packet(packet)
 
         if result != nil && result.data_type == :timestamped_position do
-          assert result.data_extended.timestamp != nil
+          assert result.data_extended.timestamp
         end
       end
     end

@@ -169,7 +169,7 @@ defmodule Aprs.RealWorldPropertyTest do
 
         if result != nil && result.data_type == :position do
           # Should parse all extensions
-          assert result.data_extended.comment != nil
+          assert result.data_extended.comment
         end
       end
     end
@@ -322,7 +322,7 @@ defmodule Aprs.RealWorldPropertyTest do
         result = parse_packet(packet)
 
         if result != nil && result.data_type == :position do
-          assert result.data_extended.latitude != nil
+          assert result.data_extended.latitude
         end
       end
     end

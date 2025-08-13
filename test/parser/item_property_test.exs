@@ -47,8 +47,8 @@ defmodule Aprs.ItemPropertyTest do
         if result != nil && result.data_type == :item do
           assert result.item_name == name
           assert result.live_killed == if(is_live, do: "!", else: "_")
-          assert result.data_extended.latitude != nil
-          assert result.data_extended.longitude != nil
+          assert result.data_extended.latitude
+          assert result.data_extended.longitude
           assert result.data_extended.symbol_table_id == symbol_table
           assert result.data_extended.symbol_code == symbol_code
         end

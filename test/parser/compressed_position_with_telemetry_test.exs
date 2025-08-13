@@ -23,7 +23,7 @@ defmodule Aprs.CompressedPositionWithTelemetryTest do
       assert data.posresolution == 0.291
 
       # Check telemetry extraction
-      assert data.telemetry != nil
+      assert data.telemetry
       assert data.telemetry.seq == 434
       assert data.telemetry.vals == [423, 39]
     end
@@ -66,7 +66,7 @@ defmodule Aprs.CompressedPositionWithTelemetryTest do
       # Check telemetry data
       data = parsed.data_extended
       assert data.data_type == :telemetry
-      assert data.telemetry != nil
+      assert data.telemetry
       assert data.telemetry.seq == "191"
       assert data.telemetry.vals == ["0.00", "0.20", "0.00", "0.00", "1.00"]
       assert data.telemetry.bits == "00000000"

@@ -319,7 +319,7 @@ defmodule Aprs.WeatherTest do
         assert result.wind_speed == 2
         assert result.temperature == temp
         # Timestamp should be parsed
-        assert result.timestamp != nil
+        assert result.timestamp
       end
     end
 

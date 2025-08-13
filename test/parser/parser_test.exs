@@ -526,8 +526,8 @@ defmodule Aprs.ParserTest do
       assert is_map(data)
       assert is_struct(data[:latitude], Decimal)
       assert is_struct(data[:longitude], Decimal)
-      refute is_nil(data[:latitude])
-      refute is_nil(data[:longitude])
+      assert data[:latitude]
+      assert data[:longitude]
       if Map.has_key?(data, :has_location), do: assert(data[:has_location])
     end
 
@@ -679,8 +679,8 @@ defmodule Aprs.ParserTest do
       assert is_map(data)
       assert is_struct(data[:latitude], Decimal)
       assert is_struct(data[:longitude], Decimal)
-      refute is_nil(data[:latitude])
-      refute is_nil(data[:longitude])
+      assert data[:latitude]
+      assert data[:longitude]
       if Map.has_key?(data, :has_location), do: assert(data[:has_location])
     end
 
