@@ -502,17 +502,16 @@ defmodule Aprs do
   def parse_data(:invalid_test_data, _destination, data), do: Aprs.SpecialDataHelpers.parse_invalid_test_data(data)
 
   def parse_data(:raw_gps_ultimeter, _destination, data) do
-    case Aprs.NMEAHelpers.parse_nmea_sentence(data) do
-      {:error, error} ->
-        %{
-          data_type: :raw_gps_ultimeter,
-          error: error,
-          nmea_type: nil,
-          raw_data: data,
-          latitude: nil,
-          longitude: nil
-        }
-    end
+    {:error, error} = Aprs.NMEAHelpers.parse_nmea_sentence(data)
+
+    %{
+      data_type: :raw_gps_ultimeter,
+      error: error,
+      nmea_type: nil,
+      raw_data: data,
+      latitude: nil,
+      longitude: nil
+    }
   end
 
   def parse_data(:df_report, _destination, data) do
@@ -1695,19 +1694,18 @@ defmodule Aprs do
   @spec parse_network_tunnel(String.t()) :: {:ok, map()} | {:error, String.t()}
   defp parse_network_tunnel(packet) do
     # Network tunneling packets start with "}" and contain a complete APRS packet
-    case String.slice(packet, 1..-1//1) do
-      tunneled_packet ->
-        case parse_tunneled_packet(tunneled_packet) do
-          {:ok, parsed_packet} ->
-            {:ok,
-             Map.merge(parsed_packet, %{
-               tunnel_type: :network,
-               raw_data: packet
-             })}
+    tunneled_packet = String.slice(packet, 1..-1//1)
 
-          {:error, reason} ->
-            {:error, "Invalid tunneled packet: #{reason}"}
-        end
+    case parse_tunneled_packet(tunneled_packet) do
+      {:ok, parsed_packet} ->
+        {:ok,
+         Map.merge(parsed_packet, %{
+           tunnel_type: :network,
+           raw_data: packet
+         })}
+
+      {:error, reason} ->
+        {:error, "Invalid tunneled packet: #{reason}"}
     end
   end
 
