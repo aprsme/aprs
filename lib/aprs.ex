@@ -117,6 +117,7 @@ defmodule Aprs do
       {:error, :invalid_packet}
   end
 
+  @spec parse(any()) :: parse_result()
   def parse(_), do: {:error, :invalid_packet}
 
   @spec parse_with_encoding(String.t(), boolean()) :: parse_result()
@@ -149,9 +150,6 @@ defmodule Aprs do
     else
       {:error, reason} ->
         {:error, format_error_message(reason)}
-
-      _ ->
-        {:error, :invalid_packet}
     end
   rescue
     _ ->
@@ -365,6 +363,7 @@ defmodule Aprs do
     Map.put(packet, :format, format)
   end
 
+  @spec map_format_field(map()) :: map()
   defp map_format_field(%{compressed?: true} = packet) do
     Map.put(packet, :format, "compressed")
   end
@@ -372,6 +371,7 @@ defmodule Aprs do
   defp map_format_field(%{format: _format} = packet), do: packet
   defp map_format_field(packet), do: packet
 
+  @spec map_symbol_fields(map()) :: map()
   defp map_symbol_fields(packet) do
     packet
     |> Map.put(:symbolcode, Map.get(packet, :symbol_code))
@@ -589,22 +589,6 @@ defmodule Aprs do
     |> handle_position_result(:position)
   end
 
-  @spec handle_position_result(map() | nil, atom()) :: map()
-  defp handle_position_result(nil, data_type) do
-    %{data_type: :malformed_position, error: "Failed to parse #{data_type}"}
-  end
-
-  defp handle_position_result(%{data_type: :malformed_position} = result, _data_type), do: result
-  defp handle_position_result(result, data_type), do: Map.put(result, :data_type, data_type)
-
-  @spec handle_position_with_timestamp_result(map() | nil) :: map()
-  defp handle_position_with_timestamp_result(nil) do
-    %{data_type: :malformed_position, error: "Failed to parse position with timestamp"}
-  end
-
-  defp handle_position_with_timestamp_result(%{data_type: :malformed_position} = result), do: result
-  defp handle_position_with_timestamp_result(result), do: Map.put(result, :data_type, :position)
-
   def parse_data(:position_with_message, _destination, data) do
     result = parse_position_with_message_without_timestamp(data)
 
@@ -655,6 +639,23 @@ defmodule Aprs do
   # Catch-all for unknown or unsupported types
   def parse_data(_type, _destination, _data), do: nil
 
+  @spec handle_position_result(map() | nil, atom()) :: map()
+  defp handle_position_result(nil, data_type) do
+    %{data_type: :malformed_position, error: "Failed to parse #{data_type}"}
+  end
+
+  defp handle_position_result(%{data_type: :malformed_position} = result, _data_type), do: result
+  defp handle_position_result(result, data_type), do: Map.put(result, :data_type, data_type)
+
+  @spec handle_position_with_timestamp_result(map() | nil) :: map()
+  defp handle_position_with_timestamp_result(nil) do
+    %{data_type: :malformed_position, error: "Failed to parse position with timestamp"}
+  end
+
+  defp handle_position_with_timestamp_result(%{data_type: :malformed_position} = result), do: result
+  defp handle_position_with_timestamp_result(result), do: Map.put(result, :data_type, :position)
+
+  @spec add_has_location(map()) :: map()
   defp add_has_location(result) do
     Map.put(result, :has_location, has_valid_coordinates?(result))
   end
@@ -892,7 +893,7 @@ defmodule Aprs do
   end
 
   # Patch parse_position_without_timestamp to include course/speed
-  @spec parse_position_without_timestamp(String.t()) :: map()
+  @spec parse_position_without_timestamp(String.t()) :: map() | nil
   def parse_position_without_timestamp(
         <<latitude::binary-size(8), sym_table_id::binary-size(1), longitude::binary-size(9), symbol_code::binary-size(1),
           comment::binary>> = position_data
@@ -906,6 +907,22 @@ defmodule Aprs do
       comment,
       valid_aprs_coordinate?(latitude, longitude)
     )
+  end
+
+  def parse_position_without_timestamp(
+        <<latitude::binary-size(8), sym_table_id::binary-size(1), longitude::binary-size(9)>> = position_data
+      ) do
+    parse_short_uncompressed_with_validation(
+      position_data,
+      latitude,
+      sym_table_id,
+      longitude,
+      valid_aprs_coordinate?(latitude, longitude)
+    )
+  end
+
+  def parse_position_without_timestamp(_invalid_data) do
+    %{data_type: :malformed_position, error: "Invalid position format"}
   end
 
   @spec parse_uncompressed_with_validation(
@@ -932,18 +949,6 @@ defmodule Aprs do
        ) do
     # Try compressed position without "/" prefix as fallback
     try_parse_compressed_without_prefix(position_data)
-  end
-
-  def parse_position_without_timestamp(
-        <<latitude::binary-size(8), sym_table_id::binary-size(1), longitude::binary-size(9)>> = position_data
-      ) do
-    parse_short_uncompressed_with_validation(
-      position_data,
-      latitude,
-      sym_table_id,
-      longitude,
-      valid_aprs_coordinate?(latitude, longitude)
-    )
   end
 
   @spec parse_short_uncompressed_with_validation(String.t(), String.t(), String.t(), String.t(), boolean()) :: map()
@@ -1360,7 +1365,7 @@ defmodule Aprs do
   end
 
   # Patch parse_position_with_message_without_timestamp to propagate course/speed
-  @spec parse_position_with_message_without_timestamp(String.t()) :: map()
+  @spec parse_position_with_message_without_timestamp(String.t()) :: map() | nil
   def parse_position_with_message_without_timestamp(position_data) do
     result = parse_position_without_timestamp(position_data)
 
