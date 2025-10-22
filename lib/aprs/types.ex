@@ -47,6 +47,7 @@ defmodule Aprs.Types do
     @doc """
     Parse APRS lat/lon strings (e.g., "3339.13N", "11759.13W") into a map with latitude and longitude.
     """
+    @spec from_aprs(String.t(), String.t()) :: %{latitude: Decimal.t() | nil, longitude: Decimal.t() | nil}
     def from_aprs(lat_str, lon_str) do
       import Decimal, only: [new: 1, add: 2, negate: 1]
 
@@ -76,6 +77,7 @@ defmodule Aprs.Types do
     @doc """
     Return a map with latitude and longitude from decimal values.
     """
+    @spec from_decimal(number(), number()) :: %{latitude: Decimal.t(), longitude: Decimal.t()}
     def from_decimal(lat, lon) do
       %{latitude: Decimal.new(to_string(lat)), longitude: Decimal.new(to_string(lon))}
     end

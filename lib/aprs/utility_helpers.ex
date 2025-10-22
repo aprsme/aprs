@@ -337,8 +337,6 @@ defmodule Aprs.UtilityHelpers do
     count_leading_spaces_binary(str, 0)
   end
 
-  defp count_leading_spaces(_), do: 0
-
   defp count_leading_spaces_binary(<<32, rest::binary>>, count) do
     count_leading_spaces_binary(rest, count + 1)
   end

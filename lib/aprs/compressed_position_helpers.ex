@@ -184,7 +184,6 @@ defmodule Aprs.CompressedPositionHelpers do
   defp decode_gps_fix_type(2), do: :rmc
   # Unknown/reserved
   defp decode_gps_fix_type(3), do: :unknown
-  defp decode_gps_fix_type(_), do: :unknown
 
   @spec map_resolution_to_ambiguity(integer()) :: integer()
   # No ambiguity
