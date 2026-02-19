@@ -14,6 +14,14 @@ defmodule Aprs.PHG do
   def parse(_), do: %{data_type: :phg_data, error: "Invalid PHG data"}
 
   # Parse with optional # prefix
+  @spec parse_phg_data(String.t()) ::
+          %{
+            phg: String.t(),
+            data_type: :phg_data,
+            raw_data: String.t()
+          }
+          | %{dfs: String.t(), data_type: :df_report, raw_data: String.t()}
+          | %{data_type: :phg_data, raw_data: String.t(), error: String.t()}
   defp parse_phg_data(<<?#, rest::binary>>), do: parse_phg_data(rest)
 
   # Parse PHG format

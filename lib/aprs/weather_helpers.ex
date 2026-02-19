@@ -3,13 +3,16 @@ defmodule Aprs.WeatherHelpers do
   Weather field extraction helpers for APRS using binary pattern matching.
   """
 
+  import Aprs.Guards
+
   @spec extract_timestamp(String.t() | binary()) :: String.t() | nil
   def extract_timestamp(data), do: extract_timestamp_scan(data)
 
   # Look for timestamp pattern anywhere in the data
+  @spec extract_timestamp_scan(binary()) :: String.t() | nil
   defp extract_timestamp_scan(<<d1::8, d2::8, d3::8, d4::8, d5::8, d6::8, marker::8, _rest::binary>>)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 and d4 >= ?0 and d4 <= ?9 and
-              d5 >= ?0 and d5 <= ?9 and d6 >= ?0 and d6 <= ?9 and marker in [?h, ?z, ?/, ?c] do
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(d4) and is_digit(d5) and is_digit(d6) and
+              marker in [?h, ?z, ?/, ?c] do
     <<d1, d2, d3, d4, d5, d6, marker>>
   end
 
@@ -19,9 +22,10 @@ defmodule Aprs.WeatherHelpers do
   @spec remove_timestamp(String.t() | binary()) :: binary()
   def remove_timestamp(data), do: remove_timestamp_scan(data, <<>>)
 
+  @spec remove_timestamp_scan(binary(), binary()) :: binary()
   defp remove_timestamp_scan(<<d1::8, d2::8, d3::8, d4::8, d5::8, d6::8, marker::8, rest::binary>>, acc)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 and d4 >= ?0 and d4 <= ?9 and
-              d5 >= ?0 and d5 <= ?9 and d6 >= ?0 and d6 <= ?9 and marker in [?h, ?z, ?/, ?c] do
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(d4) and is_digit(d5) and is_digit(d6) and
+              marker in [?h, ?z, ?/, ?c] do
     acc <> rest
   end
 
@@ -35,6 +39,7 @@ defmodule Aprs.WeatherHelpers do
   def parse_wind_direction(data), do: parse_wind_direction_scan(data)
 
   # Handle dots pattern (missing data)
+  @spec parse_wind_direction_scan(binary()) :: non_neg_integer() | nil
   defp parse_wind_direction_scan(<<?., ?., ?., ?/, ?., ?., ?., _::binary>>), do: nil
   defp parse_wind_direction_scan(<<?/, ?., ?., ?., _::binary>>), do: nil
 
@@ -66,6 +71,7 @@ defmodule Aprs.WeatherHelpers do
   @spec parse_wind_speed(binary()) :: integer() | nil
   def parse_wind_speed(data), do: parse_wind_speed_scan(data)
 
+  @spec parse_wind_speed_scan(binary()) :: non_neg_integer() | nil
   defp parse_wind_speed_scan(<<?/, s1::8, s2::8, s3::8, _::binary>>)
        when s1 >= ?0 and s1 <= ?9 and s2 >= ?0 and s2 <= ?9 and s3 >= ?0 and s3 <= ?9 do
     (s1 - ?0) * 100 + (s2 - ?0) * 10 + (s3 - ?0)
@@ -83,6 +89,7 @@ defmodule Aprs.WeatherHelpers do
   @spec parse_wind_gust(binary()) :: integer() | nil
   def parse_wind_gust(data), do: parse_wind_gust_scan(data)
 
+  @spec parse_wind_gust_scan(binary()) :: non_neg_integer() | nil
   defp parse_wind_gust_scan(<<?g, g1::8, g2::8, g3::8, _::binary>>)
        when g1 >= ?0 and g1 <= ?9 and g2 >= ?0 and g2 <= ?9 and g3 >= ?0 and g3 <= ?9 do
     (g1 - ?0) * 100 + (g2 - ?0) * 10 + (g3 - ?0)
@@ -95,6 +102,7 @@ defmodule Aprs.WeatherHelpers do
   def parse_temperature(data), do: parse_temperature_scan(data)
 
   # Handle negative temperature with minus sign
+  @spec parse_temperature_scan(binary()) :: integer() | nil
   defp parse_temperature_scan(<<?t, ?-, t1::8, t2::8, t3::8, _::binary>>)
        when t1 >= ?0 and t1 <= ?9 and t2 >= ?0 and t2 <= ?9 and t3 >= ?0 and t3 <= ?9 do
     -((t1 - ?0) * 100 + (t2 - ?0) * 10 + (t3 - ?0))
@@ -128,6 +136,7 @@ defmodule Aprs.WeatherHelpers do
   @spec parse_rainfall_1h(binary()) :: float() | nil
   def parse_rainfall_1h(data), do: parse_rainfall_1h_scan(data)
 
+  @spec parse_rainfall_1h_scan(binary()) :: float() | nil
   defp parse_rainfall_1h_scan(<<?r, r1::8, r2::8, r3::8, _::binary>>)
        when r1 >= ?0 and r1 <= ?9 and r2 >= ?0 and r2 <= ?9 and r3 >= ?0 and r3 <= ?9 do
     ((r1 - ?0) * 100 + (r2 - ?0) * 10 + (r3 - ?0)) / 100.0
@@ -139,6 +148,7 @@ defmodule Aprs.WeatherHelpers do
   @spec parse_rainfall_24h(binary()) :: float() | nil
   def parse_rainfall_24h(data), do: parse_rainfall_24h_scan(data)
 
+  @spec parse_rainfall_24h_scan(binary()) :: float() | nil
   defp parse_rainfall_24h_scan(<<?p, p1::8, p2::8, p3::8, _::binary>>)
        when p1 >= ?0 and p1 <= ?9 and p2 >= ?0 and p2 <= ?9 and p3 >= ?0 and p3 <= ?9 do
     ((p1 - ?0) * 100 + (p2 - ?0) * 10 + (p3 - ?0)) / 100.0
@@ -150,6 +160,7 @@ defmodule Aprs.WeatherHelpers do
   @spec parse_rainfall_since_midnight(binary()) :: float() | nil
   def parse_rainfall_since_midnight(data), do: parse_rainfall_since_midnight_scan(data)
 
+  @spec parse_rainfall_since_midnight_scan(binary()) :: float() | nil
   defp parse_rainfall_since_midnight_scan(<<?P, p1::8, p2::8, p3::8, _::binary>>)
        when p1 >= ?0 and p1 <= ?9 and p2 >= ?0 and p2 <= ?9 and p3 >= ?0 and p3 <= ?9 do
     ((p1 - ?0) * 100 + (p2 - ?0) * 10 + (p3 - ?0)) / 100.0
@@ -162,6 +173,7 @@ defmodule Aprs.WeatherHelpers do
   @spec parse_humidity(binary()) :: integer() | nil
   def parse_humidity(data), do: parse_humidity_scan(data)
 
+  @spec parse_humidity_scan(binary()) :: pos_integer() | nil
   defp parse_humidity_scan(<<?h, h1::8, h2::8, _::binary>>) when h1 >= ?0 and h1 <= ?9 and h2 >= ?0 and h2 <= ?9 do
     humidity = (h1 - ?0) * 10 + (h2 - ?0)
     normalize_humidity(humidity)
@@ -170,15 +182,16 @@ defmodule Aprs.WeatherHelpers do
   defp parse_humidity_scan(<<_::8, rest::binary>>), do: parse_humidity_scan(rest)
   defp parse_humidity_scan(<<>>), do: nil
 
+  @spec normalize_humidity(non_neg_integer()) :: pos_integer()
   defp normalize_humidity(0), do: 100
   defp normalize_humidity(val), do: val
 
   @spec parse_pressure(binary()) :: float() | nil
   def parse_pressure(data), do: parse_pressure_scan(data)
 
+  @spec parse_pressure_scan(binary()) :: float() | nil
   defp parse_pressure_scan(<<?b, b1::8, b2::8, b3::8, b4::8, b5::8, _::binary>>)
-       when b1 >= ?0 and b1 <= ?9 and b2 >= ?0 and b2 <= ?9 and b3 >= ?0 and b3 <= ?9 and b4 >= ?0 and b4 <= ?9 and
-              b5 >= ?0 and b5 <= ?9 do
+       when is_digit(b1) and is_digit(b2) and is_digit(b3) and is_digit(b4) and is_digit(b5) do
     ((b1 - ?0) * 10_000 + (b2 - ?0) * 1000 + (b3 - ?0) * 100 + (b4 - ?0) * 10 + (b5 - ?0)) / 10.0
   end
 
@@ -188,6 +201,7 @@ defmodule Aprs.WeatherHelpers do
   @spec parse_luminosity(binary()) :: integer() | nil
   def parse_luminosity(data), do: parse_luminosity_scan(data)
 
+  @spec parse_luminosity_scan(binary()) :: non_neg_integer() | nil
   defp parse_luminosity_scan(<<marker::8, l1::8, l2::8, l3::8, _::binary>>)
        when marker in [?l, ?L] and l1 >= ?0 and l1 <= ?9 and l2 >= ?0 and l2 <= ?9 and l3 >= ?0 and l3 <= ?9 do
     (l1 - ?0) * 100 + (l2 - ?0) * 10 + (l3 - ?0)
@@ -199,6 +213,7 @@ defmodule Aprs.WeatherHelpers do
   @spec parse_snow(binary()) :: float() | nil
   def parse_snow(data), do: parse_snow_scan(data)
 
+  @spec parse_snow_scan(binary()) :: float() | nil
   defp parse_snow_scan(<<?s, s1::8, s2::8, s3::8, _::binary>>)
        when s1 >= ?0 and s1 <= ?9 and s2 >= ?0 and s2 <= ?9 and s3 >= ?0 and s3 <= ?9 do
     ((s1 - ?0) * 100 + (s2 - ?0) * 10 + (s3 - ?0)) / 10.0

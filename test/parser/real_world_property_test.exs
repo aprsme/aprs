@@ -34,7 +34,7 @@ defmodule Aprs.RealWorldPropertyTest do
           else
             hop_path = Enum.join(hops, ",")
 
-            if has_asterisk && length(hops) > 0 do
+            if has_asterisk && hops != [] do
               # Add asterisk to random hop
               base_path <> "," <> hop_path <> "*"
             else

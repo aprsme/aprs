@@ -71,6 +71,42 @@ defmodule Aprs.ObjectTest do
       assert result[:comment] == "comment"
     end
 
+    test "parses object with DAO extension in comment" do
+      # Triggers Map.put(result, :daodatumbyte, dao_byte) - line 108
+      data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">Test !ABZ! position"
+      result = Object.parse(data)
+      assert is_map(result)
+      assert result[:data_type] == :object
+      assert result[:daodatumbyte] == "A"
+    end
+
+    test "parses object with space-A= altitude prefix" do
+      # Triggers parse_altitude_prefix(<<space, A, = ...>>) - line 147
+      data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> "> A=00100 comment"
+      result = Object.parse(data)
+      assert is_map(result)
+      assert result[:data_type] == :object
+    end
+
+    test "parses object with negative altitude" do
+      # Triggers parse_altitude_value(<<?-, rest::binary>>, _acc) - line 157
+      data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">/A=-0100 comment"
+      result = Object.parse(data)
+      assert is_map(result)
+      assert result[:data_type] == :object
+      assert result[:altitude] == -100
+    end
+
+    test "parses altitude where parse_altitude_digits gets empty acc" do
+      # Triggers defp parse_altitude_digits(rest, _acc) when byte_size(acc) == 0 - line 176
+      # /A= followed immediately by a non-digit
+      data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">/A=X comment"
+      result = Object.parse(data)
+      assert is_map(result)
+      assert result[:data_type] == :object
+      assert result[:altitude] == nil
+    end
+
     test "handles invalid compressed latitude/longitude conversion" do
       # Test when conversion functions return error tuples
       # Using invalid base91 characters

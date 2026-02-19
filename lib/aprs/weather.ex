@@ -3,13 +3,18 @@ defmodule Aprs.Weather do
   APRS weather report parsing.
   """
 
+  import Aprs.Guards
+
+  @typep weather_value :: integer() | float() | nil | String.t() | atom() | %{atom() => integer() | float() | nil}
+  @typep weather_map :: %{atom() => weather_value}
+
   @doc """
   Parse an APRS weather report string. Returns a struct or error.
   """
   @spec parse(String.t()) :: map() | nil
   def parse("_" <> <<timestamp::binary-size(7), rest::binary>>) do
     weather_data = parse_weather_data(rest)
-    Map.merge(%{timestamp: timestamp, data_type: :weather}, weather_data)
+    Map.merge(weather_data, %{timestamp: timestamp, data_type: :weather})
   end
 
   def parse("c" <> rest) do
@@ -54,67 +59,68 @@ defmodule Aprs.Weather do
   def weather_packet_comment?(_), do: false
 
   # Use binary pattern matching to check for weather patterns
+  @spec has_weather_pattern?(binary()) :: boolean()
   defp has_weather_pattern?(data), do: check_weather_patterns(data)
 
+  @spec check_weather_patterns(binary()) :: boolean()
   defp check_weather_patterns(<<>>), do: false
 
   # Temperature pattern (t followed by 3 digits)
   defp check_weather_patterns(<<?t, d1::8, d2::8, d3::8, _::binary>>)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 do
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) do
     true
   end
 
   # Temperature pattern with negative (t- followed by 3 digits)
   defp check_weather_patterns(<<?t, ?-, d1::8, d2::8, d3::8, _::binary>>)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 do
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) do
     true
   end
 
   # Humidity pattern (h followed by 2 digits)
-  defp check_weather_patterns(<<?h, d1::8, d2::8, _::binary>>) when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 do
+  defp check_weather_patterns(<<?h, d1::8, d2::8, _::binary>>) when is_digit(d1) and is_digit(d2) do
     true
   end
 
   # Pressure pattern (b followed by 5 digits)
   defp check_weather_patterns(<<?b, d1::8, d2::8, d3::8, d4::8, d5::8, _::binary>>)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 and d4 >= ?0 and d4 <= ?9 and
-              d5 >= ?0 and d5 <= ?9 do
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(d4) and is_digit(d5) do
     true
   end
 
   # Rain 1h pattern (r followed by 3 digits)
   defp check_weather_patterns(<<?r, d1::8, d2::8, d3::8, _::binary>>)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 do
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) do
     true
   end
 
   # Wind gust pattern (g followed by 3 digits)
   defp check_weather_patterns(<<?g, d1::8, d2::8, d3::8, _::binary>>)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 do
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) do
     true
   end
 
   # Rain 24h pattern (p followed by 3 digits)
   defp check_weather_patterns(<<?p, d1::8, d2::8, d3::8, _::binary>>)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 do
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) do
     true
   end
 
   # Rain since midnight pattern (P followed by 3 digits)
   defp check_weather_patterns(<<?P, d1::8, d2::8, d3::8, _::binary>>)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 do
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) do
     true
   end
 
   # Snow pattern (s followed by 3 digits)
   defp check_weather_patterns(<<?s, d1::8, d2::8, d3::8, _::binary>>)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 do
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) do
     true
   end
 
   # Luminosity pattern (l or L followed by 3 digits)
   defp check_weather_patterns(<<marker::8, d1::8, d2::8, d3::8, _::binary>>)
-       when marker in [?l, ?L] and d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 do
+       when marker in [?l, ?L] and is_digit(d1) and is_digit(d2) and is_digit(d3) do
     true
   end
 
@@ -160,9 +166,11 @@ defmodule Aprs.Weather do
   end
 
   # Always put the key in the map, even if the value is nil
+  @spec put_weather_value(weather_map(), atom(), weather_value()) :: weather_map()
   defp put_weather_value(acc, key, value), do: Map.put(acc, key, value)
 
   # Recursively convert all string keys in a map to atoms
+  @spec atomize_keys_recursive(weather_map() | weather_value()) :: weather_map() | weather_value()
   defp atomize_keys_recursive(map) when is_map(map) do
     Map.new(map, &atomize_key_value_pair/1)
   end
@@ -170,10 +178,6 @@ defmodule Aprs.Weather do
   defp atomize_keys_recursive(other), do: other
 
   @spec atomize_key_value_pair({any(), any()}) :: {atom(), any()}
-  defp atomize_key_value_pair({k, v}) when is_binary(k) do
-    {String.to_atom(k), atomize_keys_recursive(v)}
-  end
-
   defp atomize_key_value_pair({k, v}) do
     {k, atomize_keys_recursive(v)}
   end

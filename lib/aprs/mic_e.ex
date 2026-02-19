@@ -3,6 +3,58 @@ defmodule Aprs.MicE do
   Parses Mic-E encoded APRS packets.
   """
 
+  @typep digit_info :: %{
+           digit: non_neg_integer(),
+           msg_bit: 0 | 1,
+           msg_type: nil | :custom | :standard,
+           ambiguous: boolean()
+         }
+
+  @typep lat_direction :: :north | :south | :unknown
+  @typep lon_direction :: :east | :west | :unknown
+
+  @typep lat_info :: %{
+           lat_degrees: non_neg_integer(),
+           lat_minutes: non_neg_integer(),
+           lat_hundredths: non_neg_integer(),
+           lat_direction: lat_direction(),
+           position_ambiguity: non_neg_integer()
+         }
+
+  @typep lon_info :: %{
+           lon_direction: lon_direction(),
+           longitude_offset: 0 | 100
+         }
+
+  @typep message_info :: %{
+           message_bits: {0 | 1, 0 | 1, 0 | 1},
+           message_type: nil | :custom | :standard
+         }
+
+  @typep dest_info :: %{
+           lat_degrees: non_neg_integer(),
+           lat_minutes: non_neg_integer(),
+           lat_hundredths: non_neg_integer(),
+           lat_direction: lat_direction(),
+           position_ambiguity: non_neg_integer(),
+           lon_direction: lon_direction(),
+           longitude_offset: 0 | 100,
+           message_bits: {0 | 1, 0 | 1, 0 | 1},
+           message_type: nil | :custom | :standard
+         }
+
+  @typep info_field :: %{
+           lon_degrees: integer(),
+           lon_minutes: non_neg_integer(),
+           lon_hundredths: integer(),
+           speed: float(),
+           course: non_neg_integer(),
+           symbol_code: String.t(),
+           symbol_table_id: String.t(),
+           comment: String.t(),
+           altitude: integer() | nil
+         }
+
   @spec parse(binary(), String.t()) :: map()
   def parse(data, destination, data_type \\ :mic_e)
 
@@ -17,7 +69,9 @@ defmodule Aprs.MicE do
 
   def parse(data, destination, data_type) do
     with {:ok, dest_info} <- parse_destination(destination),
-         {:ok, _info_info} <- parse_information(data, dest_info.longitude_offset) do
+         {:ok, info_info} <- parse_information(data, dest_info.longitude_offset) do
+      ambiguity = dest_info.position_ambiguity
+
       lat =
         Decimal.add(
           Decimal.new(dest_info.lat_degrees),
@@ -32,16 +86,16 @@ defmodule Aprs.MicE do
 
       lat = apply_lat_direction(lat, dest_info.lat_direction)
 
-      # Don't need special Europe handling - use the offset from destination
-      {:ok, info_info} = parse_information(data, dest_info.longitude_offset)
+      # Apply same ambiguity centering to longitude
+      {lon_min, lon_hmin} = apply_lon_centering(info_info.lon_minutes, info_info.lon_hundredths, ambiguity)
 
       lon =
         Decimal.add(
           Decimal.new(info_info.lon_degrees),
           Decimal.div(
             Decimal.add(
-              Decimal.new(info_info.lon_minutes),
-              info_info.lon_hundredths |> Decimal.new() |> Decimal.div(100)
+              Decimal.new(lon_min),
+              lon_hmin |> Decimal.new() |> Decimal.div(100)
             ),
             60
           )
@@ -60,7 +114,9 @@ defmodule Aprs.MicE do
         symbol_table_id: info_info.symbol_table_id,
         comment: info_info.comment,
         altitude: info_info.altitude,
-        data_type: data_type
+        data_type: data_type,
+        format: "mice",
+        position_ambiguity: ambiguity
       }
     else
       _error ->
@@ -73,6 +129,7 @@ defmodule Aprs.MicE do
     end
   end
 
+  @spec parse_destination(binary()) :: {:ok, dest_info()} | {:error, atom()}
   defp parse_destination(destination) do
     parse_destination_by_size(destination, byte_size(destination))
   end
@@ -91,6 +148,7 @@ defmodule Aprs.MicE do
 
   defp parse_destination_by_size(_, _), do: {:error, :invalid_destination_length}
 
+  @spec decode_destination_digits([byte()]) :: [digit_info()]
   defp decode_destination_digits([c1, c2, c3, d4, d5, d6]) do
     [
       decode_digit(c1),
@@ -102,20 +160,49 @@ defmodule Aprs.MicE do
     ]
   end
 
+  @spec calculate_latitude_info([digit_info()], byte()) :: lat_info()
   defp calculate_latitude_info([d1, d2, d3, d4, d5, d6], c4) do
     lat_degrees = d1.digit * 10 + d2.digit
     lat_minutes = d3.digit * 10 + d4.digit
     lat_hundredths = d5.digit * 10 + d6.digit
     lat_direction = determine_lat_direction(c4)
+    ambiguity = count_ambiguity([d1, d2, d3, d4, d5, d6])
+
+    {lat_minutes, lat_hundredths} = apply_lat_centering(lat_minutes, lat_hundredths, d3.digit, d5.digit, ambiguity)
 
     %{
       lat_degrees: lat_degrees,
       lat_minutes: lat_minutes,
       lat_hundredths: lat_hundredths,
-      lat_direction: lat_direction
+      lat_direction: lat_direction,
+      position_ambiguity: ambiguity
     }
   end
 
+  @spec count_ambiguity([digit_info()]) :: non_neg_integer()
+  defp count_ambiguity(digits) do
+    Enum.count(digits, & &1.ambiguous)
+  end
+
+  # FAP centering: adjust latitude minutes/hundredths based on ambiguity level
+  @spec apply_lat_centering(non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()) ::
+          {non_neg_integer(), non_neg_integer()}
+  defp apply_lat_centering(minutes, hundredths, _d3_digit, _d5_digit, 0), do: {minutes, hundredths}
+  defp apply_lat_centering(minutes, _hundredths, _d3_digit, d5_digit, 1), do: {minutes, d5_digit * 10 + 5}
+  defp apply_lat_centering(minutes, _hundredths, _d3_digit, _d5_digit, 2), do: {minutes, 50}
+  defp apply_lat_centering(_minutes, _hundredths, d3_digit, _d5_digit, 3), do: {d3_digit * 10 + 5, 0}
+  defp apply_lat_centering(_minutes, _hundredths, _d3_digit, _d5_digit, _), do: {30, 0}
+
+  # FAP centering: adjust longitude minutes/hundredths based on ambiguity level
+  @spec apply_lon_centering(non_neg_integer(), non_neg_integer(), non_neg_integer()) ::
+          {non_neg_integer(), non_neg_integer()}
+  defp apply_lon_centering(minutes, hundredths, 0), do: {minutes, hundredths}
+  defp apply_lon_centering(minutes, hundredths, 1), do: {minutes, div(hundredths, 10) * 10 + 5}
+  defp apply_lon_centering(minutes, _hundredths, 2), do: {minutes, 50}
+  defp apply_lon_centering(minutes, _hundredths, 3), do: {div(minutes, 10) * 10 + 5, 0}
+  defp apply_lon_centering(_minutes, _hundredths, _), do: {30, 0}
+
+  @spec determine_lat_direction(byte()) :: lat_direction()
   defp determine_lat_direction(c4) do
     case c4 do
       c when c in ?0..?9 -> :south
@@ -125,6 +212,7 @@ defmodule Aprs.MicE do
     end
   end
 
+  @spec calculate_longitude_info(byte(), byte()) :: lon_info()
   defp calculate_longitude_info(c5, c6) do
     longitude_offset = determine_longitude_offset(c5)
     lon_direction = determine_lon_direction(c6)
@@ -135,6 +223,7 @@ defmodule Aprs.MicE do
     }
   end
 
+  @spec determine_longitude_offset(byte()) :: 0 | 100
   defp determine_longitude_offset(c5) do
     case c5 do
       c when c in ?0..?9 -> 0
@@ -144,6 +233,7 @@ defmodule Aprs.MicE do
     end
   end
 
+  @spec determine_lon_direction(byte()) :: lon_direction()
   defp determine_lon_direction(c6) do
     case c6 do
       c when c in ?0..?9 -> :east
@@ -153,6 +243,7 @@ defmodule Aprs.MicE do
     end
   end
 
+  @spec extract_message_info([digit_info()]) :: message_info()
   defp extract_message_info([d1, d2, d3, _d4, _d5, _d6]) do
     message_bits = {d1.msg_bit, d2.msg_bit, d3.msg_bit}
     message_type = determine_message_type([d1, d2, d3])
@@ -163,19 +254,24 @@ defmodule Aprs.MicE do
     }
   end
 
+  @spec determine_message_type([digit_info()]) :: nil | :custom | :standard
   defp determine_message_type([d1, d2, d3]) do
     Enum.find_value([d1, d2, d3], fn d -> d.msg_type end)
   end
 
+  @spec decode_digit(byte()) :: digit_info()
   defp decode_digit(char) do
     case char do
-      c when c in ?0..?9 -> %{digit: c - ?0, msg_bit: 0, msg_type: nil}
-      c when c in ?A..?K -> %{digit: c - ?A, msg_bit: 1, msg_type: :custom}
-      ?L -> %{digit: 0, msg_bit: 0, msg_type: nil}
-      c when c in ?P..?Z -> %{digit: c - ?P, msg_bit: 1, msg_type: :standard}
+      c when c in ?0..?9 -> %{digit: c - ?0, msg_bit: 0, msg_type: nil, ambiguous: false}
+      c when c in ?A..?J -> %{digit: c - ?A, msg_bit: 1, msg_type: :custom, ambiguous: false}
+      ?K -> %{digit: 0, msg_bit: 1, msg_type: :custom, ambiguous: true}
+      ?L -> %{digit: 0, msg_bit: 0, msg_type: nil, ambiguous: true}
+      c when c in ?P..?Y -> %{digit: c - ?P, msg_bit: 1, msg_type: :standard, ambiguous: false}
+      ?Z -> %{digit: 0, msg_bit: 1, msg_type: :standard, ambiguous: true}
     end
   end
 
+  @spec parse_information(binary(), non_neg_integer()) :: {:ok, info_field()} | {:error, atom()}
   defp parse_information(data, _lon_offset) when byte_size(data) < 8 do
     {:error, :invalid_information_field_length}
   end
@@ -190,8 +286,8 @@ defmodule Aprs.MicE do
     speed = decode_speed(sp_c, dc_c)
     course = decode_course(dc_c, se_c)
 
-    # Parse altitude and clean up comment
-    {altitude, cleaned_comment} = parse_altitude_and_clean_comment(comment)
+    # Parse altitude and clean up comment, preserving device type code
+    {altitude, cleaned_comment} = parse_altitude_and_clean_comment(comment, <<symbol_table_id>>)
 
     {:ok,
      %{
@@ -207,6 +303,7 @@ defmodule Aprs.MicE do
      }}
   end
 
+  @spec decode_lon_deg(byte(), non_neg_integer()) :: integer()
   defp decode_lon_deg(lon_deg_c, lon_offset) do
     # Start with base longitude from the character
     (lon_deg_c - 28)
@@ -214,13 +311,16 @@ defmodule Aprs.MicE do
     |> apply_longitude_adjustment()
   end
 
+  @spec add_longitude_offset(integer(), non_neg_integer()) :: integer()
   defp add_longitude_offset(longitude, 100), do: longitude + 100
   defp add_longitude_offset(longitude, _), do: longitude
 
+  @spec apply_longitude_adjustment(integer()) :: integer()
   defp apply_longitude_adjustment(longitude) when longitude >= 180 and longitude <= 189, do: longitude - 80
   defp apply_longitude_adjustment(longitude) when longitude >= 190 and longitude <= 199, do: longitude - 190
   defp apply_longitude_adjustment(longitude), do: longitude
 
+  @spec decode_lon_min(byte()) :: non_neg_integer()
   defp decode_lon_min(lon_min_c) do
     normalize_minutes(lon_min_c - 28)
   end
@@ -229,6 +329,7 @@ defmodule Aprs.MicE do
   defp normalize_minutes(m) when m >= 60, do: m - 60
   defp normalize_minutes(m), do: m
 
+  @spec decode_speed(byte(), byte()) :: float()
   defp decode_speed(sp_c, dc_c) do
     sp = sp_c - 28
     dc = dc_c - 28
@@ -237,6 +338,7 @@ defmodule Aprs.MicE do
     speed * 0.868976
   end
 
+  @spec decode_course(byte(), byte()) :: non_neg_integer()
   defp decode_course(dc_c, se_c) do
     dc = dc_c - 28
     se = se_c - 28
@@ -244,81 +346,112 @@ defmodule Aprs.MicE do
     normalize_course(course)
   end
 
+  @spec apply_lat_direction(Decimal.t(), lat_direction()) :: Decimal.t()
   defp apply_lat_direction(lat, :south), do: Decimal.negate(lat)
   defp apply_lat_direction(lat, _), do: lat
 
+  @spec apply_lon_direction(Decimal.t(), lon_direction()) :: Decimal.t()
   defp apply_lon_direction(lon, :west), do: Decimal.negate(lon)
   defp apply_lon_direction(lon, _), do: lon
 
+  @spec normalize_speed(non_neg_integer()) :: non_neg_integer()
   defp normalize_speed(speed) when speed >= 800, do: speed - 800
   defp normalize_speed(speed), do: speed
 
+  @spec normalize_course(non_neg_integer()) :: non_neg_integer()
   defp normalize_course(course) when course >= 400, do: course - 400
   defp normalize_course(course), do: course
 
+  # New device type codes (Kenwood etc.) - preserved as comment prefix
+  @new_type_codes [?>, ?]]
+  # Old Mic-E type codes - stripped before altitude parsing, preserved in output
+  @old_type_codes [?`, ?']
+
   @doc false
-  # Parse altitude from Mic-E comment and clean up the comment
-  defp parse_altitude_and_clean_comment(comment) do
-    # First, remove telemetry marker and data (_%...)
-    cleaned = String.replace(comment, ~r/_%.*/u, "")
+  # Parse altitude from Mic-E comment and clean up the comment.
+  # FAP order: extract new type code, then old type code, then altitude.
+  @spec parse_altitude_and_clean_comment(binary(), binary()) :: {integer() | nil, String.t()}
+  defp parse_altitude_and_clean_comment(comment, symbol_table_id) do
+    # 1. Extract new device type code (> or ]) from comment start or symbol table ID
+    {new_type, rest} = extract_new_type_code(comment, symbol_table_id)
 
-    # Check for various Mic-E data extensions
-    {altitude, cleaned} =
-      case cleaned do
-        # Standard altitude encoding: 3 chars + "}"
-        <<a1, a2, a3, "}", rest::binary>> when a1 >= 33 and a1 <= 124 ->
-          alt = (a1 - 33) * 91 * 91 + (a2 - 33) * 91 + (a3 - 33) - 10_000
-          {alt, rest}
+    # 2. Extract old Mic-E type code (` or ') - strip before altitude parsing
+    rest = strip_old_type_code(rest)
 
-        # Data extension with "]" prefix followed by altitude
-        <<"]", a1, a2, a3, "}", rest::binary>> when a1 >= 33 and a1 <= 124 ->
-          alt = (a1 - 33) * 91 * 91 + (a2 - 33) * 91 + (a3 - 33) - 10_000
-          {alt, rest}
+    # 3. Extract base-91 altitude encoding (3 chars + "}")
+    {altitude, after_altitude} = extract_mic_e_altitude(rest)
 
-        # Altitude with backtick prefix (another variant)
-        <<"`", a1, a2, a3, "}", rest::binary>> when a1 >= 33 and a1 <= 124 ->
-          alt = (a1 - 33) * 91 * 91 + (a2 - 33) * 91 + (a3 - 33) - 10_000
-          {alt, rest}
+    # 4. Strip Mic-E telemetry sequences |...|
+    after_telemetry = strip_mic_e_telemetry(after_altitude)
 
-        _ ->
-          {nil, cleaned}
-      end
+    # 5. Strip Mic-E weather extension !w..!
+    after_weather = strip_mic_e_weather_extension(after_telemetry)
 
-    # Clean up common trailing markers
-    cleaned = clean_trailing_markers(cleaned)
+    # 6. Clean trailing markers
+    cleaned = clean_trailing_markers(after_weather)
 
-    # If the remaining "comment" is just encoded data (no readable text), 
-    # return empty string instead
-    final_comment = format_final_comment(cleaned, is_encoded_data_only?(cleaned))
+    # 7. Prepend type code to produce final comment
+    final_comment = prepend_type_code(new_type, cleaned)
 
     {altitude, final_comment}
   end
 
-  # Clean up common trailing markers from comments
-  defp clean_trailing_markers(str) do
-    str
-    # Remove "^ --" at the end
-    |> String.replace(~r/\^ --$/u, "")
-    # Remove trailing "^"
-    |> String.replace(~r/\^$/u, "")
-    # Remove trailing " --"
-    |> String.replace(~r/ --$/u, "")
-    |> String.trim()
+  # Extract new device type code (> or ]) from comment start
+  @spec extract_new_type_code(binary(), binary()) :: {String.t() | nil, binary()}
+  defp extract_new_type_code(<<code, rest::binary>>, _sym_table) when code in @new_type_codes do
+    {<<code>>, rest}
   end
 
-  @spec format_final_comment(String.t(), boolean()) :: String.t()
-  defp format_final_comment(_cleaned, true), do: ""
-  defp format_final_comment(cleaned, false), do: String.trim(cleaned)
+  # Check for old type code at start of comment - also treated as device type prefix
+  defp extract_new_type_code(<<code, rest::binary>>, _sym_table) when code in @old_type_codes do
+    {<<code>>, rest}
+  end
 
-  # Check if a string appears to be only encoded data (not human-readable)
-  defp is_encoded_data_only?(str) when byte_size(str) <= 1, do: true
-  defp is_encoded_data_only?(<<"]", _rest::binary>>), do: true
-  defp is_encoded_data_only?(<<"=", _rest::binary>>), do: true
+  @all_type_codes @new_type_codes ++ @old_type_codes
 
-  defp is_encoded_data_only?(str) do
-    # Check if it's mostly special characters and no spaces or readable text
-    # A real comment would typically have spaces and alphanumeric characters
-    printable_chars = String.replace(str, ~r/[^a-zA-Z0-9 .,!?-]/u, "")
-    String.length(printable_chars) < String.length(str) / 2
+  defp extract_new_type_code(comment, <<byte>>) when byte in @all_type_codes do
+    {<<byte>>, comment}
+  end
+
+  defp extract_new_type_code(comment, _sym_table), do: {nil, comment}
+
+  # Strip old type code (` or ') if it appears after the new type code
+  @spec strip_old_type_code(binary()) :: binary()
+  defp strip_old_type_code(<<code, rest::binary>>) when code in @old_type_codes, do: rest
+  defp strip_old_type_code(rest), do: rest
+
+  # Extract base-91 altitude: 3 printable ASCII chars (33-124) followed by "}"
+  @spec extract_mic_e_altitude(binary()) :: {integer() | nil, binary()}
+  defp extract_mic_e_altitude(<<a1, a2, a3, ?}, rest::binary>>)
+       when a1 >= 33 and a1 <= 124 and a2 >= 33 and a2 <= 124 and a3 >= 33 and a3 <= 124 do
+    alt = (a1 - 33) * 91 * 91 + (a2 - 33) * 91 + (a3 - 33) - 10_000
+    {alt, rest}
+  end
+
+  defp extract_mic_e_altitude(rest), do: {nil, rest}
+
+  # Strip Mic-E telemetry sequences: |XX...XX| (2-14 chars between pipes)
+  @spec strip_mic_e_telemetry(String.t()) :: String.t()
+  defp strip_mic_e_telemetry(comment) do
+    String.replace(comment, ~r/\|[^|]{2,14}\|/, "")
+  end
+
+  # Strip Mic-E weather extension: !wXX! (2 chars after !w, then !)
+  @spec strip_mic_e_weather_extension(String.t()) :: String.t()
+  defp strip_mic_e_weather_extension(comment) do
+    String.replace(comment, ~r/!w..!/, "")
+  end
+
+  # Prepend device type code to cleaned comment
+  @spec prepend_type_code(String.t() | nil, String.t()) :: String.t()
+  defp prepend_type_code(nil, cleaned), do: String.trim(cleaned)
+  defp prepend_type_code(code, cleaned), do: String.trim_trailing(code <> cleaned)
+
+  # Clean up common trailing markers from comments (FAP only strips ^ -- and  --)
+  @spec clean_trailing_markers(String.t()) :: String.t()
+  defp clean_trailing_markers(str) do
+    str
+    |> String.replace(~r/\^ --$/u, "")
+    |> String.replace(~r/ --$/u, "")
   end
 end

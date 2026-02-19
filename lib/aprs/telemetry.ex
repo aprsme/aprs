@@ -77,6 +77,14 @@ defmodule Aprs.Telemetry do
     }
   end
 
+  @spec parse_telemetry_data(String.t()) ::
+          %{
+            telemetry: %{seq: String.t(), vals: [String.t()], bits: String.t()},
+            data_type: :telemetry,
+            raw_data: String.t(),
+            mbits: String.t()
+          }
+          | %{raw_data: String.t(), data_type: :telemetry}
   defp parse_telemetry_data(rest) do
     case String.split(rest, ",") do
       [seq | values] when length(values) >= 6 ->

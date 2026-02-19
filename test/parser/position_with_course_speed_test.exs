@@ -52,7 +52,9 @@ defmodule Aprs.Parser.PositionWithCourseSpeedTest do
 
       assert parsed.data_type == :position
       assert parsed.data_extended[:symbol_code] == "#"
-      assert parsed.data_extended[:comment] =~ "PHG5130"
+      # PHG is extracted and stripped from comment (FAP-compatible behavior)
+      assert parsed.data_extended[:phg] == "5130"
+      assert parsed.data_extended[:comment] == "W3,FLn comment"
     end
 
     test "weather station symbol without weather data is just position" do
@@ -90,16 +92,17 @@ defmodule Aprs.Parser.PositionWithCourseSpeedTest do
       {:ok, parsed} = Aprs.parse(packet)
 
       # Parser identifies as position (because of ! prefix)
-      # but also extracts weather data from comment
+      # Weather data extracted into wx/weather keys (FAP-compatible)
       assert parsed.data_type == :position
       assert parsed.data_extended[:symbol_code] == "_"
 
-      # Weather data is extracted
-      assert parsed.data_extended[:temperature] == 77
-      assert parsed.data_extended[:humidity] == 50
-      assert parsed.data_extended[:pressure] == 990.0
-      assert parsed.data_extended[:wind_direction] == 220
-      assert parsed.data_extended[:wind_speed] == 4
+      # Weather data is extracted into wx sub-map
+      wx = parsed.data_extended[:wx]
+      assert wx[:temperature] == 77
+      assert wx[:humidity] == 50
+      assert wx[:pressure] == 990.0
+      assert wx[:wind_direction] == 220
+      assert wx[:wind_speed] == 4
 
       # Also has position data
       assert parsed.data_extended[:latitude]

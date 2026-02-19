@@ -215,7 +215,7 @@ defmodule Aprs.TelemetryDefinitionsPropertyTest do
       check all def_type <- member_of(["PARM", "UNIT", "EQNS", "BITS"]),
                 field_count <- integer(0..20),
                 has_trailing_comma <- boolean() do
-        fields = for _ <- 1..field_count, do: "field#{:rand.uniform(100)}"
+        fields = for _ <- 1..field_count//1, do: "field#{:rand.uniform(100)}"
         field_str = Enum.join(fields, ",")
         field_str = if has_trailing_comma, do: field_str <> ",", else: field_str
 

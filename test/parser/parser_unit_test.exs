@@ -12,9 +12,9 @@ defmodule Aprs.ParserUnitTest do
     test "returns nils for invalid lat/lon" do
       # Test with truly invalid input that can't be parsed as compressed position
       result = Aprs.parse_position_without_timestamp("short")
-      assert result.latitude == nil
+      assert Map.get(result, :latitude) == nil
       result = Aprs.parse_position_without_timestamp("123")
-      assert result.longitude == nil
+      assert Map.get(result, :longitude) == nil
     end
   end
 
@@ -78,8 +78,8 @@ defmodule Aprs.ParserUnitTest do
     test "malformed input returns malformed_position" do
       result = Aprs.parse_position_without_timestamp("badinput")
       assert result.data_type == :malformed_position
-      assert result.latitude == nil
-      assert result.longitude == nil
+      assert Map.get(result, :latitude) == nil
+      assert Map.get(result, :longitude) == nil
     end
   end
 

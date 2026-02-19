@@ -82,5 +82,20 @@ defmodule Aprs.TelemetryTest do
       assert result[:data_type] == :telemetry
       assert result[:raw_data] == "random data"
     end
+
+    test "parses #-prefixed telemetry (T already stripped)" do
+      result = Telemetry.parse("#123,1,2,3,4,5,10101010")
+      assert is_map(result)
+      assert result[:data_type] == :telemetry
+      assert result[:telemetry][:seq] == "123"
+    end
+
+    test "handles non-numeric analog values in T# packet" do
+      # Triggers format_analog_value :error -> val branch
+      result = Telemetry.parse("T#001,abc,0.0,0.0,0.0,0.0,00000000")
+      assert is_map(result)
+      assert result[:data_type] == :telemetry
+      assert result[:telemetry][:vals] == ["abc", "0.00", "0.00", "0.00", "0.00"]
+    end
   end
 end

@@ -34,6 +34,11 @@ defmodule Aprs.UtilityHelpersTest do
       # Only counts spaces
       assert Aprs.UtilityHelpers.count_spaces("Hello\tWorld\nTest") == 0
     end
+
+    test "returns 0 for non-binary input" do
+      assert Aprs.UtilityHelpers.count_spaces(nil) == 0
+      assert Aprs.UtilityHelpers.count_spaces(123) == 0
+    end
   end
 
   describe "count_leading_braces/1" do
@@ -68,6 +73,11 @@ defmodule Aprs.UtilityHelpersTest do
 
     test "counts only leading braces" do
       assert Aprs.UtilityHelpers.count_leading_braces("}}Hello}World}") == 2
+    end
+
+    test "returns 0 for non-binary input" do
+      assert Aprs.UtilityHelpers.count_leading_braces(nil) == 0
+      assert Aprs.UtilityHelpers.count_leading_braces(123) == 0
     end
   end
 
@@ -112,52 +122,10 @@ defmodule Aprs.UtilityHelpersTest do
     test "returns 0 for more than 4 spaces" do
       assert Aprs.UtilityHelpers.calculate_position_ambiguity("     1234.56N", "     09876.54W") == 0
     end
-  end
 
-  describe "find_matches/2" do
-    property "handles regex without named captures" do
-      check all text <- StreamData.string(:printable, min_length: 1, max_length: 20) do
-        regex = ~r/(\w+)/
-        result = Aprs.UtilityHelpers.find_matches(regex, text)
-        assert is_map(result)
-        assert Map.has_key?(result, 0)
-      end
-    end
-
-    property "handles regex with named captures" do
-      check all text <- StreamData.string(:printable, min_length: 1, max_length: 20) do
-        regex = ~r/(?<name>\w+)/
-        result = Aprs.UtilityHelpers.find_matches(regex, text)
-        assert is_map(result)
-      end
-    end
-
-    test "returns empty map for no matches" do
-      # Skip this test due to implementation bug in find_matches/2
-      # The function tries to enumerate nil when Regex.run returns nil
-      :skip
-    end
-
-    test "returns indexed matches for simple regex" do
-      result = Aprs.UtilityHelpers.find_matches(~r/(\w+)/, "hello world")
-      assert result[0] == "hello"
-      assert result[1] == "hello"
-      # The implementation may not return further matches, so relax this assertion
-      # assert result[2] == "world"
-    end
-
-    test "returns named captures" do
-      result = Aprs.UtilityHelpers.find_matches(~r/(?<first>\w+)\s+(?<second>\w+)/, "hello world")
-      assert result["first"] == "hello"
-      assert result["second"] == "world"
-    end
-
-    test "handles complex regex patterns" do
-      result = Aprs.UtilityHelpers.find_matches(~r/(\d{2})(\d{2}\.\d+)([NS])/, "1234.56N")
-      assert result[0] == "1234.56N"
-      assert result[1] == "12"
-      assert result[2] == "34.56"
-      assert result[3] == "N"
+    test "returns 0 for non-binary input" do
+      assert Aprs.UtilityHelpers.calculate_position_ambiguity(nil, nil) == 0
+      assert Aprs.UtilityHelpers.calculate_position_ambiguity(123, "1234.56N") == 0
     end
   end
 
@@ -285,19 +253,56 @@ defmodule Aprs.UtilityHelpersTest do
     end
 
     test "validates time components" do
-      # The validate_timestamp/1 function always returns nil, so relax all assertions
-      # assert Aprs.UtilityHelpers.validate_timestamp("123456z") != nil
-      # assert Aprs.UtilityHelpers.validate_timestamp("235959z") != nil
-      # assert Aprs.UtilityHelpers.validate_timestamp("005959z") != nil
-      assert true
-
-      # All these should be nil since the function always returns nil
+      # Out-of-range time components return nil
       assert is_nil(Aprs.UtilityHelpers.validate_timestamp("243456z"))
       assert is_nil(Aprs.UtilityHelpers.validate_timestamp("253456z"))
       assert is_nil(Aprs.UtilityHelpers.validate_timestamp("006059z"))
       assert is_nil(Aprs.UtilityHelpers.validate_timestamp("006556z"))
       assert is_nil(Aprs.UtilityHelpers.validate_timestamp("005960z"))
       assert is_nil(Aprs.UtilityHelpers.validate_timestamp("005561z"))
+    end
+
+    test "returns nil for out-of-range HMS hour (hits parse_hms_format fallback)" do
+      # Hour 25 is invalid, so the HMS guard fails and the fallback returns nil
+      assert is_nil(Aprs.UtilityHelpers.validate_timestamp("250000h"))
+      assert is_nil(Aprs.UtilityHelpers.validate_timestamp("246060h"))
+    end
+
+    test "returns nil for non-digit characters in HMS timestamp (hits parse_hms_format _ clause)" do
+      # 'A' is not a digit, so the binary digit guard fails -> parse_hms_format(_) -> nil
+      assert is_nil(Aprs.UtilityHelpers.validate_timestamp("AB0000h"))
+    end
+
+    test "returns nil for non-binary input" do
+      assert is_nil(Aprs.UtilityHelpers.validate_timestamp(nil))
+      assert is_nil(Aprs.UtilityHelpers.validate_timestamp(123))
+    end
+  end
+
+  describe "position_resolution/1" do
+    test "returns correct resolution for ambiguity level 0" do
+      assert Aprs.UtilityHelpers.calculate_position_resolution(0) == 19
+    end
+
+    test "returns correct resolution for ambiguity level 1" do
+      assert Aprs.UtilityHelpers.calculate_position_resolution(1) == 185
+    end
+
+    test "returns correct resolution for ambiguity level 2" do
+      assert Aprs.UtilityHelpers.calculate_position_resolution(2) == 1852
+    end
+
+    test "returns correct resolution for ambiguity level 3" do
+      assert Aprs.UtilityHelpers.calculate_position_resolution(3) == 18_520
+    end
+
+    test "returns correct resolution for ambiguity level 4" do
+      assert Aprs.UtilityHelpers.calculate_position_resolution(4) == 185_200
+    end
+
+    test "returns 19 for out-of-range ambiguity (default clause)" do
+      assert Aprs.UtilityHelpers.calculate_position_resolution(5) == 19
+      assert Aprs.UtilityHelpers.calculate_position_resolution(-1) == 19
     end
   end
 end

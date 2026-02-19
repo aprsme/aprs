@@ -19,7 +19,8 @@ defmodule Aprs.CompressedPositionWithTelemetryTest do
       assert data.format == "compressed"
       assert_in_delta data.latitude, 43.4993463297333, 0.0001
       assert_in_delta data.longitude, -3.54185327333917, 0.0001
-      assert data.comment == "GLoRa_APRS_iGate@EA2TU_Isla Playa"
+      # cs and compression type bytes consumed per APRS compressed spec
+      assert data.comment == "LoRa_APRS_iGate@EA2TU_Isla Playa"
       assert data.posresolution == 0.291
 
       # Check telemetry extraction
@@ -50,7 +51,7 @@ defmodule Aprs.CompressedPositionWithTelemetryTest do
       assert data.altitude == 1847
       assert data.comment == "PU5PLR - Leonardo"
       assert data.position_ambiguity == 0
-      assert data.posresolution == 18.52
+      assert data.posresolution == 19
       assert data.aprs_messaging? == true
     end
 

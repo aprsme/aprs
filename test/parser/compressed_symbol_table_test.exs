@@ -24,14 +24,14 @@ defmodule Aprs.CompressedSymbolTableTest do
     end
 
     test "correctly distinguishes between compressed formats" do
-      # Standard compressed with "/" prefix
-      packet1 = "TEST>APRS:!/5L!!<*e7> sT"
+      # Standard compressed with "/" prefix — needs ≥19 chars after type indicator
+      packet1 = "TEST>APRS:!/5L!!<*e7> s! comment"
       {:ok, parsed1} = Aprs.parse(packet1)
       assert parsed1.data_extended.symbol_table_id == "/"
       assert parsed1.data_extended.compressed? == true
 
       # Compressed with alternate symbol table
-      packet2 = "TEST>APRS:!\\5L!!<*e7& sT"
+      packet2 = "TEST>APRS:!\\5L!!<*e7& sT comment"
       {:ok, parsed2} = Aprs.parse(packet2)
       assert parsed2.data_extended.symbol_table_id == "\\"
       assert parsed2.data_extended.symbol_code == "&"

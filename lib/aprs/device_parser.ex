@@ -70,6 +70,7 @@ defmodule Aprs.DeviceParser do
 
   def decode_mic_e_tocall(dest), do: String.slice(dest, 0, 6)
 
+  @spec decode_standard_mic_e(String.t()) :: String.t()
   defp decode_standard_mic_e(dest) do
     <<c1, c2, c3, c4, c5, c6>> = dest
     prefix = mic_e_prefix(<<c1, c2, c3>>)

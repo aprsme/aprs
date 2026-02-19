@@ -221,7 +221,7 @@ defmodule Aprs.ItemPropertyTest do
                 has_live_indicator <- boolean() do
         # Generate potentially malformed names
         name =
-          for _ <- 1..name_len,
+          for _ <- 1..name_len//1,
               do: Enum.random(~w(A B C D E F G H I J K L M N O P Q R S T U V W X Y Z 0 1 2 3 4 5 6 7 8 9))
 
         name = Enum.join(name)
