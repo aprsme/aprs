@@ -57,7 +57,7 @@ defmodule Aprs.ItemTest do
       result = Item.parse(" raw data 4903.50N/07201.75W with position")
       assert result.data_type == :item
       assert result.raw_data == " raw data 4903.50N/07201.75W with position"
-      # This path still uses Aprs.Position.parse_aprs_position which returns Decimals
+      # This path uses Aprs.Position.parse_aprs_position which returns floats
       assert result.latitude
       assert result.longitude
     end

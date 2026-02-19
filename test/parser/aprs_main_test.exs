@@ -711,9 +711,7 @@ defmodule Aprs.MainTest do
   end
 
   describe "helper function coverage" do
-    test "valid_coordinate? handles Decimal structs" do
-      # This tests the valid_coordinate? helper with Decimal
-      _dec = Decimal.new("45.5")
+    test "valid_coordinate? handles float values" do
       # Test through position parsing that uses has_valid_coordinates?
       result = Aprs.parse("N0CALL>APRS:!1234.56N/12345.67W-Test")
       assert {:ok, parsed} = result

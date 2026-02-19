@@ -122,8 +122,6 @@ defmodule Aprs.Object do
           %{optional(atom()) => object_value()}
   defp parse_object_uncompressed_position(latitude, sym_table_id, longitude, symbol_code, rest2) do
     pos = Aprs.Position.parse_aprs_position(latitude, longitude)
-    lat = if pos.latitude, do: Decimal.to_float(pos.latitude)
-    lon = if pos.longitude, do: Decimal.to_float(pos.longitude)
     ambiguity = Map.get(pos, :ambiguity, 0)
 
     # Extract course/speed and clean comment
@@ -135,8 +133,8 @@ defmodule Aprs.Object do
     map =
       maybe_add_course_speed_altitude(
         %{
-          latitude: lat,
-          longitude: lon,
+          latitude: pos.latitude,
+          longitude: pos.longitude,
           symbol_table_id: sym_table_id,
           symbol_code: symbol_code,
           comment: cleaned_comment,

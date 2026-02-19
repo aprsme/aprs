@@ -15,8 +15,8 @@ defmodule Aprs.MicELongitudeTest do
       # Verify the coordinates are correct
       # 33°07.05' N = 33 + 7.05/60 = 33.1175°
       # 96°40.47' W = 96 + 40.47/60 = 96.6745°
-      assert_in_delta Decimal.to_float(parsed.data_extended.latitude), 33.1175, 0.0001
-      assert_in_delta Decimal.to_float(parsed.data_extended.longitude), -96.6745, 0.0001
+      assert_in_delta parsed.data_extended.latitude, 33.1175, 0.0001
+      assert_in_delta parsed.data_extended.longitude, -96.6745, 0.0001
     end
 
     test "MicE parser fails when backtick is included in data" do
@@ -31,8 +31,8 @@ defmodule Aprs.MicELongitudeTest do
       result_without_backtick = Aprs.MicE.parse(data_without_backtick, destination)
 
       # The longitude should be different
-      lon_with = Decimal.to_float(result_with_backtick.longitude)
-      lon_without = Decimal.to_float(result_without_backtick.longitude)
+      lon_with = result_with_backtick.longitude
+      lon_without = result_without_backtick.longitude
 
       assert lon_with != lon_without
       # Correct value

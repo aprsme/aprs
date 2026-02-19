@@ -22,19 +22,13 @@ defmodule Aprs do
   def version, do: @version
 
   # APRS position parsing with position ambiguity support
-  # Delegates to Aprs.Position and converts Decimal to float
   @spec parse_aprs_position(String.t(), String.t()) :: %{
           latitude: float() | nil,
           longitude: float() | nil,
           ambiguity: 0..4
         }
   defp parse_aprs_position(lat, lon) do
-    result = Aprs.Position.parse_aprs_position(lat, lon)
-
-    lat_float = if result.latitude, do: Decimal.to_float(result.latitude)
-    lon_float = if result.longitude, do: Decimal.to_float(result.longitude)
-
-    %{latitude: lat_float, longitude: lon_float, ambiguity: result.ambiguity}
+    Aprs.Position.parse_aprs_position(lat, lon)
   end
 
   @type packet :: %{
@@ -55,7 +49,7 @@ defmodule Aprs do
 
   @type position_ambiguity :: 0..4
 
-  @type coordinate :: Decimal.t() | nil
+  @type coordinate :: float() | nil
 
   @type position_data :: %{
           required(:latitude) => coordinate(),
@@ -1813,9 +1807,9 @@ defmodule Aprs do
   end
 
   # Helper to check if coordinate is valid (reduces redundant checks)
-  @spec valid_coordinate?(float() | Decimal.t() | nil) :: boolean()
+  @spec valid_coordinate?(float() | nil) :: boolean()
   defp valid_coordinate?(coord) do
-    is_number(coord) or is_struct(coord, Decimal)
+    is_number(coord)
   end
 
   # Weather merging for position packets.

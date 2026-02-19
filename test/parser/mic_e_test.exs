@@ -18,8 +18,8 @@ defmodule Aprs.MicETest do
       # Verify the coordinates are correct
       # 33°03.26' N = 33 + 3.26/60 = 33.054333°
       # 96°34.42' W = 96 + 34.42/60 = 96.573667°
-      assert_in_delta Decimal.to_float(parsed.data_extended.latitude), 33.054333, 0.0001
-      assert_in_delta Decimal.to_float(parsed.data_extended.longitude), -96.573667, 0.0001
+      assert_in_delta parsed.data_extended.latitude, 33.054333, 0.0001
+      assert_in_delta parsed.data_extended.longitude, -96.573667, 0.0001
 
       # Verify other MicE data
       assert parsed.data_extended.symbol_table_id == "/"
@@ -208,8 +208,8 @@ defmodule Aprs.MicETest do
       assert parsed.data_extended.altitude == 218
 
       # Verify coordinates
-      assert_in_delta Decimal.to_float(parsed.data_extended.latitude), 33.388167, 0.0001
-      assert_in_delta Decimal.to_float(parsed.data_extended.longitude), -96.548833, 0.0001
+      assert_in_delta parsed.data_extended.latitude, 33.388167, 0.0001
+      assert_in_delta parsed.data_extended.longitude, -96.548833, 0.0001
 
       # Verify symbol
       assert parsed.data_extended.symbol_table_id == "`"
@@ -233,8 +233,8 @@ defmodule Aprs.MicETest do
       assert parsed.data_extended.altitude == 236
 
       # Verify coordinates  
-      assert_in_delta Decimal.to_float(parsed.data_extended.latitude), 33.207833, 0.0001
-      assert_in_delta Decimal.to_float(parsed.data_extended.longitude), -96.7685, 0.0001
+      assert_in_delta parsed.data_extended.latitude, 33.207833, 0.0001
+      assert_in_delta parsed.data_extended.longitude, -96.7685, 0.0001
 
       # Verify symbol
       assert parsed.data_extended.symbol_table_id == "/"
@@ -291,8 +291,8 @@ defmodule Aprs.MicETest do
       assert parsed.data_extended.format == "mice"
       assert parsed.data_extended.position_ambiguity == 2
       assert parsed.posambiguity == 2
-      assert_in_delta Decimal.to_float(parsed.data_extended.latitude), 45.6583333, 0.001
-      assert_in_delta Decimal.to_float(parsed.data_extended.longitude), 8.0583333, 0.01
+      assert_in_delta parsed.data_extended.latitude, 45.6583333, 0.001
+      assert_in_delta parsed.data_extended.longitude, 8.0583333, 0.01
     end
 
     test "Mic-E position ambiguity=4 from VE3VFF-9 destination with all ambiguous" do
@@ -307,8 +307,8 @@ defmodule Aprs.MicETest do
       assert parsed.data_extended.format == "mice"
       assert parsed.data_extended.position_ambiguity == 4
       assert parsed.posambiguity == 4
-      assert_in_delta Decimal.to_float(parsed.data_extended.latitude), 42.5, 0.01
-      assert_in_delta Decimal.to_float(parsed.data_extended.longitude), -82.5, 0.5
+      assert_in_delta parsed.data_extended.latitude, 42.5, 0.01
+      assert_in_delta parsed.data_extended.longitude, -82.5, 0.5
     end
 
     test "Mic-E position ambiguity=1 from 8P6GC-1 destination" do
