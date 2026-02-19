@@ -218,8 +218,8 @@ defmodule Aprs.CoverageTest do
     end
   end
 
-  describe "build_position_result with Decimal coordinates" do
-    test "handles already-parsed Decimal coordinates" do
+  describe "build_position_result with float coordinates" do
+    test "handles already-parsed float coordinates" do
       packet = "N0CALL>APRS:/092345z1234.56N/12345.67W-Test comment"
       result = Aprs.parse(packet)
       assert {:ok, parsed} = result

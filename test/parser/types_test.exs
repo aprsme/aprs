@@ -10,11 +10,11 @@ defmodule Aprs.TypesTest do
   describe "Position.from_aprs/2" do
     test "parses valid APRS lat/lon strings" do
       result = Position.from_aprs("3339.13N", "11759.13W")
-      assert Decimal.equal?(Decimal.round(result.latitude, 6), Decimal.new("33.652167"))
-      assert Decimal.equal?(Decimal.round(result.longitude, 6), Decimal.new("-117.9855"))
+      assert_in_delta result.latitude, 33.652167, 0.000001
+      assert_in_delta result.longitude, -117.9855, 0.000001
       result2 = Position.from_aprs("1234.70S", "04540.70E")
-      assert Decimal.equal?(Decimal.round(result2.latitude, 6), Decimal.new("-12.578333"))
-      assert Decimal.equal?(Decimal.round(result2.longitude, 6), Decimal.new("45.678333"))
+      assert_in_delta result2.latitude, -12.578333, 0.000001
+      assert_in_delta result2.longitude, 45.678333, 0.000001
     end
 
     test "returns nils for invalid strings" do
@@ -27,8 +27,8 @@ defmodule Aprs.TypesTest do
       check all lat <- StreamData.filter(StreamData.float(), &(&1 >= -90.0 and &1 <= 90.0)),
                 lon <- StreamData.filter(StreamData.float(), &(&1 >= -180.0 and &1 <= 180.0)) do
         result = Position.from_decimal(lat, lon)
-        assert Decimal.equal?(result.latitude, Decimal.new(to_string(lat)))
-        assert Decimal.equal?(result.longitude, Decimal.new(to_string(lon)))
+        assert_in_delta result.latitude, lat, 0.000001
+        assert_in_delta result.longitude, lon, 0.000001
       end
     end
   end
@@ -65,8 +65,8 @@ defmodule Aprs.TypesTest do
         )
 
       assert p.id == "1"
-      pos = struct(Position, latitude: Decimal.new(1), longitude: Decimal.new(2))
-      assert Decimal.equal?(pos.latitude, Decimal.new(1))
+      pos = struct(Position, latitude: 1.0, longitude: 2.0)
+      assert pos.latitude == 1.0
       err = struct(ParseError, error_code: :bad, error_message: "fail", raw_data: "oops")
       assert err.error_code == :bad
     end

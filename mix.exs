@@ -2,7 +2,7 @@ defmodule Aprs.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/gmcintire/aprs"
-  @version "1.0.0"
+  @version "1.0.1"
 
   def project do
     [
@@ -27,7 +27,6 @@ defmodule Aprs.MixProject do
 
   defp deps do
     [
-      {:decimal, "~> 2.3"},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
       {:stream_data, "~> 1.2", only: [:dev, :test]},
       {:mix_test_watch, "~> 1.4", only: [:dev, :test]},

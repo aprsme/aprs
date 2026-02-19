@@ -47,15 +47,13 @@ defmodule Aprs.Types do
     @doc """
     Parse APRS lat/lon strings (e.g., "3339.13N", "11759.13W") into a map with latitude and longitude.
     """
-    @spec from_aprs(String.t(), String.t()) :: %{latitude: Decimal.t() | nil, longitude: Decimal.t() | nil}
+    @spec from_aprs(String.t(), String.t()) :: %{latitude: float() | nil, longitude: float() | nil}
     def from_aprs(lat_str, lon_str) do
-      import Decimal, only: [new: 1, add: 2, negate: 1]
-
       lat =
         case Regex.run(~r/^(\d{2})(\d{2}\.\d+)([NS])$/, lat_str) do
           [_, degrees, minutes, direction] ->
-            lat_val = add(new(degrees), Decimal.div(new(minutes), new("60")))
-            if direction == "S", do: negate(lat_val), else: lat_val
+            lat_val = String.to_integer(degrees) + String.to_float(minutes) / 60
+            if direction == "S", do: -lat_val, else: lat_val
 
           _ ->
             nil
@@ -64,8 +62,8 @@ defmodule Aprs.Types do
       lon =
         case Regex.run(~r/^(\d{3})(\d{2}\.\d+)([EW])$/, lon_str) do
           [_, degrees, minutes, direction] ->
-            lon_val = add(new(degrees), Decimal.div(new(minutes), new("60")))
-            if direction == "W", do: negate(lon_val), else: lon_val
+            lon_val = String.to_integer(degrees) + String.to_float(minutes) / 60
+            if direction == "W", do: -lon_val, else: lon_val
 
           _ ->
             nil
@@ -77,9 +75,9 @@ defmodule Aprs.Types do
     @doc """
     Return a map with latitude and longitude from decimal values.
     """
-    @spec from_decimal(number(), number()) :: %{latitude: Decimal.t(), longitude: Decimal.t()}
+    @spec from_decimal(number(), number()) :: %{latitude: float(), longitude: float()}
     def from_decimal(lat, lon) do
-      %{latitude: Decimal.new(to_string(lat)), longitude: Decimal.new(to_string(lon))}
+      %{latitude: lat / 1, longitude: lon / 1}
     end
   end
 

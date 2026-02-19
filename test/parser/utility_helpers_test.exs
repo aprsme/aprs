@@ -150,8 +150,8 @@ defmodule Aprs.UtilityHelpersTest do
 
         case Aprs.UtilityHelpers.validate_position_data(lat_str, lon_str) do
           {:ok, {lat, lon}} ->
-            assert is_struct(lat, Decimal)
-            assert is_struct(lon, Decimal)
+            assert is_float(lat)
+            assert is_float(lon)
 
           {:error, _} ->
             :ok
@@ -162,22 +162,22 @@ defmodule Aprs.UtilityHelpersTest do
     test "validates correct latitude and longitude" do
       result = Aprs.UtilityHelpers.validate_position_data("1234.56N", "09876.54W")
       assert {:ok, {lat, lon}} = result
-      assert is_struct(lat, Decimal)
-      assert is_struct(lon, Decimal)
+      assert is_float(lat)
+      assert is_float(lon)
     end
 
     test "handles southern latitude" do
       result = Aprs.UtilityHelpers.validate_position_data("1234.56S", "09876.54E")
       assert {:ok, {lat, lon}} = result
-      assert Decimal.lt?(lat, Decimal.new(0))
-      assert Decimal.gt?(lon, Decimal.new(0))
+      assert lat < 0
+      assert lon > 0
     end
 
     test "handles western longitude" do
       result = Aprs.UtilityHelpers.validate_position_data("1234.56N", "09876.54W")
       assert {:ok, {lat, lon}} = result
-      assert Decimal.gt?(lat, Decimal.new(0))
-      assert Decimal.lt?(lon, Decimal.new(0))
+      assert lat > 0
+      assert lon < 0
     end
 
     test "returns error for invalid latitude format" do

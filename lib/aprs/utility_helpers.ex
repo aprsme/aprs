@@ -6,12 +6,12 @@ defmodule Aprs.UtilityHelpers do
   import Aprs.Guards
 
   @spec validate_position_data(String.t(), String.t()) ::
-          {:ok, {Decimal.t(), Decimal.t()}} | {:error, :invalid_position}
+          {:ok, {float(), float()}} | {:error, :invalid_position}
   def validate_position_data(latitude, longitude) do
     lat =
       case parse_latitude_binary(latitude) do
         {:ok, degrees, minutes, direction} ->
-          lat_val = Decimal.add(Decimal.new(degrees), Decimal.div(Decimal.new(minutes), Decimal.new("60")))
+          lat_val = String.to_integer(degrees) + String.to_float(minutes) / 60
           apply_latitude_direction(lat_val, direction)
 
         _ ->
@@ -21,7 +21,7 @@ defmodule Aprs.UtilityHelpers do
     lon =
       case parse_longitude_binary(longitude) do
         {:ok, degrees, minutes, direction} ->
-          lon_val = Decimal.add(Decimal.new(degrees), Decimal.div(Decimal.new(minutes), Decimal.new("60")))
+          lon_val = String.to_integer(degrees) + String.to_float(minutes) / 60
           apply_longitude_direction(lon_val, direction)
 
         _ ->
@@ -94,17 +94,17 @@ defmodule Aprs.UtilityHelpers do
 
   defp parse_fraction_digits(_, _, _), do: :error
 
-  @spec apply_latitude_direction(Decimal.t(), String.t()) :: Decimal.t()
-  defp apply_latitude_direction(value, "S"), do: Decimal.negate(value)
+  @spec apply_latitude_direction(float(), String.t()) :: float()
+  defp apply_latitude_direction(value, "S"), do: -value
   defp apply_latitude_direction(value, _), do: value
 
-  @spec apply_longitude_direction(Decimal.t(), String.t()) :: Decimal.t()
-  defp apply_longitude_direction(value, "W"), do: Decimal.negate(value)
+  @spec apply_longitude_direction(float(), String.t()) :: float()
+  defp apply_longitude_direction(value, "W"), do: -value
   defp apply_longitude_direction(value, _), do: value
 
-  @spec validate_coordinates(Decimal.t() | nil, Decimal.t() | nil) ::
-          {:ok, {Decimal.t(), Decimal.t()}} | {:error, :invalid_position}
-  defp validate_coordinates(%Decimal{} = lat, %Decimal{} = lon), do: {:ok, {lat, lon}}
+  @spec validate_coordinates(float() | nil, float() | nil) ::
+          {:ok, {float(), float()}} | {:error, :invalid_position}
+  defp validate_coordinates(lat, lon) when is_float(lat) and is_float(lon), do: {:ok, {lat, lon}}
   defp validate_coordinates(_, _), do: {:error, :invalid_position}
 
   @spec validate_timestamp(String.t()) :: integer() | nil

@@ -54,8 +54,8 @@ defmodule Aprs.PositionTest do
         flunk("parse_aprs_position/2 returned nil for latitude or longitude")
       end
 
-      assert Decimal.equal?(Decimal.round(result.latitude, 6), Decimal.new("49.058333"))
-      assert Decimal.equal?(Decimal.round(result.longitude, 6), Decimal.new("-72.029167"))
+      assert_in_delta result.latitude, 49.058333, 0.000001
+      assert_in_delta result.longitude, -72.029167, 0.000001
     end
 
     test "returns nils for invalid strings" do
@@ -64,8 +64,8 @@ defmodule Aprs.PositionTest do
 
     test "parses southern and eastern hemispheres" do
       result = Position.parse_aprs_position("1234.56S", "04540.70E")
-      assert Decimal.compare(result.latitude, Decimal.new(0)) == :lt
-      assert Decimal.compare(result.longitude, Decimal.new(0)) == :gt
+      assert result.latitude < 0
+      assert result.longitude > 0
     end
 
     test "returns nil for malformed but structurally valid input" do
@@ -123,7 +123,7 @@ defmodule Aprs.PositionTest do
         # VE6LY-7 is in southern France, so longitude should be positive (east)
         # and in the correct range for France (roughly 0-10 degrees east)
         if data[:longitude] do
-          lon = Decimal.to_float(data[:longitude])
+          lon = data[:longitude]
           # The longitude should be positive for eastern hemisphere (France)
           assert lon > 0, "Longitude should be positive for eastern hemisphere (France), got #{lon}"
           # Should be in reasonable range for France (roughly 0-10 degrees east)
@@ -138,22 +138,22 @@ defmodule Aprs.PositionTest do
       result = Position.from_aprs("4903.50N", "07201.75W")
       assert result.latitude
       assert result.longitude
-      assert Decimal.equal?(Decimal.round(result.latitude, 6), Decimal.new("49.058333"))
-      assert Decimal.equal?(Decimal.round(result.longitude, 6), Decimal.new("-72.029167"))
+      assert_in_delta result.latitude, 49.058333, 0.000001
+      assert_in_delta result.longitude, -72.029167, 0.000001
     end
   end
 
   describe "from_decimal/2" do
     test "creates position from decimal values" do
-      result = Position.from_decimal("45.5", "-73.6")
-      assert Decimal.equal?(result.latitude, Decimal.new("45.5"))
-      assert Decimal.equal?(result.longitude, Decimal.new("-73.6"))
+      result = Position.from_decimal(45.5, -73.6)
+      assert_in_delta result.latitude, 45.5, 0.000001
+      assert_in_delta result.longitude, -73.6, 0.000001
     end
 
     test "handles integer input" do
       result = Position.from_decimal(45, -73)
-      assert Decimal.equal?(result.latitude, Decimal.new(45))
-      assert Decimal.equal?(result.longitude, Decimal.new(-73))
+      assert_in_delta result.latitude, 45.0, 0.000001
+      assert_in_delta result.longitude, -73.0, 0.000001
     end
   end
 
@@ -193,8 +193,8 @@ defmodule Aprs.PositionTest do
       result = Position.parse_aprs_position("4113.  N", "07322.  W")
       assert result.latitude
       assert result.longitude
-      assert_in_delta Decimal.to_float(result.latitude), 41.225, 0.001
-      assert_in_delta Decimal.to_float(result.longitude), -73.375, 0.001
+      assert_in_delta result.latitude, 41.225, 0.001
+      assert_in_delta result.longitude, -73.375, 0.001
     end
 
     test "ambiguity=1: one space in last fraction digit" do
@@ -203,8 +203,8 @@ defmodule Aprs.PositionTest do
       result = Position.parse_aprs_position("4919.2 N", "12304.5 W")
       assert result.latitude
       assert result.longitude
-      assert_in_delta Decimal.to_float(result.latitude), 49.3208333, 0.001
-      assert_in_delta Decimal.to_float(result.longitude), -123.075833, 0.001
+      assert_in_delta result.latitude, 49.3208333, 0.001
+      assert_in_delta result.longitude, -123.075833, 0.001
     end
 
     test "ambiguity=1: position with course/speed comment" do
@@ -213,8 +213,8 @@ defmodule Aprs.PositionTest do
       result = Position.parse_aprs_position("2543.3 N", "10019.5 W")
       assert result.latitude
       assert result.longitude
-      assert_in_delta Decimal.to_float(result.latitude), 25.7225, 0.001
-      assert_in_delta Decimal.to_float(result.longitude), -100.325833, 0.001
+      assert_in_delta result.latitude, 25.7225, 0.001
+      assert_in_delta result.longitude, -100.325833, 0.001
     end
 
     test "ambiguity=1: European position with non-standard symbol table" do
@@ -223,8 +223,8 @@ defmodule Aprs.PositionTest do
       result = Position.parse_aprs_position("5125.7 N", "00647.0 E")
       assert result.latitude
       assert result.longitude
-      assert_in_delta Decimal.to_float(result.latitude), 51.4291667, 0.001
-      assert_in_delta Decimal.to_float(result.longitude), 6.78416667, 0.001
+      assert_in_delta result.latitude, 51.4291667, 0.001
+      assert_in_delta result.longitude, 6.78416667, 0.001
     end
   end
 

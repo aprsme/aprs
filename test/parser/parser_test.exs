@@ -425,8 +425,8 @@ defmodule Aprs.ParserTest do
       # Check the Mic-E data was parsed
       assert is_map(third_party.data_extended)
       assert third_party.data_extended.data_type == :mic_e_old
-      assert is_struct(third_party.data_extended.latitude, Decimal)
-      assert is_struct(third_party.data_extended.longitude, Decimal)
+      assert is_float(third_party.data_extended.latitude)
+      assert is_float(third_party.data_extended.longitude)
       assert third_party.data_extended.comment == "`439.750MHz t077 -940 michael_1"
     end
 

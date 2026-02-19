@@ -11,6 +11,7 @@ defmodule Aprs.Position do
   Parse an uncompressed APRS position string. Returns a Position struct or nil.
   """
   @spec parse(String.t()) :: Position.t() | nil
+
   def parse(position_str) do
     # Example: "4903.50N/07201.75W>comment"
     case position_str do
@@ -40,8 +41,8 @@ defmodule Aprs.Position do
 
   @doc false
   @spec parse_aprs_position(String.t(), String.t()) :: %{
-          latitude: Decimal.t() | nil,
-          longitude: Decimal.t() | nil,
+          latitude: float() | nil,
+          longitude: float() | nil,
           ambiguity: non_neg_integer()
         }
   def parse_aprs_position(lat_str, lon_str) do
@@ -122,14 +123,14 @@ defmodule Aprs.Position do
           <<_::40>>,
           :east | :west,
           non_neg_integer()
-        ) :: {Decimal.t(), Decimal.t()}
+        ) :: {float(), float()}
   defp calculate_position_with_ambiguity(lat_deg, lat_min, lat_dir, lon_deg, lon_min, lon_dir, ambiguity) do
     {lat_minutes, lon_minutes} = adjusted_minutes(lat_min, lon_min, ambiguity)
     lat = lat_deg + lat_minutes / 60
     lon = lon_deg + lon_minutes / 60
     lat = apply_direction(lat, lat_dir)
     lon = apply_direction(lon, lon_dir)
-    {Decimal.from_float(lat), Decimal.from_float(lon)}
+    {lat / 1, lon / 1}
   end
 
   # FAP's ambiguity-based minute adjustment
@@ -216,15 +217,14 @@ defmodule Aprs.Position do
   end
 
   @spec from_aprs(String.t(), String.t()) :: %{
-          latitude: Decimal.t() | nil,
-          longitude: Decimal.t() | nil,
+          latitude: float() | nil,
+          longitude: float() | nil,
           ambiguity: non_neg_integer()
         }
   def from_aprs(lat_str, lon_str), do: parse_aprs_position(lat_str, lon_str)
 
-  @spec from_decimal(integer() | String.t() | Decimal.t(), integer() | String.t() | Decimal.t()) ::
-          %{latitude: Decimal.t(), longitude: Decimal.t()}
+  @spec from_decimal(number(), number()) :: %{latitude: float(), longitude: float()}
   def from_decimal(lat, lon) do
-    %{latitude: Decimal.new(lat), longitude: Decimal.new(lon)}
+    %{latitude: lat / 1, longitude: lon / 1}
   end
 end

@@ -11,8 +11,8 @@ defmodule Aprs.Item do
           optional(:live_killed) => String.t(),
           optional(:data_type) => :item,
           optional(:raw_data) => String.t(),
-          optional(:latitude) => float() | Decimal.t() | nil,
-          optional(:longitude) => float() | Decimal.t() | nil,
+          optional(:latitude) => float() | nil,
+          optional(:longitude) => float() | nil,
           optional(:symbol_table_id) => String.t(),
           optional(:symbol_code) => String.t(),
           optional(:comment) => String.t(),
@@ -129,14 +129,12 @@ defmodule Aprs.Item do
            comment::binary>>
        ) do
     pos = Aprs.Position.parse_aprs_position(latitude, longitude)
-    lat = if pos.latitude, do: Decimal.to_float(pos.latitude)
-    lon = if pos.longitude, do: Decimal.to_float(pos.longitude)
     ambiguity = Map.get(pos, :ambiguity, 0)
     {phg, cleaned_comment} = extract_phg(comment)
 
     %{
-      latitude: lat,
-      longitude: lon,
+      latitude: pos.latitude,
+      longitude: pos.longitude,
       symbol_table_id: sym_table_id,
       symbol_code: symbol_code,
       comment: cleaned_comment,

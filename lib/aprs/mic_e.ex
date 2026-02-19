@@ -73,16 +73,8 @@ defmodule Aprs.MicE do
       ambiguity = dest_info.position_ambiguity
 
       lat =
-        Decimal.add(
-          Decimal.new(dest_info.lat_degrees),
-          Decimal.div(
-            Decimal.add(
-              Decimal.new(dest_info.lat_minutes),
-              dest_info.lat_hundredths |> Decimal.new() |> Decimal.div(100)
-            ),
-            60
-          )
-        )
+        dest_info.lat_degrees +
+          (dest_info.lat_minutes + dest_info.lat_hundredths / 100) / 60
 
       lat = apply_lat_direction(lat, dest_info.lat_direction)
 
@@ -90,16 +82,7 @@ defmodule Aprs.MicE do
       {lon_min, lon_hmin} = apply_lon_centering(info_info.lon_minutes, info_info.lon_hundredths, ambiguity)
 
       lon =
-        Decimal.add(
-          Decimal.new(info_info.lon_degrees),
-          Decimal.div(
-            Decimal.add(
-              Decimal.new(lon_min),
-              lon_hmin |> Decimal.new() |> Decimal.div(100)
-            ),
-            60
-          )
-        )
+        info_info.lon_degrees + (lon_min + lon_hmin / 100) / 60
 
       lon = apply_lon_direction(lon, dest_info.lon_direction)
 
@@ -346,12 +329,12 @@ defmodule Aprs.MicE do
     normalize_course(course)
   end
 
-  @spec apply_lat_direction(Decimal.t(), lat_direction()) :: Decimal.t()
-  defp apply_lat_direction(lat, :south), do: Decimal.negate(lat)
+  @spec apply_lat_direction(float(), lat_direction()) :: float()
+  defp apply_lat_direction(lat, :south), do: -lat
   defp apply_lat_direction(lat, _), do: lat
 
-  @spec apply_lon_direction(Decimal.t(), lon_direction()) :: Decimal.t()
-  defp apply_lon_direction(lon, :west), do: Decimal.negate(lon)
+  @spec apply_lon_direction(float(), lon_direction()) :: float()
+  defp apply_lon_direction(lon, :west), do: -lon
   defp apply_lon_direction(lon, _), do: lon
 
   @spec normalize_speed(non_neg_integer()) :: non_neg_integer()
