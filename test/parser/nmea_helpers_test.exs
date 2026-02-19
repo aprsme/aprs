@@ -5,21 +5,48 @@ defmodule Aprs.NMEAHelpersTest do
   alias Aprs.NMEAHelpers
 
   describe "parse_nmea_coordinate/2" do
-    test "parses valid latitude coordinates" do
-      assert {:ok, 49.035} = NMEAHelpers.parse_nmea_coordinate("4903.50", "N")
-      assert {:ok, -49.035} = NMEAHelpers.parse_nmea_coordinate("4903.50", "S")
+    test "parses valid latitude coordinates with correct DD+MM/60 conversion" do
+      # 4903.50 = 49 degrees, 03.50 minutes = 49 + 3.50/60 = 49.058333...
+      assert {:ok, result} = NMEAHelpers.parse_nmea_coordinate("4903.50", "N")
+      assert_in_delta result, 49.058333, 0.000001
+
+      assert {:ok, result} = NMEAHelpers.parse_nmea_coordinate("4903.50", "S")
+      assert_in_delta result, -49.058333, 0.000001
     end
 
-    test "parses valid longitude coordinates" do
-      assert {:ok, 72.0175} = NMEAHelpers.parse_nmea_coordinate("7201.75", "E")
-      assert {:ok, -72.0175} = NMEAHelpers.parse_nmea_coordinate("7201.75", "W")
+    test "parses valid longitude coordinates with correct DD+MM/60 conversion" do
+      # 7201.75 = 72 degrees, 01.75 minutes = 72 + 1.75/60 = 72.029167
+      assert {:ok, result} = NMEAHelpers.parse_nmea_coordinate("7201.75", "E")
+      assert_in_delta result, 72.029167, 0.000001
+
+      assert {:ok, result} = NMEAHelpers.parse_nmea_coordinate("7201.75", "W")
+      assert_in_delta result, -72.029167, 0.000001
+    end
+
+    test "parses the target GPRMC packet coordinates" do
+      # 3242.4569 = 32 degrees, 42.4569 minutes = 32 + 42.4569/60 = 32.707615
+      assert {:ok, result} = NMEAHelpers.parse_nmea_coordinate("3242.4569", "N")
+      assert_in_delta result, 32.707615, 0.000001
+
+      # 08527.2793 = 85 degrees, 27.2793 minutes = 85 + 27.2793/60 = 85.454655
+      assert {:ok, result} = NMEAHelpers.parse_nmea_coordinate("08527.2793", "W")
+      assert_in_delta result, -85.454655, 0.000001
     end
 
     test "handles various coordinate formats" do
-      assert {:ok, 33.393} = NMEAHelpers.parse_nmea_coordinate("3339.3", "N")
-      assert {:ok, -33.393} = NMEAHelpers.parse_nmea_coordinate("3339.3", "S")
-      assert {:ok, 118.15} = NMEAHelpers.parse_nmea_coordinate("11815.0", "E")
-      assert {:ok, -118.15} = NMEAHelpers.parse_nmea_coordinate("11815.0", "W")
+      # 3339.3 = 33 degrees, 39.3 minutes = 33 + 39.3/60 = 33.655
+      assert {:ok, result} = NMEAHelpers.parse_nmea_coordinate("3339.3", "N")
+      assert_in_delta result, 33.655, 0.001
+
+      assert {:ok, result} = NMEAHelpers.parse_nmea_coordinate("3339.3", "S")
+      assert_in_delta result, -33.655, 0.001
+
+      # 11815.0 = 118 degrees, 15.0 minutes = 118 + 15.0/60 = 118.25
+      assert {:ok, result} = NMEAHelpers.parse_nmea_coordinate("11815.0", "E")
+      assert_in_delta result, 118.25, 0.001
+
+      assert {:ok, result} = NMEAHelpers.parse_nmea_coordinate("11815.0", "W")
+      assert_in_delta result, -118.25, 0.001
     end
 
     test "handles zero coordinates" do
@@ -34,8 +61,13 @@ defmodule Aprs.NMEAHelpersTest do
     end
 
     test "handles coordinate with high precision" do
-      assert {:ok, 49.035} = NMEAHelpers.parse_nmea_coordinate("4903.50", "N")
-      assert {:ok, 49.0352} = NMEAHelpers.parse_nmea_coordinate("4903.52", "N")
+      # 4903.50 = 49 + 3.50/60 = 49.058333
+      assert {:ok, result} = NMEAHelpers.parse_nmea_coordinate("4903.50", "N")
+      assert_in_delta result, 49.058333, 0.000001
+
+      # 4903.52 = 49 + 3.52/60 = 49.058667
+      assert {:ok, result} = NMEAHelpers.parse_nmea_coordinate("4903.52", "N")
+      assert_in_delta result, 49.058667, 0.000001
     end
 
     test "returns error for invalid coordinate values" do
@@ -59,7 +91,6 @@ defmodule Aprs.NMEAHelpersTest do
     end
 
     test "handles edge case directions" do
-      # Test all valid directions
       assert {:ok, coord} = NMEAHelpers.parse_nmea_coordinate("4903.50", "N")
       assert coord > 0
 
@@ -73,10 +104,19 @@ defmodule Aprs.NMEAHelpersTest do
       assert coord < 0
     end
 
+    test "handles coordinates with no decimal point" do
+      # 4900 = 49 degrees, 00 minutes = 49.0
+      assert {:ok, result} = NMEAHelpers.parse_nmea_coordinate("4900", "N")
+      assert_in_delta result, 49.0, 0.001
+
+      # 1000 = 10 degrees, 00 minutes = 10.0
+      assert {:ok, result} = NMEAHelpers.parse_nmea_coordinate("1000", "N")
+      assert_in_delta result, 10.0, 0.001
+    end
+
     property "coordinate parsing produces correct signs" do
       check all coord_str <- StreamData.string(:ascii, min_length: 1, max_length: 10),
                 direction <- StreamData.member_of(["N", "S", "E", "W"]) do
-        # Only test with valid numeric strings
         if String.match?(coord_str, ~r/^\d+\.\d+$/) do
           case NMEAHelpers.parse_nmea_coordinate(coord_str, direction) do
             {:ok, result} ->
@@ -88,92 +128,77 @@ defmodule Aprs.NMEAHelpersTest do
               end
 
             {:error, _} ->
-              # Invalid coordinates should return errors
               :ok
           end
-        end
-      end
-    end
-
-    property "coordinate parsing is consistent" do
-      check all coord_value <- StreamData.float(min: 0.0, max: 18_000.0),
-                direction <- StreamData.member_of(["N", "S", "E", "W"]) do
-        coord_str = Float.to_string(coord_value)
-
-        case NMEAHelpers.parse_nmea_coordinate(coord_str, direction) do
-          {:ok, result} ->
-            expected = coord_value / 100.0
-
-            expected =
-              case direction do
-                "N" -> expected
-                "E" -> expected
-                "S" -> -expected
-                "W" -> -expected
-              end
-
-            assert_in_delta result, expected, 0.001
-
-          {:error, _} ->
-            # Some coordinate values might be invalid
-            :ok
         end
       end
     end
   end
 
   describe "parse_nmea_sentence/1" do
-    test "returns not implemented error for any input" do
-      assert {:error, "NMEA parsing not implemented"} =
-               NMEAHelpers.parse_nmea_sentence("$GPRMC,123456,A,4903.50,N,07201.75,W*6A")
+    test "parses valid $GPRMC sentence" do
+      sentence = "$GPRMC,214531,A,3242.4569,N,08527.2793,W,000,209,180226,,*05"
 
-      assert {:error, "NMEA parsing not implemented"} =
-               NMEAHelpers.parse_nmea_sentence("$GPGGA,123456,4903.50,N,07201.75,W,1,04,2.3,545.4,M,46.9,M,,*47")
-
-      assert {:error, "NMEA parsing not implemented"} = NMEAHelpers.parse_nmea_sentence("")
-      assert {:error, "NMEA parsing not implemented"} = NMEAHelpers.parse_nmea_sentence(nil)
-      assert {:error, "NMEA parsing not implemented"} = NMEAHelpers.parse_nmea_sentence(123)
+      assert {:ok, result} = NMEAHelpers.parse_nmea_sentence(sentence)
+      assert_in_delta result.latitude, 32.707615, 0.000001
+      assert_in_delta result.longitude, -85.454655, 0.000001
+      assert result.speed == 0
+      assert result.course == 209
+      assert result.format == "nmea"
     end
 
-    property "always returns not implemented error for any input" do
-      check all sentence <-
-                  StreamData.one_of([
-                    StreamData.string(:ascii, min_length: 0, max_length: 100),
-                    StreamData.integer(),
-                    StreamData.float(),
-                    StreamData.constant(nil)
-                  ]) do
-        assert {:error, "NMEA parsing not implemented"} = NMEAHelpers.parse_nmea_sentence(sentence)
-      end
+    test "parses $GPRMC with non-zero speed" do
+      sentence = "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,,*23"
+
+      assert {:ok, result} = NMEAHelpers.parse_nmea_sentence(sentence)
+      assert_in_delta result.latitude, 48.1173, 0.001
+      assert_in_delta result.longitude, 11.516667, 0.001
+      assert result.speed == 22
+      assert result.course == 84
+      assert result.format == "nmea"
+    end
+
+    test "rejects $GPRMC with void status" do
+      sentence = "$GPRMC,214531,V,3242.4569,N,08527.2793,W,000,209,180226,,*05"
+
+      assert {:error, "GPRMC void status"} = NMEAHelpers.parse_nmea_sentence(sentence)
+    end
+
+    test "rejects non-GPRMC sentences" do
+      assert {:error, "Unsupported NMEA sentence type"} =
+               NMEAHelpers.parse_nmea_sentence("$GPGGA,123456,4903.50,N,07201.75,W,1,04,2.3,545.4,M,46.9,M,,*47")
+    end
+
+    test "rejects sentences with too few fields" do
+      assert {:error, _reason} = NMEAHelpers.parse_nmea_sentence("$GPRMC,214531,A")
+    end
+
+    test "rejects non-string input" do
+      assert {:error, _reason} = NMEAHelpers.parse_nmea_sentence(nil)
+      assert {:error, _reason} = NMEAHelpers.parse_nmea_sentence(123)
+    end
+
+    test "rejects empty string" do
+      assert {:error, _reason} = NMEAHelpers.parse_nmea_sentence("")
+    end
+
+    test "rejects non-NMEA string" do
+      assert {:error, _reason} = NMEAHelpers.parse_nmea_sentence("not an nmea sentence")
     end
   end
 
-  describe "coordinate conversion edge cases" do
-    test "handles very small coordinates" do
-      assert {:ok, 0.01} = NMEAHelpers.parse_nmea_coordinate("1.0", "N")
-      assert {:ok, -0.01} = NMEAHelpers.parse_nmea_coordinate("1.0", "S")
-    end
+  describe "integration through Aprs.parse/1" do
+    test "parses full WB4BYQ GPRMC packet with FAP-compatible output" do
+      packet = "WB4BYQ-3>APT311,WIDE2-2,qAS,K4RY-1:$GPRMC,214531,A,3242.4569,N,08527.2793,W,000,209,180226,,*05"
 
-    test "handles very large coordinates" do
-      assert {:ok, 180.0} = NMEAHelpers.parse_nmea_coordinate("18000.0", "N")
-      assert {:ok, -180.0} = NMEAHelpers.parse_nmea_coordinate("18000.0", "S")
-    end
-
-    test "handles decimal places correctly" do
-      # Test that division by 100 works correctly
-      assert {:ok, 12.345} = NMEAHelpers.parse_nmea_coordinate("1234.5", "N")
-      assert {:ok, 1.23456} = NMEAHelpers.parse_nmea_coordinate("123.456", "N")
-    end
-
-    test "handles string coordinates with trailing characters" do
-      # Float.parse should handle trailing characters
-      assert {:ok, 49.035} = NMEAHelpers.parse_nmea_coordinate("4903.50abc", "N")
-      assert {:ok, 49.03} = NMEAHelpers.parse_nmea_coordinate("4903.0xyz", "N")
-    end
-
-    test "handles coordinates with no decimal point" do
-      assert {:ok, 49.0} = NMEAHelpers.parse_nmea_coordinate("4900", "N")
-      assert {:ok, 10.0} = NMEAHelpers.parse_nmea_coordinate("1000", "N")
+      assert {:ok, result} = Aprs.parse(packet)
+      assert result.type == "location"
+      assert result.format == "nmea"
+      assert_in_delta result.latitude, 32.707615, 0.000001
+      assert_in_delta result.longitude, -85.454655, 0.000001
+      assert result.symboltable == "/"
+      assert result.symbolcode == "/"
+      assert result.posambiguity == 0
     end
   end
 end

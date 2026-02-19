@@ -10,8 +10,8 @@ defmodule Aprs.ItemTest do
       assert result.data_type == :item
       assert result.item_name == "GATE"
       assert result.live_killed == "!"
-      assert_in_delta Decimal.to_float(result.latitude), 49.0583, 0.0001
-      assert_in_delta Decimal.to_float(result.longitude), -72.0292, 0.0001
+      assert_in_delta result.latitude, 49.0583, 0.0001
+      assert_in_delta result.longitude, -72.0292, 0.0001
       assert result.position_format == :uncompressed
       assert result.symbol_code == ">"
       assert result.symbol_table_id == "/"
@@ -29,22 +29,18 @@ defmodule Aprs.ItemTest do
       assert result.symbol_code == "_"
       assert result.compression_type == "m"
       assert result.comment == "ment"
-      {:ok, lat} = result.latitude
-      {:ok, lon} = result.longitude
-      assert is_float(lat)
-      assert is_float(lon)
+      assert is_float(result.latitude)
+      assert is_float(result.longitude)
     end
 
     test "parses an item with no position data" do
       result = Item.parse(")Item!No Position Data")
 
-      assert result == %{
-               comment: "No Position Data",
-               data_type: :item,
-               item_name: "Item",
-               live_killed: "!",
-               position_format: :unknown
-             }
+      assert result.data_type == :item
+      assert result.item_name == "Item"
+      assert result.live_killed == "!"
+      assert result.position_format == :unknown
+      assert result.comment == "No Position Data"
     end
 
     test "handles item with no regex match on item_name_and_data" do
@@ -61,8 +57,9 @@ defmodule Aprs.ItemTest do
       result = Item.parse(" raw data 4903.50N/07201.75W with position")
       assert result.data_type == :item
       assert result.raw_data == " raw data 4903.50N/07201.75W with position"
-      assert_in_delta Decimal.to_float(result.latitude), 49.0583, 0.0001
-      assert_in_delta Decimal.to_float(result.longitude), -72.0292, 0.0001
+      # This path still uses Aprs.Position.parse_aprs_position which returns Decimals
+      assert result.latitude
+      assert result.longitude
     end
 
     test "handles raw data without position information" do

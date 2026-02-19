@@ -3,74 +3,7 @@ defmodule Aprs.UtilityHelpers do
   Utility helpers for APRS parsing using binary pattern matching.
   """
 
-  @spec safe_string_conversion(binary() | nil, any()) :: String.t()
-  def safe_string_conversion(nil, default), do: default
-  def safe_string_conversion("", default), do: default
-
-  def safe_string_conversion(value, _default) when is_binary(value) do
-    # Clean control characters but keep valid UTF-8
-    value
-    |> String.to_charlist()
-    |> Enum.filter(&(&1 >= 32 or &1 == 9 or &1 == 10 or &1 == 13))
-    |> List.to_string()
-    |> String.trim()
-  rescue
-    _ -> ""
-  end
-
-  def safe_string_conversion(value, default) when is_list(value) do
-    case List.to_string(value) do
-      "" -> default
-      str -> safe_string_conversion(str, default)
-    end
-  rescue
-    _ -> default
-  end
-
-  def safe_string_conversion(_value, default), do: default
-
-  @spec clean_string(String.t() | nil) :: String.t()
-  def clean_string(nil), do: ""
-  def clean_string(""), do: ""
-
-  def clean_string(str) when is_binary(str) do
-    # Clean control characters but keep valid UTF-8
-    str
-    |> String.to_charlist()
-    |> Enum.filter(&(&1 >= 32 or &1 == 9 or &1 == 10 or &1 == 13))
-    |> List.to_string()
-    |> String.trim()
-  rescue
-    _ -> ""
-  end
-
-  def clean_string(_), do: ""
-
-  @spec find_matches(String.t(), Regex.t()) :: [String.t()]
-  def find_matches(data, regex) when is_binary(data) do
-    case Regex.run(regex, data, capture: :all_but_first) do
-      nil -> []
-      matches -> matches
-    end
-  end
-
-  def find_matches(_, _), do: []
-
-  @spec extract_value(String.t(), Regex.t()) :: String.t() | nil
-  def extract_value(data, regex) do
-    case Regex.run(regex, data) do
-      [_, value] -> value
-      _ -> nil
-    end
-  end
-
-  @spec extract_values(String.t(), Regex.t()) :: [String.t()]
-  def extract_values(data, regex) do
-    case Regex.run(regex, data, capture: :all_but_first) do
-      nil -> []
-      values -> values
-    end
-  end
+  import Aprs.Guards
 
   @spec validate_position_data(String.t(), String.t()) ::
           {:ok, {Decimal.t(), Decimal.t()}} | {:error, :invalid_position}
@@ -99,8 +32,9 @@ defmodule Aprs.UtilityHelpers do
   end
 
   # Parse latitude using binary pattern matching
+  @spec parse_latitude_binary(binary()) :: {:ok, binary(), binary(), binary()} | :error
   defp parse_latitude_binary(<<d1::8, d2::8, m1::8, m2::8, ?., rest::binary>>)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and m1 >= ?0 and m1 <= ?9 and m2 >= ?0 and m2 <= ?9 do
+       when is_digit(d1) and is_digit(d2) and is_digit(m1) and is_digit(m2) do
     case parse_lat_fraction_and_dir(rest) do
       {:ok, fraction, dir} ->
         degrees = <<d1, d2>>
@@ -115,9 +49,9 @@ defmodule Aprs.UtilityHelpers do
   defp parse_latitude_binary(_), do: :error
 
   # Parse longitude using binary pattern matching
+  @spec parse_longitude_binary(binary()) :: {:ok, binary(), binary(), binary()} | :error
   defp parse_longitude_binary(<<d1::8, d2::8, d3::8, m1::8, m2::8, ?., rest::binary>>)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 and m1 >= ?0 and m1 <= ?9 and
-              m2 >= ?0 and m2 <= ?9 do
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(m1) and is_digit(m2) do
     case parse_lon_fraction_and_dir(rest) do
       {:ok, fraction, dir} ->
         degrees = <<d1, d2, d3>>
@@ -132,16 +66,20 @@ defmodule Aprs.UtilityHelpers do
   defp parse_longitude_binary(_), do: :error
 
   # Parse fraction and direction for latitude
+  @spec parse_lat_fraction_and_dir(binary()) :: {:ok, binary(), binary()} | :error
   defp parse_lat_fraction_and_dir(data), do: parse_fraction_and_dir(data, [?N, ?S])
 
-  # Parse fraction and direction for longitude  
+  # Parse fraction and direction for longitude
+  @spec parse_lon_fraction_and_dir(binary()) :: {:ok, binary(), binary()} | :error
   defp parse_lon_fraction_and_dir(data), do: parse_fraction_and_dir(data, [?E, ?W])
 
   # Generic fraction and direction parser
+  @spec parse_fraction_and_dir(binary(), [non_neg_integer()]) :: {:ok, binary(), binary()} | :error
   defp parse_fraction_and_dir(data, valid_dirs) do
     parse_fraction_digits(data, <<>>, valid_dirs)
   end
 
+  @spec parse_fraction_digits(binary(), binary(), [non_neg_integer()]) :: {:ok, binary(), binary()} | :error
   defp parse_fraction_digits(<<d::8, rest::binary>>, acc, valid_dirs) when d >= ?0 and d <= ?9 do
     parse_fraction_digits(rest, acc <> <<d>>, valid_dirs)
   end
@@ -182,9 +120,9 @@ defmodule Aprs.UtilityHelpers do
   def validate_timestamp(_), do: nil
 
   # Parse DHM format (day/hour/minute) using binary pattern matching
+  @spec parse_dhm_format(binary()) :: integer() | nil
   defp parse_dhm_format(<<d1::8, d2::8, h1::8, h2::8, m1::8, m2::8>>)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and h1 >= ?0 and h1 <= ?9 and h2 >= ?0 and h2 <= ?9 and
-              m1 >= ?0 and m1 <= ?9 and m2 >= ?0 and m2 <= ?9 do
+       when is_digit(d1) and is_digit(d2) and is_digit(h1) and is_digit(h2) and is_digit(m1) and is_digit(m2) do
     day = (d1 - ?0) * 10 + (d2 - ?0)
     hour = (h1 - ?0) * 10 + (h2 - ?0)
     minute = (m1 - ?0) * 10 + (m2 - ?0)
@@ -193,6 +131,7 @@ defmodule Aprs.UtilityHelpers do
 
   defp parse_dhm_format(_), do: nil
 
+  @spec build_timestamp_from_dhm_int(non_neg_integer(), non_neg_integer(), non_neg_integer()) :: integer() | nil
   defp build_timestamp_from_dhm_int(day, hour, minute) do
     now = DateTime.utc_now()
     build_timestamp_if_valid_dhm(now, day, hour, minute)
@@ -215,6 +154,7 @@ defmodule Aprs.UtilityHelpers do
   defp build_timestamp_if_valid_dhm(_, _, _, _), do: nil
 
   # Parse 7-character format (HMS or Zulu)
+  @spec parse_7_char_format(binary()) :: integer() | nil
   defp parse_7_char_format(time) do
     case time do
       <<_::binary-size(6), ?h>> -> parse_hms_format(time)
@@ -224,9 +164,9 @@ defmodule Aprs.UtilityHelpers do
   end
 
   # Parse HMS format (hour/minute/second) using binary pattern matching
+  @spec parse_hms_format(binary()) :: integer() | nil
   defp parse_hms_format(<<h1::8, h2::8, m1::8, m2::8, s1::8, s2::8, ?h>>)
-       when h1 >= ?0 and h1 <= ?9 and h2 >= ?0 and h2 <= ?9 and m1 >= ?0 and m1 <= ?9 and m2 >= ?0 and m2 <= ?9 and
-              s1 >= ?0 and s1 <= ?9 and s2 >= ?0 and s2 <= ?9 do
+       when is_digit(h1) and is_digit(h2) and is_digit(m1) and is_digit(m2) and is_digit(s1) and is_digit(s2) do
     hour = (h1 - ?0) * 10 + (h2 - ?0)
     minute = (m1 - ?0) * 10 + (m2 - ?0)
     second = (s1 - ?0) * 10 + (s2 - ?0)
@@ -246,9 +186,9 @@ defmodule Aprs.UtilityHelpers do
   defp build_timestamp_if_valid_hms(_, _, _), do: nil
 
   # Parse Zulu format (day/hour/minute) using binary pattern matching
+  @spec parse_zulu_format(binary()) :: integer() | nil
   defp parse_zulu_format(<<d1::8, d2::8, h1::8, h2::8, m1::8, m2::8, ?z>>)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and h1 >= ?0 and h1 <= ?9 and h2 >= ?0 and h2 <= ?9 and
-              m1 >= ?0 and m1 <= ?9 and m2 >= ?0 and m2 <= ?9 do
+       when is_digit(d1) and is_digit(d2) and is_digit(h1) and is_digit(h2) and is_digit(m1) and is_digit(m2) do
     day = (d1 - ?0) * 10 + (d2 - ?0)
     hour = (h1 - ?0) * 10 + (h2 - ?0)
     minute = (m1 - ?0) * 10 + (m2 - ?0)
@@ -280,14 +220,6 @@ defmodule Aprs.UtilityHelpers do
   def position_resolution(_), do: 19
 
   @doc """
-  Format DAO extension for display.
-  """
-  @spec format_dao(String.t() | nil) :: String.t()
-  def format_dao(nil), do: ""
-  def format_dao(dao) when is_binary(dao), do: "!#{dao}!"
-  def format_dao(_), do: ""
-
-  @doc """
   Count spaces in a string.
   """
   @spec count_spaces(String.t()) :: integer()
@@ -309,6 +241,7 @@ defmodule Aprs.UtilityHelpers do
 
   def count_leading_braces(_), do: 0
 
+  @spec count_leading_braces_binary(binary(), non_neg_integer()) :: non_neg_integer()
   defp count_leading_braces_binary(<<?}, rest::binary>>, count) do
     count_leading_braces_binary(rest, count + 1)
   end
@@ -333,10 +266,12 @@ defmodule Aprs.UtilityHelpers do
 
   def calculate_position_ambiguity(_, _), do: 0
 
+  @spec count_leading_spaces(binary()) :: non_neg_integer()
   defp count_leading_spaces(str) when is_binary(str) do
     count_leading_spaces_binary(str, 0)
   end
 
+  @spec count_leading_spaces_binary(binary(), non_neg_integer()) :: non_neg_integer()
   defp count_leading_spaces_binary(<<32, rest::binary>>, count) do
     count_leading_spaces_binary(rest, count + 1)
   end

@@ -9,27 +9,24 @@ defmodule Aprs.WeatherPositionTest do
 
       {:ok, parsed} = Aprs.parse(raw_packet)
 
-      # Should be a weather packet (timestamped position with weather data)
-      assert parsed.data_type == :weather
+      # FAP-compatible: @ prefix → timestamped_position_with_message, not :weather
+      # Only the _ data type indicator produces :weather
+      assert parsed.data_type == :timestamped_position_with_message
 
-      # For now, just check that we have position data
-      weather_data = parsed.data_extended
-      assert weather_data.latitude
-      assert weather_data.longitude
-      # The timestamp is converted to Unix time in the current implementation
-      assert is_integer(weather_data.time)
+      # Position data in data_extended
+      assert parsed.data_extended.latitude
+      assert parsed.data_extended.longitude
+      assert is_integer(parsed.data_extended.time)
 
-      # Weather parsing assertions will be added when weather parsing is implemented
-      # assert weather_data.temperature == 88
-      # assert weather_data.humidity == 64
-      # assert weather_data.wind_direction == 235
-      # assert weather_data.wind_speed == 5
-      # assert weather_data.wind_gust == 10
-      # assert weather_data.pressure == 1018.3
-      # assert weather_data.rain_1h == 0
-      # assert weather_data.rain_24h == 0
-      # assert weather_data.rain_since_midnight == 0
-      # assert weather_data.luminosity == 69
+      # Weather data extracted into wx (FAP-compatible behavior for /_  symbol)
+      wx = parsed.wx
+      assert wx[:temperature] == 88
+      assert wx[:humidity] == 64
+      assert wx[:wind_direction] == 235
+      assert wx[:wind_speed] == 5
+      assert wx[:wind_gust] == 10
+      assert wx[:pressure] == 1018.3
+      assert wx[:luminosity] == 69
     end
 
     test "parses weather data from timestamped position with different weather format" do
@@ -37,22 +34,21 @@ defmodule Aprs.WeatherPositionTest do
 
       {:ok, parsed} = Aprs.parse(raw_packet)
 
-      assert parsed.data_type == :weather
+      # FAP-compatible: @ prefix → timestamped_position_with_message
+      assert parsed.data_type == :timestamped_position_with_message
 
-      weather_data = parsed.data_extended
-      assert weather_data.latitude
-      assert weather_data.longitude
-      assert is_integer(weather_data.time)
+      assert parsed.data_extended.latitude
+      assert parsed.data_extended.longitude
+      assert is_integer(parsed.data_extended.time)
 
-      # Weather parsing assertions will be added when weather parsing is implemented
-      # assert weather_data.temperature == 72
-      # assert weather_data.humidity == 45
-      # assert weather_data.wind_direction == 180
-      # assert weather_data.wind_speed == 10
-      # assert weather_data.wind_gust == 15
-      # assert weather_data.pressure == 1013.2
-      # assert weather_data.rain_1h == 0
-      # assert weather_data.rain_24h == 0
+      # Weather data extracted into wx
+      wx = parsed.wx
+      assert wx[:temperature] == 72
+      assert wx[:humidity] == 45
+      assert wx[:wind_direction] == 180
+      assert wx[:wind_speed] == 10
+      assert wx[:wind_gust] == 15
+      assert wx[:pressure] == 1013.2
     end
 
     test "handles timestamped position without weather data" do

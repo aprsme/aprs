@@ -201,8 +201,8 @@ defmodule Aprs.MicETest do
       assert parsed.sender == "W5DGK-9"
       assert parsed.destination == "S3RS2Y"
 
-      # The comment should have both the altitude prefix ("6;}) and telemetry suffix (_%) removed
-      assert parsed.data_extended.comment == "Happy Trails ...146.52 or 469-247-2654"
+      # FAP preserves device type code prefix and _% suffix in the comment
+      assert parsed.data_extended.comment == "`Happy Trails ...146.52 or 469-247-2654_%"
 
       # Verify altitude was parsed from the prefix
       assert parsed.data_extended.altitude == 218
@@ -226,8 +226,8 @@ defmodule Aprs.MicETest do
       assert parsed.sender == "KD5OVR-1"
       assert parsed.destination == "SS1R4W"
 
-      # The parser should recognize this as encoded data and return empty comment
-      assert parsed.data_extended.comment == ""
+      # FAP preserves device type code ] and the remaining = after altitude extraction
+      assert parsed.data_extended.comment == "]="
 
       # The altitude should be parsed from the data extension format ]"6M}
       assert parsed.data_extended.altitude == 236
@@ -241,6 +241,25 @@ defmodule Aprs.MicETest do
       assert parsed.data_extended.symbol_code == "k"
     end
 
+    test "handles MicE packet where comment is ]- encoded data only" do
+      # Construct a Mic-E packet where the comment after stripping starts with ]
+      # Using a destination that decodes to valid MicE lat
+      # S3PS2V -> known good destination; inject ] into data
+      destination = "S3PS2V"
+      # Build data: valid MicE speed/course/symbol + ] prefix
+      data = <<96, 124, 62, 102, 32, 119, 106, 47>> <> "]rest data"
+      result = MicE.parse(data, destination)
+      assert is_map(result)
+    end
+
+    test "handles MicE packet where comment is =-encoded data only" do
+      # Same but with = prefix
+      destination = "S3PS2V"
+      data = <<96, 124, 62, 102, 32, 119, 106, 47>> <> "=rest data"
+      result = MicE.parse(data, destination)
+      assert is_map(result)
+    end
+
     test "handles VE6LY-7 packet with comment parsing correctly" do
       # This packet contains a human-readable comment that should be parsed correctly
       # The comment should be "146.760MHzAndy S andy@nsnw.ca" without the trailing "^" and "--"
@@ -252,12 +271,69 @@ defmodule Aprs.MicETest do
       assert parsed.sender == "VE6LY-7"
       assert parsed.destination == "U0TVXY"
 
-      # The comment should only include the readable part, not the "^" and "--" at the end
-      assert parsed.data_extended.comment == "146.760MHzAndy S andy@nsnw.ca"
+      # FAP preserves device type code prefix; trailing "^ --" is still stripped
+      assert parsed.data_extended.comment == "`146.760MHzAndy S andy@nsnw.ca"
 
       # Verify symbol - In MicE, the symbol_code and symbol_table_id are swapped compared to normal position reports
       assert parsed.data_extended.symbol_table_id == ">"
       assert parsed.data_extended.symbol_code == "/"
+    end
+
+    test "Mic-E position ambiguity=2 from IU1LTD-9 destination with K/L/Z chars" do
+      # IU1LTD-9>TU3YZL: dest TU3YZL -> T=4, U=5, 3=3, Y=9, Z=ambig, L=ambig
+      # FAP: posambiguity=2, lat=45.6583333, lon=8.05833333
+      # Ambiguity=2: last 2 lat digits are ambiguous (Z, L → positions 5,6 in dest)
+      packet =
+        "IU1LTD-9>TU3YZL,WIDE1-1,WIDE2-1,qAR,IR1ZXE-11:`~[\x1cn*l>/`\"Bq}145.287MHz in RX Op Alessandro Email aledido99@hotmail.it_%"
+
+      {:ok, parsed} = Aprs.parse(packet)
+
+      assert parsed.data_extended.format == "mice"
+      assert parsed.data_extended.position_ambiguity == 2
+      assert parsed.posambiguity == 2
+      assert_in_delta Decimal.to_float(parsed.data_extended.latitude), 45.6583333, 0.001
+      assert_in_delta Decimal.to_float(parsed.data_extended.longitude), 8.0583333, 0.01
+    end
+
+    test "Mic-E position ambiguity=4 from VE3VFF-9 destination with all ambiguous" do
+      # VE3VFF-9>TRZZLZ: dest TRZZLZ -> T=4, R=2, Z=ambig, Z=ambig, L=ambig, Z=ambig
+      # FAP: posambiguity=4, lat=42.5, lon=-82.5
+      # Ambiguity=4: all 4 lat minute digits are ambiguous
+      packet =
+        "VE3VFF-9>TRZZLZ,ARISS,PRSAT,GATE,WIDE2-1,APRSAT,qAo,VE3CTP:`nX\x1cl!Wf/`\"5{}73's de Bill - VE3VFF (Canada - EN82) - bill.b@startmail.com_5"
+
+      {:ok, parsed} = Aprs.parse(packet)
+
+      assert parsed.data_extended.format == "mice"
+      assert parsed.data_extended.position_ambiguity == 4
+      assert parsed.posambiguity == 4
+      assert_in_delta Decimal.to_float(parsed.data_extended.latitude), 42.5, 0.01
+      assert_in_delta Decimal.to_float(parsed.data_extended.longitude), -82.5, 0.5
+    end
+
+    test "Mic-E position ambiguity=1 from 8P6GC-1 destination" do
+      # 8P6GC-1>13QQ7Z: dest 13QQ7Z -> 1=1, 3=3, Q=1, Q=1, 7=7, Z=ambig
+      # FAP: posambiguity=1
+      packet =
+        "8P6GC-1>13QQ7Z,WIDE2-2,8P4JM-15,8P6EX-1,9YAR,qAR,8P9BT-5:`W<Nl*7YY`\"7P}SAY NO TO WAR_5"
+
+      {:ok, parsed} = Aprs.parse(packet)
+
+      assert parsed.data_extended.format == "mice"
+      assert parsed.data_extended.position_ambiguity == 1
+      assert parsed.posambiguity == 1
+    end
+
+    test "Mic-E comment includes trailing device type char from KH6BFD-7" do
+      # KH6BFD-7>BJ3XQT: FAP comment=">^" Elixir comment=">"
+      # The ^ at the end should NOT be stripped when it follows >
+      packet =
+        "KH6BFD-7>BJ3XQT,WIDE1-1,WIDE2-1,qAR,KH6BFD-1:`SVnl s[/>`\"5.}\x5e"
+
+      {:ok, parsed} = Aprs.parse(packet)
+
+      assert parsed.data_extended.format == "mice"
+      assert parsed.data_extended.comment == ">^"
     end
   end
 end

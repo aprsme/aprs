@@ -30,5 +30,13 @@ defmodule Aprs.PHGTest do
         assert result.data_type in [:phg_data, :df_report]
       end
     end
+
+    test "returns error map for non-binary input" do
+      result = PHG.parse(nil)
+      assert result == %{data_type: :phg_data, error: "Invalid PHG data"}
+
+      result = PHG.parse(123)
+      assert result == %{data_type: :phg_data, error: "Invalid PHG data"}
+    end
   end
 end

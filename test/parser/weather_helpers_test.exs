@@ -41,9 +41,13 @@ defmodule Aprs.WeatherHelpersTest do
     end
 
     test "handles invalid timestamp formats" do
+      # Only 5 digits before 'z' — no 6-char match
       assert Aprs.WeatherHelpers.extract_timestamp("12345z_rest") == nil
-      assert Aprs.WeatherHelpers.extract_timestamp("1234567z_rest") == nil
+      # 7 chars with 'z' suffix — scanner finds "234567z" at offset 1
+      assert Aprs.WeatherHelpers.extract_timestamp("1234567z_rest") == "234567z"
+      # No valid marker after digits
       assert Aprs.WeatherHelpers.extract_timestamp("123456_rest") == nil
+      # 'x' is not a valid marker
       assert Aprs.WeatherHelpers.extract_timestamp("123456x_rest") == nil
     end
   end
@@ -119,6 +123,21 @@ defmodule Aprs.WeatherHelpersTest do
     test "handles invalid wind direction" do
       assert is_integer(Aprs.WeatherHelpers.parse_wind_direction("1234/045g015t090h60b10161")) or
                is_nil(Aprs.WeatherHelpers.parse_wind_direction("1234/045g015t090h60b10161"))
+    end
+
+    test "returns nil for dots pattern (missing wind data)" do
+      # .../... format means wind data is not available
+      assert Aprs.WeatherHelpers.parse_wind_direction(".../...g015t090") == nil
+      # /... format means wind direction is missing
+      assert Aprs.WeatherHelpers.parse_wind_direction("/...g015t090") == nil
+    end
+
+    test "parses 2-digit wind direction" do
+      assert Aprs.WeatherHelpers.parse_wind_direction("45/015g015t090") == 45
+    end
+
+    test "parses 1-digit wind direction" do
+      assert Aprs.WeatherHelpers.parse_wind_direction("5/015g015t090") == 5
     end
   end
 
@@ -202,6 +221,11 @@ defmodule Aprs.WeatherHelpersTest do
         result = Aprs.WeatherHelpers.parse_temperature(data)
         assert is_integer(result) or is_nil(result)
       end
+    end
+
+    test "parses negative 3-digit temperature" do
+      assert Aprs.WeatherHelpers.parse_temperature("t-100h60b10161") == -100
+      assert Aprs.WeatherHelpers.parse_temperature("t-010h60b10161") == -10
     end
 
     test "parses temperature correctly" do

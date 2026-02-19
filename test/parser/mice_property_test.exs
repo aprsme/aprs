@@ -294,7 +294,7 @@ defmodule Aprs.MicEPropertyTest do
         base_data = :binary.list_to_bin(Enum.map(1..8, fn _ -> :rand.uniform(127 - 28) + 28 end))
 
         # Add manufacturer specific data
-        mfr_data = :binary.list_to_bin(Enum.map(1..data_len, fn _ -> :rand.uniform(95) + 32 end))
+        mfr_data = :binary.list_to_bin(Enum.map(1..data_len//1, fn _ -> :rand.uniform(95) + 32 end))
         info = "`" <> base_data <> mfr <> mfr_data
 
         packet = "TEST>#{dest},WIDE1-1:#{info}"

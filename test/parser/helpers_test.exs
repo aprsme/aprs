@@ -5,9 +5,9 @@ defmodule Aprs.HelpersTest do
   describe "NMEAHelpers" do
     test "parse_nmea_sentence handles valid NMEA" do
       nmea = "$GPRMC,123456,A,4903.50,N,07201.75,W,0.0,0.0,010180,,*6A"
-      result = Aprs.NMEAHelpers.parse_nmea_sentence(nmea)
-      # not implemented
-      assert {:error, _} = result
+      assert {:ok, %{latitude: lat, longitude: lon, format: "nmea"}} = Aprs.NMEAHelpers.parse_nmea_sentence(nmea)
+      assert_in_delta lat, 49.058333, 0.001
+      assert_in_delta lon, -72.029167, 0.001
     end
 
     test "parse_nmea_sentence handles invalid NMEA" do

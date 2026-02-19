@@ -231,20 +231,20 @@ defmodule Aprs.WeatherTest do
                 rain_1h <- integer(0..999),
                 rain_24h <- integer(0..999),
                 rain_midnight <- integer(0..999),
-                humidity <- integer(0..100),
+                humidity <- integer(0..99),
                 pressure <- integer(8000..12_000),
                 luminosity <- integer(0..999),
                 snow <- integer(0..999) do
-        # Build complete weather string
+        # Build complete weather string (prefix with fixed timestamp so wind data isn't stripped as timestamp)
         weather =
-          "_#{String.pad_leading(to_string(rem(wind_dir, 361)), 3, "0")}/#{String.pad_leading(to_string(wind_speed), 3, "0")}"
+          "_010203z#{String.pad_leading(to_string(rem(wind_dir, 361)), 3, "0")}/#{String.pad_leading(to_string(wind_speed), 3, "0")}"
 
         weather = weather <> "g#{String.pad_leading(to_string(wind_gust), 3, "0")}"
         weather = weather <> "t#{String.pad_leading(to_string(temp), 3, "0")}"
         weather = weather <> "r#{String.pad_leading(to_string(rain_1h), 3, "0")}"
         weather = weather <> "p#{String.pad_leading(to_string(rain_24h), 3, "0")}"
         weather = weather <> "P#{String.pad_leading(to_string(rain_midnight), 3, "0")}"
-        weather = weather <> "h#{String.pad_leading(to_string(rem(humidity, 101)), 2, "0")}"
+        weather = weather <> "h#{String.pad_leading(to_string(humidity), 2, "0")}"
         weather = weather <> "b#{String.pad_leading(to_string(pressure), 5, "0")}"
         weather = weather <> "L#{String.pad_leading(to_string(luminosity), 3, "0")}"
         weather = weather <> "s#{String.pad_leading(to_string(snow), 3, "0")}"
@@ -256,10 +256,12 @@ defmodule Aprs.WeatherTest do
         assert result.wind_speed == wind_speed
         assert result.wind_gust == wind_gust
         assert result.temperature == temp
-        assert result.rain_1h == rain_1h
-        assert result.rain_24h == rain_24h
-        assert result.rain_since_midnight == rain_midnight
-        assert result.humidity == rem(humidity, 101)
+        assert result.rain_1h == rain_1h / 100.0
+        assert result.rain_24h == rain_24h / 100.0
+        assert result.rain_since_midnight == rain_midnight / 100.0
+        # APRS: h00 means 100% humidity
+        expected_humidity = if humidity == 0, do: 100, else: humidity
+        assert result.humidity == expected_humidity
         assert result.pressure == pressure / 10.0
         assert result.luminosity == luminosity
         assert result.snow == snow / 10.0
@@ -271,7 +273,8 @@ defmodule Aprs.WeatherTest do
                 has_temp <- boolean(),
                 has_rain <- boolean(),
                 has_pressure <- boolean() do
-        weather = "_"
+        # Prefix with fixed timestamp so wind data isn't stripped as timestamp
+        weather = "_010203z"
         weather = weather <> if has_wind, do: "180/015", else: ".../..."
         weather = weather <> "g..."
         weather = weather <> if has_temp, do: "t072", else: "t..."
@@ -408,13 +411,11 @@ defmodule Aprs.WeatherTest do
     end
 
     property "handles weather in position comment fields" do
-      check all comment_prefix <- string(:alphanumeric, max_length: 10),
-                wind_dir <- integer(0..360),
+      check all wind_dir <- integer(0..360),
                 temp <- integer(0..150) do
-        # Weather data embedded in comment
+        # Weather data embedded in comment (no prefix to avoid interference with scanner)
         comment =
-          comment_prefix <>
-            "_#{String.pad_leading(to_string(rem(wind_dir, 361)), 3, "0")}/000g000t#{String.pad_leading(to_string(temp), 3, "0")}"
+          "_#{String.pad_leading(to_string(rem(wind_dir, 361)), 3, "0")}/000g000t#{String.pad_leading(to_string(temp), 3, "0")}"
 
         result = Weather.parse_from_comment(comment)
 
@@ -439,10 +440,42 @@ defmodule Aprs.WeatherTest do
       end
     end
 
+    test "returns nil for non-binary input" do
+      assert Weather.parse_from_comment(nil) == nil
+      assert Weather.parse_from_comment(123) == nil
+    end
+
+    test "detects weather pattern with negative temperature (t- prefix)" do
+      comment = "t-012h50b10000"
+      result = Weather.parse_from_comment(comment)
+      assert is_map(result)
+      assert result[:data_type] == :weather
+      assert result[:temperature] == -12
+    end
+
+    test "detects weather pattern with luminosity l prefix" do
+      comment = "l500t075"
+      result = Weather.parse_from_comment(comment)
+      assert is_map(result)
+      assert result[:data_type] == :weather
+    end
+
+    test "detects weather pattern with luminosity L prefix" do
+      comment = "L500t075"
+      result = Weather.parse_from_comment(comment)
+      assert is_map(result)
+      assert result[:data_type] == :weather
+    end
+
+    test "weather_packet_comment? returns false for non-binary" do
+      assert Weather.weather_packet_comment?(nil) == false
+      assert Weather.weather_packet_comment?(123) == false
+    end
+
     property "handles weather beacon formats" do
       check all beacon_text <- member_of(["WX de", "Weather:", "WX rpt", "Conditions:"]),
                 temp <- integer(0..150),
-                humidity <- integer(0..100) do
+                humidity <- integer(0..99) do
         weather =
           beacon_text <>
             " t#{String.pad_leading(to_string(temp), 3, "0")}h#{String.pad_leading(to_string(humidity), 2, "0")}"

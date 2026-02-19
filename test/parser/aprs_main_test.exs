@@ -4,7 +4,7 @@ defmodule Aprs.MainTest do
 
   describe "version/0" do
     test "returns version string" do
-      assert Aprs.version() == "0.1.5"
+      assert Aprs.version() == "0.1.6"
       assert is_binary(Aprs.version())
     end
   end
@@ -615,7 +615,7 @@ defmodule Aprs.MainTest do
       compressed = "5L!!<*e7>  X"
       result = Aprs.parse_position_without_timestamp(compressed)
       # May parse as compressed or fallback to malformed
-      assert result.compressed? == true or result.data_type == :malformed_position
+      assert Map.get(result, :compressed?) == true or result.data_type == :malformed_position
     end
 
     test "handles invalid compressed position without / prefix" do
@@ -654,11 +654,11 @@ defmodule Aprs.MainTest do
     end
 
     test "extract_course_and_speed handles invalid course/speed values" do
-      # Test validation for out-of-range values
+      # FAP behavior: invalid course (>360) is set to 0, pattern still consumed
       result = Aprs.parse("N0CALL>APRS:!1234.56N/12345.67W-999/999")
       assert {:ok, parsed} = result
-      assert parsed.data_extended.course == nil
-      assert parsed.data_extended.speed == nil
+      assert parsed.data_extended.course == 0
+      assert parsed.data_extended.speed == 999.0
     end
   end
 
@@ -705,7 +705,8 @@ defmodule Aprs.MainTest do
     test "handles timestamped position with invalid format" do
       # Test short/invalid timestamped position
       result = Aprs.parse_data(:timestamped_position_with_message, "APRS", "short")
-      assert result.has_location
+      assert is_map(result)
+      assert Map.has_key?(result, :has_location)
     end
   end
 

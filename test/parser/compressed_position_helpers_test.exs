@@ -157,6 +157,11 @@ defmodule Aprs.CompressedPositionHelpersTest do
       assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("") == 0
     end
 
+    test "parse_compression_type returns unknown map for empty string" do
+      result = Aprs.CompressedPositionHelpers.parse_compression_type("")
+      assert result == %{gps_fix_type: :unknown, position_resolution: 0, old_gps_data: false, aprs_messaging: 0}
+    end
+
     test "handles single character" do
       assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity(" ") == 0
       assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("!") == 0
@@ -259,6 +264,10 @@ defmodule Aprs.CompressedPositionHelpersTest do
       assert is_map(Aprs.CompressedPositionHelpers.convert_compressed_cs("AB"))
       assert is_map(Aprs.CompressedPositionHelpers.convert_compressed_cs("XY"))
       assert is_map(Aprs.CompressedPositionHelpers.convert_compressed_cs("!@"))
+    end
+
+    test "returns empty map for DAO marker input" do
+      assert Aprs.CompressedPositionHelpers.convert_compressed_cs("&!") == %{}
     end
 
     test "returns empty map for nil input" do

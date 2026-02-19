@@ -3,6 +3,7 @@ defmodule Aprs.CompressedPositionHelpers do
   Compressed position helpers for APRS packets.
   """
 
+  import Aprs.Guards
   import Bitwise
 
   # Pre-calculated constants for better performance
@@ -13,10 +14,7 @@ defmodule Aprs.CompressedPositionHelpers do
   def convert_compressed_lat(lat) when is_binary(lat) and byte_size(lat) == 4 do
     case safe_to_charlist(lat) do
       {:ok, [l1, l2, l3, l4]}
-      when l1 >= 33 and l1 <= 126 and
-             l2 >= 33 and l2 <= 126 and
-             l3 >= 33 and l3 <= 126 and
-             l4 >= 33 and l4 <= 126 ->
+      when is_base91(l1) and is_base91(l2) and is_base91(l3) and is_base91(l4) ->
         value = calculate_base91_value([l1, l2, l3, l4])
         lat_val = 90 - value / @lat_divisor
         {:ok, clamp_lat(lat_val)}
@@ -35,10 +33,7 @@ defmodule Aprs.CompressedPositionHelpers do
   def convert_compressed_lon(lon) when is_binary(lon) and byte_size(lon) == 4 do
     case safe_to_charlist(lon) do
       {:ok, [l1, l2, l3, l4]}
-      when l1 >= 33 and l1 <= 126 and
-             l2 >= 33 and l2 <= 126 and
-             l3 >= 33 and l3 <= 126 and
-             l4 >= 33 and l4 <= 126 ->
+      when is_base91(l1) and is_base91(l2) and is_base91(l3) and is_base91(l4) ->
         value = calculate_base91_value([l1, l2, l3, l4])
         lon_val = -180 + value / @lon_divisor
         {:ok, clamp_lon(lon_val)}
@@ -53,14 +48,14 @@ defmodule Aprs.CompressedPositionHelpers do
 
   def convert_compressed_lon(_), do: {:error, "Invalid compressed longitude"}
 
-  # Safe conversion to charlist that handles invalid UTF-8
+  @spec safe_to_charlist(binary()) :: {:ok, charlist()} | {:error, :invalid_utf8}
   defp safe_to_charlist(binary) do
     {:ok, to_charlist(binary)}
   rescue
     UnicodeConversionError -> {:error, :invalid_utf8}
   end
 
-  # Optimized base91 calculation
+  @spec calculate_base91_value([non_neg_integer()]) :: non_neg_integer()
   defp calculate_base91_value([c1, c2, c3, c4]) do
     (c1 - 33) * 91 * 91 * 91 +
       (c2 - 33) * 91 * 91 +
@@ -69,6 +64,7 @@ defmodule Aprs.CompressedPositionHelpers do
   end
 
   @doc false
+  @spec clamp_lat(number()) :: float()
   def clamp_lat(lat_val) do
     lat_val
     |> max(-90.0)
@@ -76,6 +72,7 @@ defmodule Aprs.CompressedPositionHelpers do
   end
 
   @doc false
+  @spec clamp_lon(number()) :: float()
   def clamp_lon(lon_val) do
     lon_val
     |> max(-180.0)
@@ -138,7 +135,12 @@ defmodule Aprs.CompressedPositionHelpers do
   - old_gps_data: Whether this is old GPS data
   - aprs_messaging: APRS messaging capability (bit 6)
   """
-  @spec parse_compression_type(binary()) :: map()
+  @spec parse_compression_type(binary()) :: %{
+          gps_fix_type: :other | :gll_gga | :rmc | :unknown,
+          position_resolution: non_neg_integer(),
+          old_gps_data: boolean(),
+          aprs_messaging: non_neg_integer()
+        }
   def parse_compression_type(<<char::8, _rest::binary>>) do
     # The compression type is offset by 33 to make it printable ASCII
     # Special case for space character which is 0x20 (32)
@@ -200,12 +202,17 @@ defmodule Aprs.CompressedPositionHelpers do
   defp map_resolution_to_ambiguity(_), do: 0
 
   @doc false
+  @spec convert_to_base91(binary()) :: non_neg_integer()
   def convert_to_base91(<<value::binary-size(4)>>) do
     [v1, v2, v3, v4] = to_charlist(value)
     calculate_base91_value([v1, v2, v3, v4])
   end
 
-  @spec convert_compressed_cs(binary() | nil) :: map()
+  @spec convert_compressed_cs(binary() | nil) :: %{
+          optional(:course) => non_neg_integer(),
+          optional(:speed) => float(),
+          optional(:range) => float()
+        }
   # Check for DAO extension pattern
   def convert_compressed_cs("&!"), do: %{}
 
@@ -216,7 +223,11 @@ defmodule Aprs.CompressedPositionHelpers do
 
   def convert_compressed_cs(_), do: %{}
 
-  @spec decode_course_speed(integer(), integer()) :: map()
+  @spec decode_course_speed(integer(), integer()) :: %{
+          optional(:course) => non_neg_integer(),
+          optional(:speed) => float(),
+          optional(:range) => float()
+        }
   defp decode_course_speed(?Z, s_val) do
     %{range: 2 * 1.08 ** s_val}
   end

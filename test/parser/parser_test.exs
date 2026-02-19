@@ -427,7 +427,7 @@ defmodule Aprs.ParserTest do
       assert third_party.data_extended.data_type == :mic_e_old
       assert is_struct(third_party.data_extended.latitude, Decimal)
       assert is_struct(third_party.data_extended.longitude, Decimal)
-      assert third_party.data_extended.comment == "439.750MHz t077 -940 michael_1"
+      assert third_party.data_extended.comment == "`439.750MHz t077 -940 michael_1"
     end
 
     test "handles third-party packet with embedded position from KO6TX-1" do
@@ -488,7 +488,7 @@ defmodule Aprs.ParserTest do
       assert is_map(result)
       assert result.data_type == :phg_data
       assert result.phg == "1234"
-      assert result.raw_data == "PHG1234rest"
+      assert result.raw_data == "PHG1234"
     end
 
     test "extracts coordinates from timestamped position with weather packet" do
@@ -501,10 +501,10 @@ defmodule Aprs.ParserTest do
       data_without_type = String.slice(packet, 1, String.length(packet) - 1)
       result = Aprs.parse_data(data_type, destination, data_without_type)
       assert is_map(result)
-      assert is_struct(result[:latitude], Decimal)
-      assert is_struct(result[:longitude], Decimal)
-      assert Decimal.equal?(Decimal.round(result[:latitude], 6), Decimal.new("33.267333"))
-      assert Decimal.equal?(Decimal.round(result[:longitude], 6), Decimal.new("-96.532667"))
+      assert is_number(result[:latitude])
+      assert is_number(result[:longitude])
+      assert_in_delta result[:latitude], 33.267333, 0.001
+      assert_in_delta result[:longitude], -96.532667, 0.001
     end
 
     test "extracts coordinates from timestamped position with weather and sets has_position" do
@@ -514,7 +514,8 @@ defmodule Aprs.ParserTest do
       {:ok, parsed} = Aprs.parse(packet)
       data = parsed.data_extended
       assert is_map(data)
-      assert data[:data_type] == :weather
+      # FAP-compatible: @ prefix → timestamped_position_with_message, not :weather
+      assert data[:data_type] == :timestamped_position_with_message
     end
 
     test "extracts lat/lon from @ timestamped position with message packet (issue regression)" do
@@ -524,8 +525,8 @@ defmodule Aprs.ParserTest do
       {:ok, parsed} = Aprs.parse(packet)
       data = parsed.data_extended
       assert is_map(data)
-      assert is_struct(data[:latitude], Decimal)
-      assert is_struct(data[:longitude], Decimal)
+      assert is_number(data[:latitude])
+      assert is_number(data[:longitude])
       assert data[:latitude]
       assert data[:longitude]
       if Map.has_key?(data, :has_location), do: assert(data[:has_location])
@@ -546,7 +547,8 @@ defmodule Aprs.ParserTest do
       assert data[:position_format] == :compressed
       assert data[:symbol_table_id] == "L"
       assert data[:symbol_code] == "a"
-      assert data[:compression_type] == nil
+      # APRS compressed format always consumes cs and compression_type bytes
+      assert data[:compression_type]
 
       # Should have valid coordinates
       assert is_float(data[:latitude])
@@ -568,7 +570,7 @@ defmodule Aprs.ParserTest do
 
       assert is_map(result)
       assert result[:data_type] == :raw_gps_ultimeter
-      assert result[:error] == "NMEA parsing not implemented"
+      assert result[:error] == "Unsupported NMEA sentence type"
     end
 
     test "handles Mic-E data" do
@@ -677,8 +679,8 @@ defmodule Aprs.ParserTest do
       {:ok, parsed} = Aprs.parse(packet)
       data = parsed.data_extended
       assert is_map(data)
-      assert is_struct(data[:latitude], Decimal)
-      assert is_struct(data[:longitude], Decimal)
+      assert is_number(data[:latitude])
+      assert is_number(data[:longitude])
       assert data[:latitude]
       assert data[:longitude]
       if Map.has_key?(data, :has_location), do: assert(data[:has_location])

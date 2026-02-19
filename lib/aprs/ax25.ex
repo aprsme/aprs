@@ -26,6 +26,7 @@ defmodule Aprs.AX25 do
     {:error, "Invalid callsign format"}
   end
 
+  @spec format_callsign_result([String.t()], String.t()) :: {:ok, {String.t(), String.t()}}
   defp format_callsign_result([base, ssid], _), do: {:ok, {base, ssid}}
   defp format_callsign_result([base], _), do: {:ok, {base, "0"}}
   defp format_callsign_result(_, original), do: {:ok, {original, "0"}}

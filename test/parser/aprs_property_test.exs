@@ -51,12 +51,33 @@ defmodule Aprs.PropertyTest do
 
     property "handles position ambiguity with spaces" do
       check all spaces <- integer(0..4),
-                lat_base <- string([?0..?9], length: 4),
-                lon_base <- string([?0..?9], length: 5),
+                lat_deg <- string([?0..?8], length: 2),
+                lat_min_base <- string([?0..?5], length: 1),
+                lon_deg <- string([?0..?1], length: 1),
+                lon_deg2 <- string([?0..?7], length: 2),
                 comment <- string(:printable, max_length: 20) do
-        # Create position with ambiguity (spaces replacing digits)
-        lat = String.slice(lat_base, 0, 4 - spaces) <> String.duplicate(" ", spaces) <> ".50N"
-        lon = String.slice(lon_base, 0, 5 - spaces) <> String.duplicate(" ", spaces) <> ".50W"
+        # APRS position ambiguity: spaces replace digits from right in MM.FF
+        # amb=0: DDMM.FFN  amb=1: DDMM.F N  amb=2: DDMM.  N  amb=3: DDM .  N  amb=4: DD  .  N
+        lat_min =
+          case spaces do
+            0 -> "#{lat_min_base}5.20"
+            1 -> "#{lat_min_base}5.2 "
+            2 -> "#{lat_min_base}5.  "
+            3 -> "#{lat_min_base} .  "
+            4 -> "  .  "
+          end
+
+        lon_min =
+          case spaces do
+            0 -> "#{lat_min_base}5.20"
+            1 -> "#{lat_min_base}5.2 "
+            2 -> "#{lat_min_base}5.  "
+            3 -> "#{lat_min_base} .  "
+            4 -> "  .  "
+          end
+
+        lat = "#{lat_deg}#{lat_min}N"
+        lon = "#{lon_deg}#{lon_deg2}#{lon_min}W"
 
         packet = "TEST>APRS:!#{lat}/#{lon}>#{comment}"
 

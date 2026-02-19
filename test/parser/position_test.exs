@@ -157,6 +157,19 @@ defmodule Aprs.PositionTest do
     end
   end
 
+  describe "parse_aprs_position/2 with invalid direction" do
+    test "returns nil lat when lat fraction has invalid direction char" do
+      # "1234.56X" has valid digit prefix but 'X' is not N/S - triggers line 80 _ -> :error
+      result = Position.parse_aprs_position("1234.56X", "09876.54W")
+      assert result.latitude == nil
+    end
+
+    test "returns nil lon when lon fraction has invalid direction char" do
+      result = Position.parse_aprs_position("1234.56N", "09876.54X")
+      assert result.longitude == nil
+    end
+  end
+
   describe "calculate_position_ambiguity/2 edge cases" do
     test "returns 0 for mismatched space counts" do
       # Test the default case in @ambiguity_levels map
@@ -170,6 +183,102 @@ defmodule Aprs.PositionTest do
 
     test "returns correct ambiguity for 4 spaces" do
       assert Position.calculate_position_ambiguity("    .50N", "072    .W") == 4
+    end
+  end
+
+  describe "parse_aprs_position/2 with position ambiguity (spaces in coordinates)" do
+    test "ambiguity=2: WINLINK-style with two spaces in fraction digits" do
+      # 4113.  N → lat_deg=41, lat_min="13.  " → ambiguity=2
+      # FAP: latitude = 41 + (13 + 0.5)/60 = 41.225
+      result = Position.parse_aprs_position("4113.  N", "07322.  W")
+      assert result.latitude
+      assert result.longitude
+      assert_in_delta Decimal.to_float(result.latitude), 41.225, 0.001
+      assert_in_delta Decimal.to_float(result.longitude), -73.375, 0.001
+    end
+
+    test "ambiguity=1: one space in last fraction digit" do
+      # 4919.2 N → lat_min="19.2 " → ambiguity=1
+      # FAP: latitude = 49 + (19.2 + 0.05)/60 = 49.32083333
+      result = Position.parse_aprs_position("4919.2 N", "12304.5 W")
+      assert result.latitude
+      assert result.longitude
+      assert_in_delta Decimal.to_float(result.latitude), 49.3208333, 0.001
+      assert_in_delta Decimal.to_float(result.longitude), -123.075833, 0.001
+    end
+
+    test "ambiguity=1: position with course/speed comment" do
+      # 2543.3 N → ambiguity=1
+      # FAP: latitude = 25 + (43.3 + 0.05)/60 = 25.7225
+      result = Position.parse_aprs_position("2543.3 N", "10019.5 W")
+      assert result.latitude
+      assert result.longitude
+      assert_in_delta Decimal.to_float(result.latitude), 25.7225, 0.001
+      assert_in_delta Decimal.to_float(result.longitude), -100.325833, 0.001
+    end
+
+    test "ambiguity=1: European position with non-standard symbol table" do
+      # 5125.7 N → ambiguity=1
+      # FAP: latitude = 51 + (25.7 + 0.05)/60 = 51.42916667
+      result = Position.parse_aprs_position("5125.7 N", "00647.0 E")
+      assert result.latitude
+      assert result.longitude
+      assert_in_delta Decimal.to_float(result.latitude), 51.4291667, 0.001
+      assert_in_delta Decimal.to_float(result.longitude), 6.78416667, 0.001
+    end
+  end
+
+  describe "full packet parsing with position ambiguity" do
+    test "WINLINK object with ambiguity=2 spaces" do
+      packet =
+        "WINLINK>APWL2K,TCPIP*,qAS,WLNK-1:;AC1DQ-10 *180945z4113.  NW07322.  Wa145.050MHz Winlink VARA FM Wide Gateway"
+
+      {:ok, parsed} = Aprs.parse(packet)
+
+      assert parsed.data_type == :object
+      data = parsed.data_extended
+      assert_in_delta data.latitude, 41.225, 0.001
+      assert_in_delta data.longitude, -73.375, 0.001
+      assert data.posambiguity == 2
+    end
+
+    test "position with ambiguity=1 and course/speed" do
+      packet = "XE2NCH-10>APDR16,TCPIP*,qAO,AE5PL-JF:=2543.3 N/10019.5 Wk000/002/A=001428 https://aprsdroid.org/"
+      {:ok, parsed} = Aprs.parse(packet)
+
+      assert parsed.data_type == :position_with_message
+      data = parsed.data_extended
+      assert_in_delta data.latitude, 25.7225, 0.001
+      assert_in_delta data.longitude, -100.325833, 0.001
+      assert data.position_ambiguity == 1
+    end
+
+    test "position with ambiguity=1 and non-standard symbol table" do
+      packet =
+        "DF0UD-10>APPM13,TCPIP*,qAC,T2CZECH:=5125.7 NR00647.0 E&APRS RX only iGate 144.800 MHz, Uni Duisburg - JO31JK"
+
+      {:ok, parsed} = Aprs.parse(packet)
+
+      assert parsed.data_type == :position_with_message
+      data = parsed.data_extended
+      assert data.symbol_table_id == "R"
+      assert data.symbol_code == "&"
+      assert_in_delta data.latitude, 51.4291667, 0.001
+      assert_in_delta data.longitude, 6.78416667, 0.001
+      assert data.position_ambiguity == 1
+    end
+
+    test "position with ambiguity=1 (VE7WPG)" do
+      packet = "VE7WPG>APX221,WIDE1-1,qAO,VE7UBC:=4919.2 N/12304.5 WL"
+      {:ok, parsed} = Aprs.parse(packet)
+
+      assert parsed.data_type == :position_with_message
+      data = parsed.data_extended
+      assert data.symbol_table_id == "/"
+      assert data.symbol_code == "L"
+      assert_in_delta data.latitude, 49.3208333, 0.001
+      assert_in_delta data.longitude, -123.075833, 0.001
+      assert data.position_ambiguity == 1
     end
   end
 end

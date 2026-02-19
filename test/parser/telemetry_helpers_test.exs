@@ -97,11 +97,11 @@ defmodule Aprs.TelemetryHelpersTest do
       assert Aprs.TelemetryHelpers.parse_coefficient("999.999") == 999.999
     end
 
-    test "parses valid integer coefficients" do
-      assert Aprs.TelemetryHelpers.parse_coefficient("123") == 123
-      assert Aprs.TelemetryHelpers.parse_coefficient("-12") == -12
-      assert Aprs.TelemetryHelpers.parse_coefficient("0") == 0
-      assert Aprs.TelemetryHelpers.parse_coefficient("999") == 999
+    test "parses valid integer coefficients as floats" do
+      assert Aprs.TelemetryHelpers.parse_coefficient("123") == 123.0
+      assert Aprs.TelemetryHelpers.parse_coefficient("-12") == -12.0
+      assert Aprs.TelemetryHelpers.parse_coefficient("0") == 0.0
+      assert Aprs.TelemetryHelpers.parse_coefficient("999") == 999.0
     end
 
     test "returns original string for invalid coefficients" do
@@ -112,9 +112,9 @@ defmodule Aprs.TelemetryHelpersTest do
     end
 
     test "handles edge cases" do
-      assert Aprs.TelemetryHelpers.parse_coefficient("0") == 0
+      assert Aprs.TelemetryHelpers.parse_coefficient("0") == 0.0
       assert Aprs.TelemetryHelpers.parse_coefficient("0.0") == 0.0
-      assert Aprs.TelemetryHelpers.parse_coefficient("000") == 0
+      assert Aprs.TelemetryHelpers.parse_coefficient("000") == 0.0
       assert Aprs.TelemetryHelpers.parse_coefficient("000.000") == 0.0
     end
 

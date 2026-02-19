@@ -163,10 +163,6 @@ defmodule Aprs.FieldMappingTest do
       packet = "DL3EMX-9>APRS,qAR,SQ3EMX-10:!/4Z-lS%<9>&!HLilyTTGO Tracker"
       assert {:ok, parsed} = Aprs.parse(packet)
 
-      # Debug output
-      IO.puts("Parsed packet:")
-      IO.inspect(parsed, pretty: true)
-
       # Check what data_type it was parsed as
       assert parsed.data_type == :position
 
