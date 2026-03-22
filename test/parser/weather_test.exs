@@ -421,7 +421,9 @@ defmodule Aprs.WeatherTest do
 
         if result != nil do
           assert result.data_type == :weather
-          assert result.wind_direction == rem(wind_dir, 361)
+          # Wind direction is normalized: 360 -> 0 (full circle)
+          expected_direction = if rem(wind_dir, 361) == 360, do: 0, else: rem(wind_dir, 361)
+          assert result.wind_direction == expected_direction
           assert result.temperature == temp
           assert result.comment == comment
         end
