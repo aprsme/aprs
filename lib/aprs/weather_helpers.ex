@@ -36,7 +36,12 @@ defmodule Aprs.WeatherHelpers do
   defp remove_timestamp_scan(<<>>, acc), do: acc
 
   @spec parse_wind_direction(binary()) :: integer() | nil
-  def parse_wind_direction(data), do: parse_wind_direction_scan(data)
+  def parse_wind_direction(data) do
+    case parse_wind_direction_scan(data) do
+      nil -> nil
+      direction -> normalize_wind_direction(direction)
+    end
+  end
 
   # Handle dots pattern (missing data)
   @spec parse_wind_direction_scan(binary()) :: non_neg_integer() | nil
@@ -67,6 +72,13 @@ defmodule Aprs.WeatherHelpers do
 
   defp parse_wind_direction_scan(<<_::8, rest::binary>>), do: parse_wind_direction_scan(rest)
   defp parse_wind_direction_scan(<<>>), do: nil
+
+  @spec normalize_wind_direction(integer()) :: integer()
+  defp normalize_wind_direction(direction) when direction >= 0 and direction <= 359, do: direction
+  # 360 degrees = 0 degrees (full circle)
+  defp normalize_wind_direction(direction) when direction == 360, do: 0
+  # Invalid values (> 360 or negative) normalized to 0
+  defp normalize_wind_direction(_invalid_direction), do: 0
 
   @spec parse_wind_speed(binary()) :: integer() | nil
   def parse_wind_speed(data), do: parse_wind_speed_scan(data)
