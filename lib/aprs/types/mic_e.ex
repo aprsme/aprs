@@ -111,7 +111,9 @@ defmodule Aprs.Types.MicE do
   defp calculate_latitude(mic_e) do
     if is_number(mic_e.lat_degrees) and is_number(mic_e.lat_minutes) do
       lat = mic_e.lat_degrees + mic_e.lat_minutes / 60.0
-      if mic_e.lat_direction == :south, do: -lat, else: lat
+      lat = if mic_e.lat_direction == :south, do: -lat, else: lat
+      # Clamp latitude to valid range (-90 to 90)
+      lat |> max(-90.0) |> min(90.0)
     end
   end
 
@@ -119,7 +121,9 @@ defmodule Aprs.Types.MicE do
   defp calculate_longitude(mic_e) do
     if is_number(mic_e.lon_degrees) and is_number(mic_e.lon_minutes) do
       lon = mic_e.lon_degrees + mic_e.lon_minutes / 60.0
-      if mic_e.lon_direction == :west, do: -lon, else: lon
+      lon = if mic_e.lon_direction == :west, do: -lon, else: lon
+      # Normalize longitude to -180 to 180 range
+      Aprs.CompressedPositionHelpers.normalize_longitude(lon)
     end
   end
 
