@@ -341,9 +341,16 @@ defmodule Aprs.MicE do
   defp normalize_speed(speed) when speed >= 800, do: speed - 800
   defp normalize_speed(speed), do: speed
 
-  @spec normalize_course(non_neg_integer()) :: non_neg_integer()
-  defp normalize_course(course) when course >= 400, do: course - 400
-  defp normalize_course(course), do: course
+  @spec normalize_course(integer()) :: non_neg_integer()
+  defp normalize_course(course) when course >= 400 do
+    normalized = course - 400
+    # After subtracting 400, ensure result is still in valid range (0-359)
+    if normalized >= 0 and normalized <= 359, do: normalized, else: 0
+  end
+
+  # Valid course is 0-359 degrees, anything else is invalid
+  defp normalize_course(course) when course >= 0 and course <= 359, do: course
+  defp normalize_course(_invalid_course), do: 0
 
   # New device type codes (Kenwood etc.) - preserved as comment prefix
   @new_type_codes [?>, ?]]
