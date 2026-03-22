@@ -111,7 +111,19 @@ defmodule Aprs.WeatherHelpers do
   defp parse_wind_gust_scan(<<>>), do: nil
 
   @spec parse_temperature(binary()) :: integer() | nil
-  def parse_temperature(data), do: parse_temperature_scan(data)
+  def parse_temperature(data) do
+    case parse_temperature_scan(data) do
+      nil -> nil
+      temp -> validate_temperature(temp)
+    end
+  end
+
+  # Validate temperature is within reasonable range for weather
+  # Valid range: -100°F to 150°F
+  # (Coldest recorded on Earth ~-130°F, hottest ~134°F, with some margin)
+  @spec validate_temperature(integer()) :: integer() | nil
+  defp validate_temperature(temp) when temp >= -100 and temp <= 150, do: temp
+  defp validate_temperature(_invalid_temp), do: nil
 
   # Handle negative temperature with minus sign
   @spec parse_temperature_scan(binary()) :: integer() | nil
