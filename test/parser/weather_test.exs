@@ -227,7 +227,8 @@ defmodule Aprs.WeatherTest do
       check all wind_dir <- integer(0..360),
                 wind_speed <- integer(0..999),
                 wind_gust <- integer(0..999),
-                temp <- integer(-99..999),
+                # Temperature validation: -100 to 150°F (reasonable weather range)
+                temp <- integer(-99..150),
                 rain_1h <- integer(0..999),
                 rain_24h <- integer(0..999),
                 rain_midnight <- integer(0..999),
