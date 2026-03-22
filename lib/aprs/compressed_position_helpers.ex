@@ -74,10 +74,17 @@ defmodule Aprs.CompressedPositionHelpers do
   @doc false
   @spec clamp_lon(number()) :: float()
   def clamp_lon(lon_val) do
-    lon_val
-    |> max(-180.0)
-    |> min(180.0)
+    # Longitude wraps around, so normalize to -180 to 180 range
+    normalize_longitude(lon_val)
   end
+
+  @doc """
+  Normalize longitude to the -180 to 180 range by wrapping.
+  """
+  @spec normalize_longitude(float()) :: float()
+  def normalize_longitude(lon) when lon > 180, do: normalize_longitude(lon - 360)
+  def normalize_longitude(lon) when lon < -180, do: normalize_longitude(lon + 360)
+  def normalize_longitude(lon), do: lon
 
   # Map of resolution values to ambiguity levels
   @resolution_to_ambiguity %{

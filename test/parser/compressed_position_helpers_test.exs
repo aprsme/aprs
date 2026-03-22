@@ -80,8 +80,9 @@ defmodule Aprs.CompressedPositionHelpersTest do
       assert_in_delta lon, -180.0, 0.001
 
       assert {:ok, lon} = Aprs.CompressedPositionHelpers.convert_compressed_lon("~~~~")
-      # All tildes = max value, so -180 + max ≈ 180
-      assert_in_delta lon, 180.0, 0.001
+      # All tildes = max base91 value
+      # Calculation: -180 + 70860792 / 190463 = 192.045, which wraps to -167.955
+      assert_in_delta lon, -167.955, 0.001
     end
 
     test "clamps longitude to valid range" do
@@ -316,9 +317,10 @@ defmodule Aprs.CompressedPositionHelpersTest do
       end
     end
 
-    test "clamps values correctly" do
-      assert Aprs.CompressedPositionHelpers.clamp_lon(-200.0) == -180.0
-      assert Aprs.CompressedPositionHelpers.clamp_lon(200.0) == 180.0
+    test "normalizes longitude by wrapping" do
+      # Longitude wraps around the -180 to 180 range
+      assert Aprs.CompressedPositionHelpers.clamp_lon(-200.0) == 160.0
+      assert Aprs.CompressedPositionHelpers.clamp_lon(200.0) == -160.0
       assert Aprs.CompressedPositionHelpers.clamp_lon(0.0) == 0.0
       assert Aprs.CompressedPositionHelpers.clamp_lon(90.0) == 90.0
       assert Aprs.CompressedPositionHelpers.clamp_lon(-90.0) == -90.0
@@ -327,8 +329,9 @@ defmodule Aprs.CompressedPositionHelpersTest do
     test "handles edge cases" do
       assert Aprs.CompressedPositionHelpers.clamp_lon(-180.0) == -180.0
       assert Aprs.CompressedPositionHelpers.clamp_lon(180.0) == 180.0
-      assert Aprs.CompressedPositionHelpers.clamp_lon(-180.1) == -180.0
-      assert Aprs.CompressedPositionHelpers.clamp_lon(180.1) == 180.0
+      # Longitude wraps around instead of clamping
+      assert Aprs.CompressedPositionHelpers.clamp_lon(-180.1) == 179.9
+      assert Aprs.CompressedPositionHelpers.clamp_lon(180.1) == -179.9
     end
   end
 
