@@ -708,9 +708,20 @@ defmodule Aprs do
   # Helper to extract altitude from comment field (e.g., "/A=000680" or "/A=-00088")
   @spec extract_altitude_and_clean_comment(String.t()) :: {float() | nil, String.t()}
   defp extract_altitude_and_clean_comment(comment) do
-    case Regex.run(~r"/([Aa])=(-?\d{5,6})", comment) do
+    # Use negative lookahead (?!\d) to ensure exactly 5-6 digits, not more
+    case Regex.run(~r"/([Aa])=(-?\d{5,6})(?!\d)", comment) do
       [full_match, case_letter, altitude_str] ->
         altitude = String.to_integer(altitude_str) * 1.0
+
+        # Validate altitude is within reasonable range
+        # Valid range: -10,000 to 500,000 feet
+        # (Dead Sea to high-altitude balloons/low satellites)
+        validated_altitude =
+          cond do
+            altitude < -10_000.0 -> nil
+            altitude > 500_000.0 -> nil
+            true -> altitude
+          end
 
         cleaned_comment =
           if case_letter == "a" do
@@ -721,7 +732,7 @@ defmodule Aprs do
             comment |> String.replace(full_match, "") |> strip_leading_slash() |> String.trim()
           end
 
-        {altitude, cleaned_comment}
+        {validated_altitude, cleaned_comment}
 
       _ ->
         {nil, comment}
