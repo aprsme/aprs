@@ -335,5 +335,27 @@ defmodule Aprs.MicETest do
       assert parsed.data_extended.format == "mice"
       assert parsed.data_extended.comment == ">^"
     end
+
+    test "handles invalid course values by normalizing to 0" do
+      # Test that invalid course values (negative or > 359) are normalized to 0
+      # This can happen when the speed/course bytes in the packet contain control characters
+      # For example, when se_c byte is 24 (Ctrl-X), we get se = 24 - 28 = -4
+      # We can't easily construct such a packet in plain text, so we'll test the normalize_course function
+      # indirectly by checking that any packets in the database with invalid course get normalized
+
+      # Create a packet with bytes that would produce invalid course
+      # Using destination S3PS2V (known valid) and crafting data bytes
+      destination = "S3PS2V"
+
+      # MicE information field format: lon_deg, lon_min, lon_hmin, sp, dc, se, sym_code, sym_table, comment
+      # To get course = -4: rem(dc, 10) * 100 + se = -4, so se = -4 (se_c = 24)
+      # Let's use: lon_deg=40, lon_min=41, lon_hmin=42, sp=43, dc=56 (rem(28, 10)=8), se=24 (produces -4)
+      data = <<40, 41, 42, 43, 56, 24, ?j, ?/, "test">>
+
+      result = Aprs.MicE.parse(data, destination)
+
+      # The course should be normalized to 0 (not -4)
+      assert result.course == 0
+    end
   end
 end
