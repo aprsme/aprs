@@ -277,6 +277,22 @@ defmodule Aprs.UtilityHelpersTest do
       assert is_nil(Aprs.UtilityHelpers.validate_timestamp(nil))
       assert is_nil(Aprs.UtilityHelpers.validate_timestamp(123))
     end
+
+    test "returns nil when day is invalid for the current month (Date.new error branch)" do
+      now = DateTime.utc_now()
+      days_in_month = Calendar.ISO.days_in_month(now.year, now.month)
+
+      # Find a day that's <= 31 (passes the guard) but > days_in_month
+      if days_in_month < 31 do
+        invalid_day = days_in_month + 1
+        ts = String.pad_leading(Integer.to_string(invalid_day), 2, "0") <> "1200z"
+        assert is_nil(Aprs.UtilityHelpers.validate_timestamp(ts))
+      else
+        # In a 31-day month, every day 1-31 is valid; verify that day 31 succeeds
+        # so we still exercise the surrounding code path.
+        assert is_integer(Aprs.UtilityHelpers.validate_timestamp("311200z"))
+      end
+    end
   end
 
   describe "position_resolution/1" do

@@ -119,5 +119,43 @@ defmodule Aprs.ObjectTest do
       assert result[:latitude] == 90.0 or result[:latitude] == nil
       assert result[:longitude] == -180.0 or result[:longitude] == nil
     end
+
+    test "extracts altitude after RNG prefix (slash form)" do
+      # Comment contains RNG followed by altitude /A=
+      data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">RNG0050/A=00100rest"
+      result = Object.parse(data)
+      assert result[:altitude] == 100
+    end
+
+    test "extracts altitude after RNG prefix (space form)" do
+      data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">RNG0050 A=00100rest"
+      result = Object.parse(data)
+      assert result[:altitude] == 100
+    end
+
+    test "RNG present without altitude returns nil altitude" do
+      data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">RNG0050 misc"
+      result = Object.parse(data)
+      assert result[:altitude] == nil
+    end
+
+    test "extracts PHG from object comment" do
+      data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">PHG5132 desc"
+      result = Object.parse(data)
+      assert result[:phg] == "5132"
+    end
+
+    test "strips leading slash delimiter from comment" do
+      # extract_rng returns {nil, comment}, parse_altitude not matched, comment retains leading /
+      data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">/leading-slash"
+      result = Object.parse(data)
+      assert result[:comment] == "leading-slash"
+    end
+
+    test "strips leading space delimiter from comment" do
+      data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> "> leading-space"
+      result = Object.parse(data)
+      assert result[:comment] == "leading-space"
+    end
   end
 end

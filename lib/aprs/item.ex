@@ -195,8 +195,4 @@ defmodule Aprs.Item do
 
     Map.merge(base_data, compressed_cs)
   end
-
-  defp parse_compressed_position(position_data) do
-    %{comment: position_data, position_format: :unknown}
-  end
 end

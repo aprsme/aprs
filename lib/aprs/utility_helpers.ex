@@ -139,15 +139,12 @@ defmodule Aprs.UtilityHelpers do
 
   @spec build_timestamp_if_valid_dhm(DateTime.t(), integer(), integer(), integer()) :: integer() | nil
   defp build_timestamp_if_valid_dhm(now, day, hour, minute)
-       when day >= 1 and day <= 31 and hour >= 0 and hour <= 23 and minute >= 0 and minute <= 59 do
-    case Date.new(now.year, now.month, day) do
-      {:ok, date} ->
-        {:ok, time} = Time.new(hour, minute, 0)
-        {:ok, datetime} = DateTime.new(date, time)
-        DateTime.to_unix(datetime)
-
-      _ ->
-        nil
+       when day >= 1 and hour >= 0 and hour <= 23 and minute >= 0 and minute <= 59 do
+    if day <= Calendar.ISO.days_in_month(now.year, now.month) do
+      {:ok, date} = Date.new(now.year, now.month, day)
+      {:ok, time} = Time.new(hour, minute, 0)
+      {:ok, datetime} = DateTime.new(date, time)
+      DateTime.to_unix(datetime)
     end
   end
 

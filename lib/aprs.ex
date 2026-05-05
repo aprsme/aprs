@@ -76,9 +76,6 @@ defmodule Aprs do
     message = String.trim_trailing(message, <<0>>)
     # Ensure the message is valid UTF-8 before parsing
     parse_with_encoding(message, String.valid?(message))
-  rescue
-    _ ->
-      {:error, :invalid_packet}
   end
 
   @spec parse(any()) :: parse_result()
@@ -90,9 +87,6 @@ defmodule Aprs do
   defp parse_with_encoding(message, false) do
     fixed_message = String.replace(message, ~r/[^\x00-\x7F]/, "?")
     do_parse(fixed_message)
-  rescue
-    _ ->
-      {:error, :invalid_utf8}
   end
 
   @spec do_parse(String.t()) :: parse_result()
@@ -120,12 +114,10 @@ defmodule Aprs do
       {:error, "Parse exception"}
   end
 
-  @spec format_error_message(:invalid_packet | String.t()) :: :invalid_packet | String.t()
+  @spec format_error_message(:invalid_packet) :: :invalid_packet
   defp format_error_message(:invalid_packet), do: :invalid_packet
-  defp format_error_message(reason) when is_binary(reason), do: reason
 
   @spec validate_packet_parts(String.t(), String.t(), atom()) :: :ok | {:error, :invalid_packet}
-  defp validate_packet_parts("", "", _), do: {:error, :invalid_packet}
   defp validate_packet_parts("", _, :empty), do: {:error, :invalid_packet}
   defp validate_packet_parts(_, _, _), do: :ok
 
@@ -198,15 +190,8 @@ defmodule Aprs do
   defp extract_data_without_type(<<_first_char::binary-size(1), rest::binary>>), do: rest
   defp extract_data_without_type(_), do: ""
 
-  @spec extract_ssid([String.t()]) :: String.t() | nil
-  defp extract_ssid(callsign_parts) do
-    case List.last(callsign_parts) do
-      nil -> nil
-      s when is_binary(s) -> s
-      i when is_integer(i) -> to_string(i)
-      _ -> nil
-    end
-  end
+  @spec extract_ssid([String.t()]) :: String.t()
+  defp extract_ssid(callsign_parts), do: List.last(callsign_parts)
 
   @spec prepare_data_for_parsing(atom(), String.t()) :: String.t()
   defp prepare_data_for_parsing(:message, data), do: data
@@ -335,10 +320,6 @@ defmodule Aprs do
     Map.put(packet, :format, format)
   end
 
-  defp map_format_field(%{compressed?: true} = packet) do
-    Map.put(packet, :format, "compressed")
-  end
-
   defp map_format_field(%{format: _format} = packet), do: packet
 
   @spec map_symbol_fields(map()) :: map()
@@ -402,7 +383,6 @@ defmodule Aprs do
   @spec split_path_parts(list(String.t())) :: {:ok, [String.t()]} | {:error, String.t()}
   defp split_path_parts([destination, digi_path]), do: {:ok, [destination, digi_path]}
   defp split_path_parts([destination]), do: {:ok, [destination, ""]}
-  defp split_path_parts(_), do: {:error, "Invalid path format"}
 
   # Safe version of parse_datatype that returns {:ok, type}
   @spec parse_datatype_safe(String.t()) :: {:ok, atom()}
@@ -1032,20 +1012,15 @@ defmodule Aprs do
           comment
         )
 
-      <<latitude_compressed::binary-size(4), longitude_compressed::binary-size(4), symbol_code::binary-size(1),
-        cs::binary-size(2), compression_type::binary-size(1), comment::binary>>
+      # No symbol-table prefix (byte 0 outside `!`..`~`): the leading byte
+      # cannot be valid base91, so this always fails compressed lat decoding.
+      <<_::binary-size(4), _::binary-size(4), _::binary-size(1), _::binary-size(2), _::binary-size(1), _::binary>>
       when byte_size(position_data) >= 13 ->
-        parse_position_compressed_missing_prefix(
-          latitude_compressed,
-          longitude_compressed,
-          symbol_code,
-          cs,
-          compression_type,
-          comment
-        )
-
-      _ ->
-        parse_position_malformed(position_data)
+        %{
+          data_type: :position_error,
+          error_message: "Invalid compressed location",
+          has_position: false
+        }
     end
   end
 
@@ -1225,99 +1200,7 @@ defmodule Aprs do
           error_message: "Invalid compressed location: #{lon_error}",
           has_position: false
         }
-
-      _ ->
-        %{
-          data_type: :position_error,
-          error_message: "Invalid compressed location",
-          has_position: false
-        }
     end
-  end
-
-  @spec parse_position_compressed_missing_prefix(binary(), binary(), String.t(), binary(), binary(), String.t()) :: map()
-  defp parse_position_compressed_missing_prefix(
-         latitude_compressed,
-         longitude_compressed,
-         symbol_code,
-         cs,
-         compression_type,
-         comment
-       ) do
-    # IO.puts("parse_position_compressed_missing_prefix called with comment: #{comment}")
-
-    case {Aprs.CompressedPositionHelpers.convert_compressed_lat(latitude_compressed),
-          Aprs.CompressedPositionHelpers.convert_compressed_lon(longitude_compressed)} do
-      {{:ok, converted_lat}, {:ok, converted_lon}} ->
-        compressed_cs = Aprs.CompressedPositionHelpers.convert_compressed_cs(cs)
-
-        # Parse full compression type information
-        compression_info = Aprs.CompressedPositionHelpers.parse_compression_type(compression_type)
-        ambiguity = compression_info.position_resolution
-
-        has_position = valid_coordinate?(converted_lat) and valid_coordinate?(converted_lon)
-
-        # Parse DAO extension from comment
-        {dao_data, cleaned_comment_after_dao} = parse_dao_extension(comment)
-
-        base_data = %{
-          latitude: converted_lat,
-          longitude: converted_lon,
-          symbol_table_id: "/",
-          symbol_code: symbol_code,
-          comment: cleaned_comment_after_dao,
-          position_format: :compressed,
-          compression_type: compression_type,
-          compression_info: compression_info,
-          data_type: :position,
-          compressed?: true,
-          position_ambiguity: ambiguity,
-          dao: dao_data,
-          has_position: has_position
-        }
-
-        Map.merge(base_data, compressed_cs)
-
-      {{:error, lat_error}, _} ->
-        %{
-          data_type: :position_error,
-          error_message: "Invalid compressed location: #{lat_error}",
-          has_position: false
-        }
-
-      {_, {:error, lon_error}} ->
-        %{
-          data_type: :position_error,
-          error_message: "Invalid compressed location: #{lon_error}",
-          has_position: false
-        }
-
-      _ ->
-        %{
-          data_type: :position_error,
-          error_message: "Invalid compressed location",
-          has_position: false
-        }
-    end
-  end
-
-  @spec parse_position_malformed(String.t()) :: map()
-  defp parse_position_malformed(position_data) do
-    %{
-      latitude: nil,
-      longitude: nil,
-      timestamp: nil,
-      symbol_table_id: nil,
-      symbol_code: nil,
-      data_type: :malformed_position,
-      aprs_messaging?: false,
-      compressed?: false,
-      comment: String.trim(position_data),
-      dao: nil,
-      course: nil,
-      speed: nil,
-      has_position: false
-    }
   end
 
   # Patch parse_position_with_message_without_timestamp to propagate course/speed
@@ -1385,14 +1268,11 @@ defmodule Aprs do
   end
 
   @spec try_compressed_timestamped(binary(), boolean(), binary(), atom()) :: {:ok, map()} | :error
-  defp try_compressed_timestamped(position_data, aprs_messaging?, time, data_type) when byte_size(position_data) >= 13 do
+  defp try_compressed_timestamped(position_data, aprs_messaging?, time, data_type) do
     compressed_result = try_parse_compressed_without_prefix(position_data)
 
     case compressed_result do
       %{data_type: type} when type in [:malformed_position, :position_error] ->
-        :error
-
-      %{has_position: false} ->
         :error
 
       %{latitude: lat, longitude: lon} = result when is_number(lat) and is_number(lon) ->
@@ -1405,13 +1285,8 @@ defmodule Aprs do
          |> Map.put(:aprs_messaging?, aprs_messaging?)
          |> Map.put(:data_type, data_type)
          |> Map.put(:messaging, if(aprs_messaging?, do: 1, else: 0))}
-
-      _ ->
-        :error
     end
   end
-
-  defp try_compressed_timestamped(_position_data, _aprs_messaging?, _time, _data_type), do: :error
 
   @spec try_regex_position_fallback(boolean(), String.t(), String.t()) :: map()
   defp try_regex_position_fallback(aprs_messaging?, time, raw_data) do
@@ -1700,30 +1575,20 @@ defmodule Aprs do
       {:ok, callsign_parts} ->
         base_callsign = List.first(callsign_parts)
         ssid = List.last(callsign_parts)
+        {:ok, [destination, digi_path]} = split_path(path)
 
-        case split_path_for_tunnel(path) do
-          {:ok, [destination, digi_path]} ->
-            {:ok,
-             %{
-               sender: sender,
-               base_callsign: base_callsign,
-               ssid: ssid,
-               destination: destination,
-               digi_path: digi_path
-             }}
-
-          {:error, reason} ->
-            {:error, "Invalid path: #{reason}"}
-        end
+        {:ok,
+         %{
+           sender: sender,
+           base_callsign: base_callsign,
+           ssid: ssid,
+           destination: destination,
+           digi_path: digi_path
+         }}
 
       {:error, reason} ->
         {:error, "Invalid callsign: #{reason}"}
     end
-  end
-
-  @spec split_path_for_tunnel(String.t()) :: {:ok, [String.t()]} | {:error, String.t()}
-  defp split_path_for_tunnel(path) do
-    split_path(path)
   end
 
   # Add network tunneling support

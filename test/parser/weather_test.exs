@@ -253,7 +253,8 @@ defmodule Aprs.WeatherTest do
         result = Weather.parse(weather)
 
         assert result.data_type == :weather
-        assert result.wind_direction == rem(wind_dir, 361)
+        # 360 wraps to 0 in the normalizer
+        assert result.wind_direction == rem(wind_dir, 360)
         assert result.wind_speed == wind_speed
         assert result.wind_gust == wind_gust
         assert result.temperature == temp
@@ -378,7 +379,8 @@ defmodule Aprs.WeatherTest do
         result = Weather.parse(weather)
 
         assert result.data_type == :weather
-        assert result.wind_direction == rem(wind_dir, 361)
+        # 360 wraps to 0 in the normalizer
+        assert result.wind_direction == rem(wind_dir, 360)
         assert result.wind_speed == wind_speed
         assert result.temperature == temp
       end

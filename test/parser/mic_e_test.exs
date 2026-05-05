@@ -295,6 +295,27 @@ defmodule Aprs.MicETest do
       assert_in_delta parsed.data_extended.longitude, 8.0583333, 0.01
     end
 
+    test "Mic-E lat direction L decodes to south" do
+      # determine_lat_direction(?L) -> :south. Position 4 (0-indexed: index 3)
+      # of the destination must be 'L'. Use destination "TU3LU3".
+      data = "`~[\x1cn*l>/`\"Bq}test"
+      result = MicE.parse(data, "TU3LU3")
+      assert result.format == "mice"
+      assert result.latitude < 0
+    end
+
+    test "Mic-E position ambiguity=3 (lat hundredths and 5-digit centering)" do
+      # Destination with 3 ambiguous chars (K/L/Z) covers apply_lat_centering(_, _, _, _, 3)
+      # and apply_lon_centering(_, _, 3). Use TU3ZZL: T=4, U=5, 3=3, Z=ambig, Z=ambig, L=ambig.
+      data = "`~[\x1cn*l>/`\"Bq}test"
+      result = MicE.parse(data, "TU3ZZL")
+
+      assert result.format == "mice"
+      assert result.position_ambiguity == 3
+      assert is_float(result.latitude)
+      assert is_float(result.longitude)
+    end
+
     test "Mic-E position ambiguity=4 from VE3VFF-9 destination with all ambiguous" do
       # VE3VFF-9>TRZZLZ: dest TRZZLZ -> T=4, R=2, Z=ambig, Z=ambig, L=ambig, Z=ambig
       # FAP: posambiguity=4, lat=42.5, lon=-82.5
@@ -352,7 +373,7 @@ defmodule Aprs.MicETest do
       # Let's use: lon_deg=40, lon_min=41, lon_hmin=42, sp=43, dc=56 (rem(28, 10)=8), se=24 (produces -4)
       data = <<40, 41, 42, 43, 56, 24, ?j, ?/, "test">>
 
-      result = Aprs.MicE.parse(data, destination)
+      result = MicE.parse(data, destination)
 
       # The course should be normalized to 0 (not -4)
       assert result.course == 0

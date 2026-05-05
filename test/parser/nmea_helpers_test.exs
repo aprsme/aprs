@@ -185,6 +185,19 @@ defmodule Aprs.NMEAHelpersTest do
     test "rejects non-NMEA string" do
       assert {:error, _reason} = NMEAHelpers.parse_nmea_sentence("not an nmea sentence")
     end
+
+    test "rejects non-GPRMC sentences with stripped $ prefix (dispatcher case)" do
+      assert {:error, "Unsupported NMEA sentence type"} =
+               NMEAHelpers.parse_nmea_sentence("GPGGA,123456,4903.50,N,07201.75,W,1,04,2.3,545.4,M,46.9,M,,*47")
+    end
+
+    test "$GPRMC with non-numeric speed/course parses to 0" do
+      sentence = "$GPRMC,214531,A,3242.4569,N,08527.2793,W,abc,xyz,180226,,*05"
+
+      assert {:ok, result} = NMEAHelpers.parse_nmea_sentence(sentence)
+      assert result.speed == 0
+      assert result.course == 0
+    end
   end
 
   describe "integration through Aprs.parse/1" do

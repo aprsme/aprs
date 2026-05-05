@@ -139,6 +139,16 @@ defmodule Aprs.WeatherHelpersTest do
     test "parses 1-digit wind direction" do
       assert Aprs.WeatherHelpers.parse_wind_direction("5/015g015t090") == 5
     end
+
+    test "normalizes 360 to 0" do
+      # parse 3 digits raw value 360 then normalized
+      assert Aprs.WeatherHelpers.parse_wind_direction("360/045g015t090") == 0
+    end
+
+    test "normalizes invalid wind direction (>360) to 0" do
+      # raw value 999 > 360, normalized to 0
+      assert Aprs.WeatherHelpers.parse_wind_direction("999/045g015t090") == 0
+    end
   end
 
   describe "parse_wind_speed/1" do
@@ -248,6 +258,18 @@ defmodule Aprs.WeatherHelpersTest do
     test "handles invalid temperature" do
       assert is_integer(Aprs.WeatherHelpers.parse_temperature("123/045g015t0900h60b10161")) or
                is_nil(Aprs.WeatherHelpers.parse_temperature("123/045g015t0900h60b10161"))
+    end
+
+    test "parses 1-digit negative temperature" do
+      # Format: t-Dx where D is a single digit followed by a non-digit
+      assert Aprs.WeatherHelpers.parse_temperature("t-5x") == -5
+    end
+
+    test "rejects out-of-range temperatures" do
+      # 999 > 150 valid range
+      assert Aprs.WeatherHelpers.parse_temperature("t999h60") == nil
+      # -101 < -100 valid range (3-digit negative > 100 magnitude)
+      assert Aprs.WeatherHelpers.parse_temperature("t-101h60") == nil
     end
   end
 
