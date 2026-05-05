@@ -63,13 +63,12 @@ defmodule Aprs.Object do
 
     # Always check for DAO extension in the final comment
     {dao_byte, _} = parse_dao_from_comment(result[:comment] || "")
-
-    if dao_byte do
-      Map.put(result, :daodatumbyte, dao_byte)
-    else
-      result
-    end
+    maybe_put_dao(result, dao_byte)
   end
+
+  @spec maybe_put_dao(map(), String.t() | nil) :: map()
+  defp maybe_put_dao(result, nil), do: result
+  defp maybe_put_dao(result, dao_byte), do: Map.put(result, :daodatumbyte, dao_byte)
 
   @spec parse_object_compressed_position(
           String.t(),
@@ -146,8 +145,12 @@ defmodule Aprs.Object do
         altitude
       )
 
-    if dao_byte, do: Map.put(map, :daodatumbyte, String.upcase(dao_byte)), else: map
+    maybe_put_upcased_dao(map, dao_byte)
   end
+
+  @spec maybe_put_upcased_dao(map(), String.t() | nil) :: map()
+  defp maybe_put_upcased_dao(map, nil), do: map
+  defp maybe_put_upcased_dao(map, dao_byte), do: Map.put(map, :daodatumbyte, String.upcase(dao_byte))
 
   # Parse object extensions from comment field (course/speed, altitude, etc)
   @spec parse_object_extensions(String.t()) ::

@@ -99,19 +99,20 @@ defmodule Aprs.Item do
        when byte_size(position_data) >= 13 and
               (first_byte in [?/, ?\\] or (first_byte >= ?A and first_byte <= ?Z) or
                  (first_byte >= ?a and first_byte <= ?j)) do
-    result = parse_compressed_position(position_data)
-
-    # Fall back to unknown if compressed parsing produced no valid position
-    if result.latitude != nil and result.longitude != nil do
-      result
-    else
-      %{comment: position_data, position_format: :unknown}
-    end
+    position_data |> parse_compressed_position() |> ensure_valid_position(position_data)
   end
 
   defp parse_item_position(position_data) do
     %{comment: position_data, position_format: :unknown}
   end
+
+  # Compressed parsing returns a result map with latitude/longitude set when
+  # the base91 decoding succeeded; otherwise we fall back to :unknown.
+  @spec ensure_valid_position(map(), String.t()) :: map()
+  defp ensure_valid_position(%{latitude: lat, longitude: lon} = result, _data) when not is_nil(lat) and not is_nil(lon),
+    do: result
+
+  defp ensure_valid_position(_result, position_data), do: %{comment: position_data, position_format: :unknown}
 
   @spec parse_uncompressed_position(String.t()) :: %{
           optional(:latitude) => float() | nil,

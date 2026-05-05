@@ -458,8 +458,8 @@ defmodule Aprs do
           format: "nmea",
           latitude: nmea_result.latitude,
           longitude: nmea_result.longitude,
-          speed: nmea_result[:speed],
-          course: nmea_result[:course],
+          speed: nmea_result.speed,
+          course: nmea_result.course,
           symbol_table_id: "/",
           symbol_code: "/",
           position_ambiguity: 0,
@@ -478,24 +478,22 @@ defmodule Aprs do
     end
   end
 
-  def parse_data(:df_report, _destination, data) do
-    if String.starts_with?(data, "DFS") and byte_size(data) >= 7 do
-      <<"DFS", s, h, g, d, rest::binary>> = data
+  def parse_data(:df_report, _destination, <<"DFS", s, h, g, d, rest::binary>>) do
+    %{
+      df_strength: Aprs.PHGHelpers.parse_df_strength(s),
+      height: Aprs.PHGHelpers.parse_phg_height(h),
+      gain: Aprs.PHGHelpers.parse_phg_gain(g),
+      directivity: Aprs.PHGHelpers.parse_phg_directivity(d),
+      comment: rest,
+      data_type: :df_report
+    }
+  end
 
-      %{
-        df_strength: Aprs.PHGHelpers.parse_df_strength(s),
-        height: Aprs.PHGHelpers.parse_phg_height(h),
-        gain: Aprs.PHGHelpers.parse_phg_gain(g),
-        directivity: Aprs.PHGHelpers.parse_phg_directivity(d),
-        comment: rest,
-        data_type: :df_report
-      }
-    else
-      %{
-        df_data: data,
-        data_type: :df_report
-      }
-    end
+  def parse_data(:df_report, _destination, data) do
+    %{
+      df_data: data,
+      data_type: :df_report
+    }
   end
 
   def parse_data(:user_defined, _destination, data), do: parse_user_defined(data)
@@ -560,34 +558,23 @@ defmodule Aprs do
     parse_position_with_timestamp(false, data, :timestamped_position)
   end
 
+  def parse_data(
+        :timestamped_position_with_message,
+        _destination,
+        <<time::binary-size(7), latitude::binary-size(8), sym_table_id::binary-size(1), longitude::binary-size(9),
+          symbol_code::binary-size(1), "_", _::binary>> = data
+      ) do
+    rest = binary_part(data, 26, byte_size(data) - 26)
+
+    true
+    |> Aprs.parse_position_with_datetime_and_weather(time, latitude, sym_table_id, longitude, symbol_code, "_" <> rest)
+    |> add_has_location()
+  end
+
   def parse_data(:timestamped_position_with_message, _destination, data) do
-    case data do
-      <<time::binary-size(7), latitude::binary-size(8), sym_table_id::binary-size(1), longitude::binary-size(9),
-        symbol_code::binary-size(1), rest::binary>> ->
-        weather_start = String.starts_with?(rest, "_")
-
-        if weather_start do
-          result =
-            Aprs.parse_position_with_datetime_and_weather(
-              true,
-              time,
-              latitude,
-              sym_table_id,
-              longitude,
-              symbol_code,
-              rest
-            )
-
-          add_has_location(result)
-        else
-          result = parse_position_with_timestamp(true, data, :timestamped_position_with_message)
-          add_has_location(result)
-        end
-
-      _ ->
-        result = parse_position_with_timestamp(true, data, :timestamped_position_with_message)
-        add_has_location(result)
-    end
+    true
+    |> parse_position_with_timestamp(data, :timestamped_position_with_message)
+    |> add_has_location()
   end
 
   def parse_data(:station_capabilities, _destination, data), do: parse_station_capabilities(data)
@@ -691,31 +678,30 @@ defmodule Aprs do
     case Regex.run(~r"/([Aa])=(-?\d{5,6})(?!\d)", comment) do
       [full_match, case_letter, altitude_str] ->
         altitude = String.to_integer(altitude_str) * 1.0
-
-        # Validate altitude is within reasonable range
-        # Valid range: -10,000 to 500,000 feet
-        # (Dead Sea to high-altitude balloons/low satellites)
-        validated_altitude =
-          cond do
-            altitude < -10_000.0 -> nil
-            altitude > 500_000.0 -> nil
-            true -> altitude
-          end
-
-        cleaned_comment =
-          if case_letter == "a" do
-            # lowercase /a= - keep a=NNNNNN in comment (FAP-compatible)
-            comment |> String.replace(full_match, "a=" <> altitude_str) |> String.trim()
-          else
-            # uppercase /A= - strip entirely from comment
-            comment |> String.replace(full_match, "") |> strip_leading_slash() |> String.trim()
-          end
-
-        {validated_altitude, cleaned_comment}
+        cleaned_comment = clean_altitude_comment(case_letter, comment, full_match, altitude_str)
+        {validate_altitude(altitude), cleaned_comment}
 
       _ ->
         {nil, comment}
     end
+  end
+
+  # Valid altitude range: -10,000 ft (Dead Sea) to 500,000 ft (high-altitude
+  # balloons / low satellites). Anything outside is treated as garbage.
+  @spec validate_altitude(float()) :: float() | nil
+  defp validate_altitude(altitude) when altitude < -10_000.0, do: nil
+  defp validate_altitude(altitude) when altitude > 500_000.0, do: nil
+  defp validate_altitude(altitude), do: altitude
+
+  # Lowercase `/a=` keeps `a=NNNNNN` in the comment (FAP-compatible);
+  # uppercase `/A=` strips it entirely.
+  @spec clean_altitude_comment(String.t(), String.t(), String.t(), String.t()) :: String.t()
+  defp clean_altitude_comment("a", comment, full_match, altitude_str) do
+    comment |> String.replace(full_match, "a=" <> altitude_str) |> String.trim()
+  end
+
+  defp clean_altitude_comment(_uppercase, comment, full_match, _altitude_str) do
+    comment |> String.replace(full_match, "") |> strip_leading_slash() |> String.trim()
   end
 
   @spec strip_leading_slash(String.t()) :: String.t()
@@ -783,14 +769,15 @@ defmodule Aprs do
   end
 
   @spec parse_course_value(String.t()) :: non_neg_integer()
-  defp parse_course_value(course_str) do
-    if Regex.match?(~r/^\d{3}$/, course_str) do
-      c = String.to_integer(course_str)
-      if c >= 1 and c <= 360, do: c, else: 0
-    else
-      0
-    end
+  defp parse_course_value(<<d1, d2, d3>>) when d1 in ?0..?9 and d2 in ?0..?9 and d3 in ?0..?9 do
+    clamp_course((d1 - ?0) * 100 + (d2 - ?0) * 10 + (d3 - ?0))
   end
+
+  defp parse_course_value(_), do: 0
+
+  @spec clamp_course(integer()) :: non_neg_integer()
+  defp clamp_course(c) when c >= 1 and c <= 360, do: c
+  defp clamp_course(_), do: 0
 
   # Helper to extract PHG data from comment
   # PHG format: PHG followed by 4+ digits, optionally followed by /
@@ -1102,6 +1089,22 @@ defmodule Aprs do
     }
   end
 
+  # Weather (`_`) symbol keeps the original comment so the weather parser can
+  # see the textual fields; non-weather strips them and uses what's left.
+  @spec extract_telemetry_keep_or_strip(String.t(), String.t()) :: {map() | nil, String.t()}
+  defp extract_telemetry_keep_or_strip("_", comment) do
+    {telemetry_data, _} = Aprs.TelemetryFromComment.extract_telemetry_from_comment(comment)
+    {telemetry_data, comment}
+  end
+
+  defp extract_telemetry_keep_or_strip(_, comment) do
+    Aprs.TelemetryFromComment.extract_telemetry_from_comment(comment)
+  end
+
+  @spec maybe_put_telemetry(map(), map() | nil) :: map()
+  defp maybe_put_telemetry(map, nil), do: map
+  defp maybe_put_telemetry(map, telemetry), do: Map.put(map, :telemetry, telemetry)
+
   @spec parse_position_compressed_with_full_data(
           String.t(),
           binary(),
@@ -1132,13 +1135,7 @@ defmodule Aprs do
         # (via _comments_to_decimal). Weather packets go through _wx_parse which
         # does NOT strip telemetry.
         {telemetry, comment_for_processing} =
-          if symbol_code == "_" do
-            # Weather packet: extract telemetry values but keep text in comment
-            {telemetry_data, _} = Aprs.TelemetryFromComment.extract_telemetry_from_comment(comment)
-            {telemetry_data, comment}
-          else
-            Aprs.TelemetryFromComment.extract_telemetry_from_comment(comment)
-          end
+          extract_telemetry_keep_or_strip(symbol_code, comment)
 
         # Parse DAO extension from comment
         {dao_data, cleaned_comment_after_dao} = parse_dao_extension(comment_for_processing)
@@ -1173,12 +1170,7 @@ defmodule Aprs do
           phg: phg_string
         }
 
-        base_data =
-          if telemetry == nil do
-            base_data
-          else
-            Map.put(base_data, :telemetry, telemetry)
-          end
+        base_data = maybe_put_telemetry(base_data, telemetry)
 
         # Add course and speed if available
         base_data = Map.merge(base_data, compressed_cs)

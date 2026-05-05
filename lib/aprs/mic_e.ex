@@ -186,14 +186,10 @@ defmodule Aprs.MicE do
   defp apply_lon_centering(_minutes, _hundredths, _), do: {30, 0}
 
   @spec determine_lat_direction(byte()) :: lat_direction()
-  defp determine_lat_direction(c4) do
-    case c4 do
-      c when c in ?0..?9 -> :south
-      ?L -> :south
-      c when c in ?P..?Z -> :north
-      _ -> :unknown
-    end
-  end
+  defp determine_lat_direction(c) when c in ?0..?9, do: :south
+  defp determine_lat_direction(?L), do: :south
+  defp determine_lat_direction(c) when c in ?P..?Z, do: :north
+  defp determine_lat_direction(_), do: :unknown
 
   @spec calculate_longitude_info(byte(), byte()) :: lon_info()
   defp calculate_longitude_info(c5, c6) do
@@ -207,24 +203,14 @@ defmodule Aprs.MicE do
   end
 
   @spec determine_longitude_offset(byte()) :: 0 | 100
-  defp determine_longitude_offset(c5) do
-    case c5 do
-      c when c in ?0..?9 -> 0
-      ?L -> 0
-      c when c in ?P..?Z -> 100
-      _ -> 0
-    end
-  end
+  defp determine_longitude_offset(c) when c in ?P..?Z, do: 100
+  defp determine_longitude_offset(_), do: 0
 
   @spec determine_lon_direction(byte()) :: lon_direction()
-  defp determine_lon_direction(c6) do
-    case c6 do
-      c when c in ?0..?9 -> :east
-      ?L -> :east
-      c when c in ?P..?Z -> :west
-      _ -> :unknown
-    end
-  end
+  defp determine_lon_direction(c) when c in ?0..?9, do: :east
+  defp determine_lon_direction(?L), do: :east
+  defp determine_lon_direction(c) when c in ?P..?Z, do: :west
+  defp determine_lon_direction(_), do: :unknown
 
   @spec extract_message_info([digit_info()]) :: message_info()
   defp extract_message_info([d1, d2, d3, _d4, _d5, _d6]) do
@@ -243,16 +229,12 @@ defmodule Aprs.MicE do
   end
 
   @spec decode_digit(byte()) :: digit_info()
-  defp decode_digit(char) do
-    case char do
-      c when c in ?0..?9 -> %{digit: c - ?0, msg_bit: 0, msg_type: nil, ambiguous: false}
-      c when c in ?A..?J -> %{digit: c - ?A, msg_bit: 1, msg_type: :custom, ambiguous: false}
-      ?K -> %{digit: 0, msg_bit: 1, msg_type: :custom, ambiguous: true}
-      ?L -> %{digit: 0, msg_bit: 0, msg_type: nil, ambiguous: true}
-      c when c in ?P..?Y -> %{digit: c - ?P, msg_bit: 1, msg_type: :standard, ambiguous: false}
-      ?Z -> %{digit: 0, msg_bit: 1, msg_type: :standard, ambiguous: true}
-    end
-  end
+  defp decode_digit(c) when c in ?0..?9, do: %{digit: c - ?0, msg_bit: 0, msg_type: nil, ambiguous: false}
+  defp decode_digit(c) when c in ?A..?J, do: %{digit: c - ?A, msg_bit: 1, msg_type: :custom, ambiguous: false}
+  defp decode_digit(?K), do: %{digit: 0, msg_bit: 1, msg_type: :custom, ambiguous: true}
+  defp decode_digit(?L), do: %{digit: 0, msg_bit: 0, msg_type: nil, ambiguous: true}
+  defp decode_digit(c) when c in ?P..?Y, do: %{digit: c - ?P, msg_bit: 1, msg_type: :standard, ambiguous: false}
+  defp decode_digit(?Z), do: %{digit: 0, msg_bit: 1, msg_type: :standard, ambiguous: true}
 
   @spec parse_information(binary(), non_neg_integer()) :: {:ok, info_field()} | {:error, atom()}
   defp parse_information(data, _lon_offset) when byte_size(data) < 8 do
