@@ -114,8 +114,6 @@ defmodule Aprs.Object do
     }
 
     Map.merge(base_data, compressed_cs)
-  rescue
-    _ -> %{latitude: nil, longitude: nil, comment: comment, position_format: :compressed, format: "compressed"}
   end
 
   @spec parse_object_uncompressed_position(String.t(), String.t(), String.t(), String.t(), String.t()) ::
@@ -296,10 +294,10 @@ defmodule Aprs.Object do
   defp maybe_add_field(map, _key, nil), do: map
   defp maybe_add_field(map, key, value), do: Map.put(map, key, value)
 
-  # Strip leading / or space from comment (FAP.pm line 1211)
+  # Strip leading / from comment (FAP.pm line 1211). Leading whitespace is
+  # already removed by upstream String.trim calls.
   @spec strip_leading_delimiter(String.t()) :: String.t()
   defp strip_leading_delimiter(<<"/", rest::binary>>), do: rest
-  defp strip_leading_delimiter(<<" ", rest::binary>>), do: rest
   defp strip_leading_delimiter(comment), do: comment
 
   # Parse object timestamp to Unix timestamp using binary pattern matching

@@ -72,5 +72,47 @@ defmodule Aprs.ItemTest do
       assert result.data_type == :item
       assert result.item_name == "GATE"
     end
+
+    test "extracts PHG data from item comment" do
+      result = Item.parse(")GATE!4903.50N/07201.75W>PHG5132 description")
+      assert result.phg == "5132"
+      assert result.comment == "description"
+    end
+
+    test "uncompressed position parsing falls back to :unknown when too short" do
+      # Item name "X" (1-9 chars), status "!", followed by short non-digit/non-compressed prefix
+      # This will fail both compressed (needs 13 bytes) and uncompressed (needs 19 bytes)
+      result = Item.parse(")X!short")
+      assert result.position_format == :unknown
+    end
+
+    test "uncompressed-prefix digit but data too short hits parse_uncompressed_position fallback" do
+      # First byte after ! is a digit, so parse_item_position dispatches to
+      # parse_uncompressed_position; the binary is shorter than the 19-byte
+      # pattern, so the fallback clause returns position_format: :unknown.
+      result = Item.parse(")X!1abc")
+      assert result.position_format == :unknown
+      assert result.comment == "1abc"
+    end
+
+    test "compressed position with invalid longitude returns nil longitude" do
+      # 13 bytes starting with /, with valid lat (4 chars) but invalid lon (non-base91)
+      # `/` + 4 lat-chars + 4 lon-chars + symbol + cs(2) + compression_type(1) = 13 bytes
+      # Use control chars (below 33) for longitude to fail base91 validation
+      bad_lon = <<0, 0, 0, 0>>
+      data = ")X!" <> "/" <> "5L`8" <> bad_lon <> ">" <> "  " <> "T"
+      result = Item.parse(data)
+      # When longitude conversion fails, latitude or longitude is nil → falls into unknown branch
+      assert result.position_format == :unknown
+    end
+
+    test "compressed position parsing fallback when too short" do
+      # First char is `/` (compressed indicator) but length < 13 bytes
+      # Item.parse_item_position takes a full uncompressed (19+ bytes) check, but compressed branch needs >=13
+      # Use a 13-byte string starting with `/` then symbols to force decompression failure
+      result = Item.parse(")X!/abcdefghijkl")
+      assert is_map(result)
+      assert result.data_type == :item
+    end
   end
 end
