@@ -55,7 +55,7 @@ defmodule Aprs.MicE do
            altitude: integer() | nil
          }
 
-  @spec parse(binary(), String.t()) :: map()
+  @spec parse(binary(), String.t() | nil, atom()) :: map()
   def parse(data, destination, data_type \\ :mic_e)
 
   def parse(_data, nil, _data_type) do
