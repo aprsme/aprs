@@ -71,17 +71,13 @@ defmodule Aprs.DeviceParser do
   def decode_mic_e_tocall(dest), do: String.slice(dest, 0, 6)
 
   @spec decode_standard_mic_e(String.t()) :: String.t()
-  defp decode_standard_mic_e(dest) do
-    <<c1, c2, c3, c4, c5, c6>> = dest
-    prefix = mic_e_prefix(<<c1, c2, c3>>)
-    suffix = mic_e_suffix(c4, c5, c6)
-
-    if prefix && suffix do
-      prefix <> suffix
-    else
-      dest
-    end
+  defp decode_standard_mic_e(<<c1, c2, c3, c4, c5, c6>> = dest) do
+    combine_prefix_suffix(mic_e_prefix(<<c1, c2, c3>>), mic_e_suffix(c4, c5, c6), dest)
   end
+
+  @spec combine_prefix_suffix(String.t() | nil, String.t() | nil, String.t()) :: String.t()
+  defp combine_prefix_suffix(prefix, suffix, _dest) when is_binary(prefix) and is_binary(suffix), do: prefix <> suffix
+  defp combine_prefix_suffix(_, _, dest), do: dest
 
   # Full Mic-E prefix mapping (per APRS spec, partial list for demo)
   @mic_e_prefix_map %{
@@ -114,14 +110,15 @@ defmodule Aprs.DeviceParser do
   # Suffix calculation
   @spec mic_e_suffix(byte(), byte(), byte()) :: String.t() | nil
   defp mic_e_suffix(c4, c5, c6) do
-    d1 = mic_e_digit(c4)
-    d2 = mic_e_digit(c5)
-    d3 = mic_e_digit(c6)
-
-    if Enum.all?([d1, d2, d3], &is_integer/1) do
-      "~3..0B" |> :io_lib.format([d1 * 100 + d2 * 10 + d3]) |> List.to_string()
-    end
+    format_mic_e_suffix(mic_e_digit(c4), mic_e_digit(c5), mic_e_digit(c6))
   end
+
+  @spec format_mic_e_suffix(integer() | nil, integer() | nil, integer() | nil) :: String.t() | nil
+  defp format_mic_e_suffix(d1, d2, d3) when is_integer(d1) and is_integer(d2) and is_integer(d3) do
+    "~3..0B" |> :io_lib.format([d1 * 100 + d2 * 10 + d3]) |> List.to_string()
+  end
+
+  defp format_mic_e_suffix(_, _, _), do: nil
 
   # APRS Spec: '0'..'9' => 0..9, 'A'..'J' => 0..9, 'P'..'Y' => 0..9
   @spec mic_e_digit(byte()) :: integer() | nil
