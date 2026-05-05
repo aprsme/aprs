@@ -3,7 +3,7 @@ defmodule Aprs.NMEAHelpers do
   NMEA coordinate and sentence parsing helpers for APRS.
   """
 
-  @spec parse_nmea_coordinate(String.t(), String.t()) :: {:ok, float()} | {:error, String.t()}
+  @spec parse_nmea_coordinate(term(), term()) :: {:ok, float()} | {:error, String.t()}
   def parse_nmea_coordinate(value, direction) when is_binary(value) and is_binary(direction) do
     case Float.parse(value) do
       {coord, _} ->
@@ -18,8 +18,9 @@ defmodule Aprs.NMEAHelpers do
     end
   end
 
-  @spec parse_nmea_coordinate(any(), any()) :: {:error, String.t()}
   def parse_nmea_coordinate(_, _), do: {:error, "Invalid coordinate format"}
+
+  @spec parse_nmea_sentence(term()) :: {:ok, map()} | {:error, String.t()}
 
   @spec handle_coordinate_result({:error, String.t()} | float()) :: {:ok, float()} | {:error, String.t()}
   defp handle_coordinate_result(coord) when is_tuple(coord), do: coord
@@ -32,7 +33,6 @@ defmodule Aprs.NMEAHelpers do
   defp apply_nmea_direction(coord, "W"), do: -coord
   defp apply_nmea_direction(_, _), do: {:error, "Invalid coordinate direction"}
 
-  @spec parse_nmea_sentence(String.t()) :: {:ok, map()} | {:error, String.t()}
   def parse_nmea_sentence(<<"$GPRMC,", _rest::binary>> = sentence) when is_binary(sentence) do
     fields = String.split(sentence, ",")
     parse_gprmc(fields)

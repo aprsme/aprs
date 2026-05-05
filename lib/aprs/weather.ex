@@ -177,7 +177,8 @@ defmodule Aprs.Weather do
 
   defp atomize_keys_recursive(other), do: other
 
-  @spec atomize_key_value_pair({any(), any()}) :: {atom(), any()}
+  @spec atomize_key_value_pair({atom() | String.t(), weather_map() | weather_value()}) ::
+          {atom() | String.t(), weather_map() | weather_value()}
   defp atomize_key_value_pair({k, v}) do
     {k, atomize_keys_recursive(v)}
   end

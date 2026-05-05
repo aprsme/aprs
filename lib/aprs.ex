@@ -70,7 +70,7 @@ defmodule Aprs do
           optional(:data_type) => atom()
         }
 
-  @spec parse(String.t()) :: parse_result()
+  @spec parse(term()) :: parse_result()
   def parse(message) when is_binary(message) do
     # Strip trailing null bytes before parsing
     message = String.trim_trailing(message, <<0>>)
@@ -78,7 +78,6 @@ defmodule Aprs do
     parse_with_encoding(message, String.valid?(message))
   end
 
-  @spec parse(any()) :: parse_result()
   def parse(_), do: {:error, :invalid_packet}
 
   @spec parse_with_encoding(String.t(), boolean()) :: parse_result()
@@ -1484,6 +1483,7 @@ defmodule Aprs do
   end
 
   # Third Party Traffic parsing
+  @spec parse_third_party_traffic(String.t()) :: map()
   def parse_third_party_traffic(packet) do
     parse_third_party_with_depth_check(packet, Aprs.UtilityHelpers.count_leading_braces(packet))
   end

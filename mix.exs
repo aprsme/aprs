@@ -28,11 +28,11 @@ defmodule Aprs.MixProject do
   defp deps do
     [
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
-      {:stream_data, "~> 1.2", only: [:dev, :test]},
+      {:stream_data, "~> 1.3", only: [:dev, :test]},
       {:mix_test_watch, "~> 1.4", only: [:dev, :test]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: :dev, runtime: false},
-      {:styler, "~> 1.10", only: [:dev, :test], runtime: false}
+      {:styler, "~> 1.11", only: [:dev, :test], runtime: false}
     ]
   end
 
