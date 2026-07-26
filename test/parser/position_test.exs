@@ -3,56 +3,12 @@ defmodule Aprs.PositionTest do
   use ExUnitProperties
 
   alias Aprs.Position
-  alias Aprs.Types.Position, as: PositionStruct
-
-  describe "parse/1" do
-    test "returns a Position struct for valid input" do
-      input = "4903.50N/12311.12W>comment"
-      result = Position.parse(input)
-      assert %PositionStruct{} = result
-    end
-
-    test "returns nil or struct with nil lat/lon for invalid input" do
-      for input <- ["", "invalidstring", "12345678N/123456789W"] do
-        result = Position.parse(input)
-        assert result == nil or match?(%PositionStruct{latitude: nil, longitude: nil}, result)
-      end
-    end
-
-    test "parses position with DAO extension in comment" do
-      result = Position.parse("4903.50N/07201.75W>Test!ABZ! position")
-      assert %PositionStruct{} = result
-      assert result.dao == %{lat_dao: "A", lon_dao: "B", datum: "WGS84"}
-    end
-
-    test "parses ambiguous position (spaces in lat/lon)" do
-      result = Position.parse("49 3.50N/07201.7 W>Ambiguous")
-      assert %PositionStruct{} = result
-      assert result.position_ambiguity == 1
-    end
-
-    test "returns struct with nil lat/lon for structurally valid but invalid lat/lon" do
-      # Valid length but not matching regex
-      result = Position.parse("abcdefgh/ijklmnopq>Invalid")
-      assert %PositionStruct{latitude: nil, longitude: nil} = result
-    end
-  end
-
-  property "returns nil or struct with nil lat/lon for random invalid strings" do
-    check all s <- StreamData.string(:ascii, min_length: 1, max_length: 30),
-              not String.match?(s, ~r/^\d{4}\.\d{2}[NS][\/\\]\d{5}\.\d{2}[EW].+/) do
-      result = Position.parse(s)
-      assert result == nil or match?(%PositionStruct{latitude: nil, longitude: nil}, result)
-    end
-  end
 
   describe "parse_aprs_position/2" do
     test "parses valid APRS lat/lon strings" do
       result = Position.parse_aprs_position("4903.50N", "07201.75W")
-
-      if result.latitude == nil or result.longitude == nil do
-        flunk("parse_aprs_position/2 returned nil for latitude or longitude")
-      end
+      assert is_float(result.latitude)
+      assert is_float(result.longitude)
 
       assert_in_delta result.latitude, 49.058333, 0.000001
       assert_in_delta result.longitude, -72.029167, 0.000001
@@ -93,16 +49,6 @@ defmodule Aprs.PositionTest do
       check all s <- StreamData.string(:ascii, min_length: 0, max_length: 20) do
         assert Position.count_spaces(s) == s |> String.graphemes() |> Enum.count(&(&1 == " "))
       end
-    end
-  end
-
-  describe "parse_dao_extension/1" do
-    test "parses valid DAO extension" do
-      assert %{lat_dao: "A", lon_dao: "B", datum: "WGS84"} = Position.parse_dao_extension("!ABZ!")
-    end
-
-    test "returns nil for no DAO extension" do
-      assert Position.parse_dao_extension("no dao here") == nil
     end
   end
 

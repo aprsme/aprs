@@ -1,4 +1,3 @@
-# @dialyzer {:nowarn_function, parse: 1}
 defmodule Aprs.Object do
   @moduledoc """
   APRS object parsing.
@@ -43,7 +42,7 @@ defmodule Aprs.Object do
           parse_object_uncompressed_position(latitude, sym_table_id, longitude, symbol_code, rest2)
 
         _ ->
-          %{comment: rest, position_format: :unknown, format: "uncompressed"}
+          %{comment: rest, position_format: :unknown, format: :uncompressed}
       end
 
     # Parse timestamp to Unix time
@@ -107,7 +106,7 @@ defmodule Aprs.Object do
       symbol_code: symbol_code,
       comment: comment,
       position_format: :compressed,
-      format: "compressed",
+      format: :compressed,
       compression_type: compression_type,
       posambiguity: 0
     }
@@ -137,7 +136,7 @@ defmodule Aprs.Object do
           comment: cleaned_comment,
           phg: phg,
           position_format: :uncompressed,
-          format: "uncompressed",
+          format: :uncompressed,
           posambiguity: ambiguity
         },
         course,
@@ -308,11 +307,53 @@ defmodule Aprs.Object do
   defp parse_object_timestamp(<<d1::8, d2::8, h1::8, h2::8, m1::8, m2::8, tz::8>>)
        when is_digit(d1) and is_digit(d2) and is_digit(h1) and is_digit(h2) and is_digit(m1) and is_digit(m2) and
               tz in [?z, ?h, ?/] do
-    # For now, return a placeholder timestamp
-    # In a real implementation, this would calculate the actual Unix timestamp
-    # based on the current month/year and the day/hour/min provided
-    1_754_096_220
+    day = (d1 - ?0) * 10 + (d2 - ?0)
+    hour = (h1 - ?0) * 10 + (h2 - ?0)
+    minute = (m1 - ?0) * 10 + (m2 - ?0)
+    build_object_timestamp(day, hour, minute)
   end
 
   defp parse_object_timestamp(_), do: nil
+
+  @spec build_object_timestamp(non_neg_integer(), non_neg_integer(), non_neg_integer()) :: integer() | nil
+  defp build_object_timestamp(day, hour, minute)
+       when day >= 1 and hour >= 0 and hour <= 23 and minute >= 0 and minute <= 59 do
+    now = DateTime.utc_now()
+    build_object_timestamp_for_month(now.year, now.month, day, hour, minute, now)
+  end
+
+  defp build_object_timestamp(_, _, _), do: nil
+
+  @spec build_object_timestamp_for_month(integer(), integer(), integer(), integer(), integer(), DateTime.t()) ::
+          integer() | nil
+  defp build_object_timestamp_for_month(year, month, day, hour, minute, now) do
+    if day <= Calendar.ISO.days_in_month(year, month) do
+      {:ok, date} = Date.new(year, month, day)
+      {:ok, time} = Time.new(hour, minute, 0)
+      {:ok, datetime} = DateTime.new(date, time)
+
+      # If the resulting datetime is in the future, fall back to the previous month
+      if DateTime.after?(datetime, now) do
+        build_object_timestamp_for_previous_month(now, day, hour, minute)
+      else
+        DateTime.to_unix(datetime)
+      end
+    else
+      # Day exceeds the current month's days, fall back to previous month
+      build_object_timestamp_for_previous_month(now, day, hour, minute)
+    end
+  end
+
+  @spec build_object_timestamp_for_previous_month(DateTime.t(), integer(), integer(), integer()) :: integer() | nil
+  defp build_object_timestamp_for_previous_month(now, day, hour, minute) do
+    prev_month = if now.month == 1, do: 12, else: now.month - 1
+    prev_year = if now.month == 1, do: now.year - 1, else: now.year
+
+    if day <= Calendar.ISO.days_in_month(prev_year, prev_month) do
+      {:ok, date} = Date.new(prev_year, prev_month, day)
+      {:ok, time} = Time.new(hour, minute, 0)
+      {:ok, datetime} = DateTime.new(date, time)
+      DateTime.to_unix(datetime)
+    end
+  end
 end

@@ -13,7 +13,9 @@ defmodule Aprs do
   alias Aprs.Telemetry
   alias Aprs.Weather
 
-  @version "0.1.6"
+  @version "1.0.1"
+
+  @max_packet_size 8192
 
   @doc """
   Returns the current version of the APRS library as a static string.
@@ -72,10 +74,14 @@ defmodule Aprs do
 
   @spec parse(term()) :: parse_result()
   def parse(message) when is_binary(message) do
-    # Strip trailing null bytes before parsing
-    message = String.trim_trailing(message, <<0>>)
-    # Ensure the message is valid UTF-8 before parsing
-    parse_with_encoding(message, String.valid?(message))
+    if byte_size(message) > @max_packet_size do
+      {:error, :packet_too_large}
+    else
+      # Strip trailing null bytes before parsing
+      message = String.trim_trailing(message, <<0>>)
+      # Ensure the message is valid UTF-8 before parsing
+      parse_with_encoding(message, String.valid?(message))
+    end
   end
 
   def parse(_), do: {:error, :invalid_packet}
@@ -84,7 +90,7 @@ defmodule Aprs do
   defp parse_with_encoding(message, true), do: do_parse(message)
   # Try to fix invalid UTF-8 by replacing invalid bytes
   defp parse_with_encoding(message, false) do
-    fixed_message = String.replace(message, ~r/[^\x00-\x7F]/, "?")
+    fixed_message = String.replace(message, ~r/[^\x00-\x7F]/, "?", timeout: 100)
     do_parse(fixed_message)
   end
 
@@ -146,7 +152,7 @@ defmodule Aprs do
       base_callsign: List.first(callsign_parts),
       ssid: extract_ssid(callsign_parts),
       data_extended: data_extended,
-      received_at: DateTime.truncate(DateTime.utc_now(), :microsecond),
+      received_at: timestamp_now(),
       # Standard APRS parser fields
       srccallsign: sender,
       dstcallsign: destination,
@@ -159,7 +165,7 @@ defmodule Aprs do
       digipeaters: digipeaters,
       # Add commonly missing fields with default values
       posambiguity: 0,
-      format: "uncompressed",
+      format: :uncompressed,
       messaging: 0,
       daodatumbyte: nil,
       gpsfixstatus: nil,
@@ -455,7 +461,7 @@ defmodule Aprs do
       {:ok, nmea_result} ->
         %{
           data_type: :nmea,
-          format: "nmea",
+          format: :nmea,
           latitude: nmea_result.latitude,
           longitude: nmea_result.longitude,
           speed: nmea_result.speed,
@@ -500,7 +506,7 @@ defmodule Aprs do
   def parse_data(:third_party_traffic, _destination, data), do: parse_third_party_traffic(data)
 
   def parse_data(:message, _destination, data) do
-    case Regex.run(~r/^:([^:]+):(.*?)(\{(\d+)\})?$/s, data) do
+    case Regex.run(~r/^:([^:]+):(.*?)(\{(\d+)\})?$/s, data, timeout: 100) do
       [_, addressee, message_text, _full_ack, message_number] ->
         trimmed_text = String.trim(message_text)
 
@@ -568,13 +574,13 @@ defmodule Aprs do
 
     true
     |> Aprs.parse_position_with_datetime_and_weather(time, latitude, sym_table_id, longitude, symbol_code, "_" <> rest)
-    |> add_has_location()
+    |> add_has_position()
   end
 
   def parse_data(:timestamped_position_with_message, _destination, data) do
     true
     |> parse_position_with_timestamp(data, :timestamped_position_with_message)
-    |> add_has_location()
+    |> add_has_position()
   end
 
   def parse_data(:station_capabilities, _destination, data), do: parse_station_capabilities(data)
@@ -599,9 +605,9 @@ defmodule Aprs do
   defp handle_position_with_timestamp_result(%{data_type: :malformed_position} = result), do: result
   defp handle_position_with_timestamp_result(result), do: Map.put(result, :data_type, :position)
 
-  @spec add_has_location(map()) :: map()
-  defp add_has_location(result) do
-    Map.put(result, :has_location, has_valid_coordinates?(result))
+  @spec add_has_position(map()) :: map()
+  defp add_has_position(result) do
+    Map.put(result, :has_position, has_valid_coordinates?(result))
   end
 
   @spec has_valid_coordinates?(map()) :: boolean()
@@ -665,17 +671,18 @@ defmodule Aprs do
     }
   end
 
+  def decode_compressed_position(_), do: %{latitude: nil, longitude: nil, symbol_code: nil}
+
   @spec convert_to_base91(binary()) :: integer()
-  def convert_to_base91(<<value::binary-size(4)>>) do
-    [v1, v2, v3, v4] = to_charlist(value)
-    (v1 - 33) * 91 * 91 * 91 + (v2 - 33) * 91 * 91 + (v3 - 33) * 91 + v4
+  def convert_to_base91(value) do
+    Aprs.CompressedPositionHelpers.convert_to_base91(value)
   end
 
   # Helper to extract altitude from comment field (e.g., "/A=000680" or "/A=-00088")
   @spec extract_altitude_and_clean_comment(String.t()) :: {float() | nil, String.t()}
   defp extract_altitude_and_clean_comment(comment) do
     # Use negative lookahead (?!\d) to ensure exactly 5-6 digits, not more
-    case Regex.run(~r"/([Aa])=(-?\d{5,6})(?!\d)", comment) do
+    case Regex.run(~r"/([Aa])=(-?\d{5,6})(?!\d)", comment, timeout: 100) do
       [full_match, case_letter, altitude_str] ->
         altitude = String.to_integer(altitude_str) * 1.0
         cleaned_comment = clean_altitude_comment(case_letter, comment, full_match, altitude_str)
@@ -713,7 +720,7 @@ defmodule Aprs do
   defp strip_ssid(nil), do: nil
 
   defp strip_ssid(callsign) do
-    case Regex.run(~r/^(.+)-\d+$/, callsign) do
+    case Regex.run(~r/^(.+)-\d+$/, callsign, timeout: 100) do
       [_, base] -> base
       _ -> callsign
     end
@@ -733,7 +740,7 @@ defmodule Aprs do
   defp extract_data_extension(comment) do
     cond do
       # Course/Speed: NNN/NNN at start (7 chars)
-      match = Regex.run(~r/^([0-9. ]{3})\/([0-9. ]{3})/, comment) ->
+      match = Regex.run(~r/^([0-9. ]{3})\/([0-9. ]{3})/, comment, timeout: 100) ->
         [full_match, course_str, speed_str] = match
         rest = binary_part(comment, byte_size(full_match), byte_size(comment) - byte_size(full_match))
         course = parse_course_value(course_str)
@@ -757,7 +764,7 @@ defmodule Aprs do
         {nil, nil, phg_string, nil, rest}
 
       # RNG: RNG + 4 digits (7 chars stripped)
-      match = Regex.run(~r/^RNG(\d{4})/, comment) ->
+      match = Regex.run(~r/^RNG(\d{4})/, comment, timeout: 100) ->
         [_full, range_digits] = match
         range_miles = String.to_integer(range_digits)
         rest = binary_part(comment, 7, byte_size(comment) - 7)
@@ -783,7 +790,7 @@ defmodule Aprs do
   # PHG format: PHG followed by 4+ digits, optionally followed by /
   @spec extract_phg_data(String.t()) :: {map() | nil, String.t()}
   defp extract_phg_data(comment) do
-    case Regex.run(~r"PHG(\d)(\d)(\d)(\d)(?:\d+/)?\s?", comment) do
+    case Regex.run(~r"PHG(\d)(\d)(\d)(\d)(?:\d+/)?\s?", comment, timeout: 100) do
       [full_match, p, h, g, d] ->
         <<p_char::8>> = p
         <<h_char::8>> = h
@@ -814,7 +821,7 @@ defmodule Aprs do
   # Returns exactly 4 PHG digits matching FAP behavior
   @spec extract_phg_string(String.t()) :: String.t() | nil
   defp extract_phg_string(comment) do
-    case Regex.run(~r"PHG(\d{4})", comment) do
+    case Regex.run(~r"PHG(\d{4})", comment, timeout: 100) do
       [_, phg_digits] -> phg_digits
       _ -> nil
     end
@@ -838,22 +845,22 @@ defmodule Aprs do
   defp strip_weather_initial_match(s) do
     cond do
       # _NNN/NNNgNNNtNNN or cNNNsNNNgNNNtNNN
-      m = Regex.run(~r/^_{0,1}([\d .\-]{3})\/([\d .]{3})g([\d .]+)t(-?\d{1,3}|\.{2,3})/, s) ->
+      m = Regex.run(~r/^_{0,1}([\d .\-]{3})\/([\d .]{3})g([\d .]+)t(-?\d{1,3}|\.{2,3})/, s, timeout: 100) ->
         binary_part(s, byte_size(hd(m)), byte_size(s) - byte_size(hd(m)))
 
-      m = Regex.run(~r/^_{0,1}c([\d .\-]{3})s([\d .]{3})g([\d .]+)t(-?\d{1,3}|\.{2,3})/, s) ->
+      m = Regex.run(~r/^_{0,1}c([\d .\-]{3})s([\d .]{3})g([\d .]+)t(-?\d{1,3}|\.{2,3})/, s, timeout: 100) ->
         binary_part(s, byte_size(hd(m)), byte_size(s) - byte_size(hd(m)))
 
       # wind + temp (no gust)
-      m = Regex.run(~r/^_{0,1}([\d .\-]{3})\/([\d .]{3})t(-?\d{1,3}|\.{2,3})/, s) ->
+      m = Regex.run(~r/^_{0,1}([\d .\-]{3})\/([\d .]{3})t(-?\d{1,3}|\.{2,3})/, s, timeout: 100) ->
         binary_part(s, byte_size(hd(m)), byte_size(s) - byte_size(hd(m)))
 
       # wind + gust (no temp)
-      m = Regex.run(~r/^_{0,1}([\d .\-]{3})\/([\d .]{3})g([\d .]+)/, s) ->
+      m = Regex.run(~r/^_{0,1}([\d .\-]{3})\/([\d .]{3})g([\d .]+)/, s, timeout: 100) ->
         binary_part(s, byte_size(hd(m)), byte_size(s) - byte_size(hd(m)))
 
       # gust + temp only (no wind direction/speed prefix)
-      m = Regex.run(~r/^g(\d+)t(-?\d{1,3}|\.{2,3})/, s) ->
+      m = Regex.run(~r/^g(\d+)t(-?\d{1,3}|\.{2,3})/, s, timeout: 100) ->
         binary_part(s, byte_size(hd(m)), byte_size(s) - byte_size(hd(m)))
 
       true ->
@@ -879,14 +886,14 @@ defmodule Aprs do
   @spec strip_weather_secondary_fields(String.t()) :: String.t()
   defp strip_weather_secondary_fields(s) do
     Enum.reduce(@weather_secondary_patterns, s, fn pattern, acc ->
-      String.replace(acc, pattern, "", global: false)
+      String.replace(acc, pattern, "", global: false, timeout: 100)
     end)
   end
 
   # Strip remaining no-data patterns like "r..." "P..." (FAP line 2180)
   @spec strip_weather_nodata_patterns(String.t()) :: String.t()
   defp strip_weather_nodata_patterns(s) do
-    String.replace(s, ~r/^([rPphblLs#][\. ]{1,5})+/, "")
+    String.replace(s, ~r/^([rPphblLs#][\. ]{1,5})+/, "", timeout: 100)
   end
 
   # Patch parse_position_without_timestamp to include course/speed
@@ -1051,7 +1058,7 @@ defmodule Aprs do
       speed: speed,
       has_position: has_position,
       posresolution: posresolution,
-      format: "uncompressed",
+      format: :uncompressed,
       posambiguity: ambiguity,
       messaging: 0,
       radiorange: radiorange,
@@ -1082,7 +1089,7 @@ defmodule Aprs do
       course: nil,
       speed: nil,
       has_position: has_position,
-      format: "uncompressed",
+      format: :uncompressed,
       # Standard parser fields
       posambiguity: ambiguity,
       messaging: 0
@@ -1163,7 +1170,7 @@ defmodule Aprs do
           dao: dao_data,
           has_position: has_position,
           posresolution: posresolution,
-          format: "compressed",
+          format: :compressed,
           posambiguity: ambiguity,
           messaging: compression_info.aprs_messaging,
           altitude: altitude,
@@ -1284,7 +1291,7 @@ defmodule Aprs do
     regex =
       ~r/^(?<lat>\d{4,5}\.\d+[NS])(?<sym_table>.)(?<lon>\d{5,6}\.\d+[EW])(?<sym_code>.)(?<comment>.*)$/
 
-    case Regex.named_captures(regex, raw_data) do
+    case Regex.named_captures(regex, raw_data, timeout: 100) do
       %{
         "lat" => lat,
         "lon" => lon,
@@ -1379,7 +1386,7 @@ defmodule Aprs do
       radiorange: radiorange,
       dao: dao_data,
       data_type: data_type,
-      format: "uncompressed",
+      format: :uncompressed,
       messaging: if(aprs_messaging?, do: 1, else: 0),
       position_ambiguity: ambiguity,
       posambiguity: ambiguity,
@@ -1637,9 +1644,7 @@ defmodule Aprs do
   # Add DAO (Datum) extension support
   @spec parse_dao_extension(String.t()) :: {map() | nil, String.t()}
   defp parse_dao_extension(comment) do
-    # IO.puts("parse_dao_extension called with comment: #{comment}")
-
-    case Regex.run(~r/!([A-Za-z])([\x21-\x7b])([\x21-\x7b])!/, comment) do
+    case Regex.run(~r/!([A-Za-z])([\x21-\x7b])([\x21-\x7b])!/, comment, timeout: 100) do
       [full_match, lat_dao, lon_dao, _] ->
         cleaned_comment = comment |> String.replace(full_match, "") |> String.trim()
 
@@ -1649,12 +1654,11 @@ defmodule Aprs do
           datum: "WGS84"
         }
 
-        # IO.puts("DAO regex 1 matched: #{inspect(dao_data)}")
         {dao_data, cleaned_comment}
 
       _ ->
         # Try alternative DAO format with & prefix
-        case Regex.run(~r/&!([A-Za-z])/, comment) do
+        case Regex.run(~r/&!([A-Za-z])/, comment, timeout: 100) do
           [full_match, datum_byte] ->
             cleaned_comment = comment |> String.replace(full_match, "") |> String.trim()
 
@@ -1664,11 +1668,9 @@ defmodule Aprs do
               datum: datum_byte
             }
 
-            # IO.puts("DAO regex 2 matched: #{inspect(dao_data)}")
             {dao_data, cleaned_comment}
 
           _ ->
-            # IO.puts("DAO regex did not match")
             {nil, comment}
         end
     end
@@ -1679,6 +1681,9 @@ defmodule Aprs do
   defp valid_coordinate?(coord) do
     is_number(coord)
   end
+
+  @spec timestamp_now() :: DateTime.t()
+  defp timestamp_now, do: DateTime.truncate(DateTime.utc_now(), :microsecond)
 
   # Weather merging for position packets.
   # Position packets with the `_` weather symbol (any symbol table, including overlays)

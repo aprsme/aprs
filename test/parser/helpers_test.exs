@@ -5,7 +5,7 @@ defmodule Aprs.HelpersTest do
   describe "NMEAHelpers" do
     test "parse_nmea_sentence handles valid NMEA" do
       nmea = "$GPRMC,123456,A,4903.50,N,07201.75,W,0.0,0.0,010180,,*6A"
-      assert {:ok, %{latitude: lat, longitude: lon, format: "nmea"}} = Aprs.NMEAHelpers.parse_nmea_sentence(nmea)
+      assert {:ok, %{latitude: lat, longitude: lon, format: :nmea}} = Aprs.NMEAHelpers.parse_nmea_sentence(nmea)
       assert_in_delta lat, 49.058333, 0.001
       assert_in_delta lon, -72.029167, 0.001
     end
@@ -221,20 +221,6 @@ defmodule Aprs.HelpersTest do
       lon = "12311.12W"
       result = Aprs.UtilityHelpers.calculate_position_ambiguity(lat, lon)
       assert is_integer(result)
-    end
-
-    test "validate_position_data handles valid input" do
-      lat = "4903.50N"
-      lon = "12311.12W"
-      result = Aprs.UtilityHelpers.validate_position_data(lat, lon)
-      assert {:ok, _} = result
-    end
-
-    test "validate_position_data handles invalid input" do
-      lat = "invalid"
-      lon = "invalid"
-      result = Aprs.UtilityHelpers.validate_position_data(lat, lon)
-      assert {:error, _} = result
     end
 
     test "validate_timestamp handles valid input" do

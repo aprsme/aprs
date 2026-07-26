@@ -529,7 +529,7 @@ defmodule Aprs.ParserTest do
       assert is_number(data[:longitude])
       assert data[:latitude]
       assert data[:longitude]
-      if Map.has_key?(data, :has_location), do: assert(data[:has_location])
+      if Map.has_key?(data, :has_position), do: assert(data[:has_position])
     end
 
     test "handles compressed position data without / prefix (malformed compressed position)" do
@@ -683,7 +683,7 @@ defmodule Aprs.ParserTest do
       assert is_number(data[:longitude])
       assert data[:latitude]
       assert data[:longitude]
-      if Map.has_key?(data, :has_location), do: assert(data[:has_location])
+      if Map.has_key?(data, :has_position), do: assert(data[:has_position])
     end
 
     test "handles invalid UTF-8 gracefully" do
@@ -752,19 +752,15 @@ defmodule Aprs.ParserTest do
   describe "helper functions" do
     test "convert_to_base91/1" do
       # Test with known values
-      assert Aprs.convert_to_base91("ABCD") == 24_390_707
-      assert Aprs.convert_to_base91("!!!!") == 33
-      assert Aprs.convert_to_base91("~~~~") == 70_860_825
+      assert Aprs.convert_to_base91("ABCD") == 24_390_674
+      assert Aprs.convert_to_base91("!!!!") == 0
+      assert Aprs.convert_to_base91("~~~~") == 70_860_792
     end
 
     test "decode_compressed_position/1" do
-      # The implementation may not support this input, so check for error or map
-      try do
-        result = Aprs.decode_compressed_position("/ABCDEFGHI12")
-        assert is_map(result) or match?({:error, _}, result)
-      rescue
-        FunctionClauseError -> :ok
-      end
+      # Decode a valid compressed position format
+      assert %{latitude: _, longitude: _, symbol_code: _} =
+               Aprs.decode_compressed_position("/ABCDEFGHI12")
     end
 
     test "extract_course_and_speed/1" do

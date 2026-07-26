@@ -98,7 +98,7 @@ defmodule Aprs.MicE do
         comment: info_info.comment,
         altitude: info_info.altitude,
         data_type: data_type,
-        format: "mice",
+        format: :mice,
         position_ambiguity: ambiguity
       }
     else
