@@ -74,7 +74,7 @@ defmodule Aprs.NMEAHelpers do
          longitude: longitude,
          speed: speed,
          course: course_val,
-         format: "nmea"
+         format: :nmea
        }}
     end
   end

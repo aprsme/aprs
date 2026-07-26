@@ -288,7 +288,7 @@ defmodule Aprs.MicETest do
 
       {:ok, parsed} = Aprs.parse(packet)
 
-      assert parsed.data_extended.format == "mice"
+      assert parsed.data_extended.format == :mice
       assert parsed.data_extended.position_ambiguity == 2
       assert parsed.posambiguity == 2
       assert_in_delta parsed.data_extended.latitude, 45.6583333, 0.001
@@ -300,7 +300,7 @@ defmodule Aprs.MicETest do
       # of the destination must be 'L'. Use destination "TU3LU3".
       data = "`~[\x1cn*l>/`\"Bq}test"
       result = MicE.parse(data, "TU3LU3")
-      assert result.format == "mice"
+      assert result.format == :mice
       assert result.latitude < 0
     end
 
@@ -310,7 +310,7 @@ defmodule Aprs.MicETest do
       data = "`~[\x1cn*l>/`\"Bq}test"
       result = MicE.parse(data, "TU3ZZL")
 
-      assert result.format == "mice"
+      assert result.format == :mice
       assert result.position_ambiguity == 3
       assert is_float(result.latitude)
       assert is_float(result.longitude)
@@ -325,7 +325,7 @@ defmodule Aprs.MicETest do
 
       {:ok, parsed} = Aprs.parse(packet)
 
-      assert parsed.data_extended.format == "mice"
+      assert parsed.data_extended.format == :mice
       assert parsed.data_extended.position_ambiguity == 4
       assert parsed.posambiguity == 4
       assert_in_delta parsed.data_extended.latitude, 42.5, 0.01
@@ -340,7 +340,7 @@ defmodule Aprs.MicETest do
 
       {:ok, parsed} = Aprs.parse(packet)
 
-      assert parsed.data_extended.format == "mice"
+      assert parsed.data_extended.format == :mice
       assert parsed.data_extended.position_ambiguity == 1
       assert parsed.posambiguity == 1
     end
@@ -353,7 +353,7 @@ defmodule Aprs.MicETest do
 
       {:ok, parsed} = Aprs.parse(packet)
 
-      assert parsed.data_extended.format == "mice"
+      assert parsed.data_extended.format == :mice
       assert parsed.data_extended.comment == ">^"
     end
 

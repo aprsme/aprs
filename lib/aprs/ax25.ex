@@ -24,8 +24,15 @@ defmodule Aprs.AX25 do
   Parse and validate an AX.25 path. Returns {:ok, [String.t()]} or {:error, reason}.
   """
   @spec parse_path(String.t()) :: {:ok, [String.t()]} | {:error, String.t()}
-  def parse_path(_path) do
-    # Stub: actual logic to be implemented
-    {:error, "Not yet implemented"}
+  def parse_path(path) when is_binary(path) do
+    segments = String.split(path, ",")
+
+    if Enum.all?(segments, &(&1 != "")) and segments != [] do
+      {:ok, segments}
+    else
+      {:error, "Invalid path"}
+    end
   end
+
+  def parse_path(_), do: {:error, "Invalid path"}
 end

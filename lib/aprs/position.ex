@@ -5,40 +5,6 @@ defmodule Aprs.Position do
 
   import Aprs.Guards
 
-  alias Aprs.Types.Position
-
-  @doc """
-  Parse an uncompressed APRS position string. Returns a Position struct or nil.
-  """
-  @spec parse(String.t()) :: Position.t() | nil
-
-  def parse(position_str) do
-    # Example: "4903.50N/07201.75W>comment"
-    case position_str do
-      <<lat::binary-size(8), sym_table_id::binary-size(1), lon::binary-size(9), sym_code::binary-size(1),
-        comment::binary>> ->
-        %{latitude: lat_val, longitude: lon_val} = parse_aprs_position(lat, lon)
-        ambiguity = calculate_position_ambiguity(lat, lon)
-        dao_data = parse_dao_extension(comment)
-
-        %Position{
-          latitude: lat_val,
-          longitude: lon_val,
-          timestamp: nil,
-          symbol_table_id: sym_table_id,
-          symbol_code: sym_code,
-          comment: comment,
-          aprs_messaging?: false,
-          compressed?: false,
-          position_ambiguity: ambiguity,
-          dao: dao_data
-        }
-
-      _ ->
-        nil
-    end
-  end
-
   @doc false
   @spec parse_aprs_position(String.t(), String.t()) :: %{
           latitude: float() | nil,
@@ -197,23 +163,6 @@ defmodule Aprs.Position do
   @spec count_spaces(String.t()) :: non_neg_integer()
   def count_spaces(str) do
     str |> String.graphemes() |> Enum.count(&(&1 == " "))
-  end
-
-  @doc false
-  @spec parse_dao_extension(String.t()) ::
-          %{lat_dao: String.t(), lon_dao: String.t(), datum: String.t()} | nil
-  def parse_dao_extension(comment) do
-    case Regex.run(~r/!([A-Za-z])([A-Za-z])([A-Za-z])!/, comment) do
-      [_, lat_dao, lon_dao, _] ->
-        %{
-          lat_dao: lat_dao,
-          lon_dao: lon_dao,
-          datum: "WGS84"
-        }
-
-      _ ->
-        nil
-    end
   end
 
   @spec from_aprs(String.t(), String.t()) :: %{

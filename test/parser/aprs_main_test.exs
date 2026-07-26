@@ -4,7 +4,7 @@ defmodule Aprs.MainTest do
 
   describe "version/0" do
     test "returns version string" do
-      assert Aprs.version() == "0.1.6"
+      assert Aprs.version() == "1.0.1"
       assert is_binary(Aprs.version())
     end
   end
@@ -16,9 +16,7 @@ defmodule Aprs.MainTest do
 
       # Should either fix the UTF-8 or return an error
       case Aprs.parse(invalid_utf8) do
-        {:error, :invalid_utf8} -> :ok
         {:error, :invalid_packet} -> :ok
-        # If it fixes the UTF-8
         {:ok, _} -> :ok
       end
     end
@@ -699,14 +697,14 @@ defmodule Aprs.MainTest do
       # Test the weather detection in timestamped_position_with_message
       weather_data = "092345z1234.56N/12345.67W__12345678c000s000g000"
       result = Aprs.parse_data(:timestamped_position_with_message, "APRS", weather_data)
-      assert result.has_location
+      assert result.has_position
     end
 
     test "handles timestamped position with invalid format" do
       # Test short/invalid timestamped position
       result = Aprs.parse_data(:timestamped_position_with_message, "APRS", "short")
       assert is_map(result)
-      assert Map.has_key?(result, :has_location)
+      assert Map.has_key?(result, :has_position)
     end
   end
 

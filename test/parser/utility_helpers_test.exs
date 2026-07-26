@@ -82,134 +82,30 @@ defmodule Aprs.UtilityHelpersTest do
   end
 
   describe "calculate_position_ambiguity/2" do
-    property "returns 0-4 based on space count" do
-      check all lat_spaces <- StreamData.integer(0..4),
-                lon_spaces <- StreamData.integer(0..4) do
-        lat = String.duplicate(" ", lat_spaces) <> "1234.56N"
-        lon = String.duplicate(" ", lon_spaces) <> "09876.54W"
-
-        expected = if lat_spaces == lon_spaces, do: lat_spaces, else: 0
-        assert Aprs.UtilityHelpers.calculate_position_ambiguity(lat, lon) == expected
-      end
+    test "delegates to Aprs.Position.calculate_position_ambiguity/2" do
+      assert Aprs.UtilityHelpers.calculate_position_ambiguity("1234.56N", "09876.54W") ==
+               Aprs.Position.calculate_position_ambiguity("1234.56N", "09876.54W")
     end
 
     test "returns 0 for no spaces" do
       assert Aprs.UtilityHelpers.calculate_position_ambiguity("1234.56N", "09876.54W") == 0
     end
 
-    test "returns 1 for one space in each" do
-      assert Aprs.UtilityHelpers.calculate_position_ambiguity(" 1234.56N", " 09876.54W") == 1
-    end
-
-    test "returns 2 for two spaces in each" do
-      assert Aprs.UtilityHelpers.calculate_position_ambiguity("  1234.56N", "  09876.54W") == 2
-    end
-
-    test "returns 3 for three spaces in each" do
-      assert Aprs.UtilityHelpers.calculate_position_ambiguity("   1234.56N", "   09876.54W") == 3
-    end
-
-    test "returns 4 for four spaces in each" do
-      assert Aprs.UtilityHelpers.calculate_position_ambiguity("    1234.56N", "    09876.54W") == 4
+    test "returns ambiguity based on matching space counts" do
+      # Spaces in minute digits per APRS position ambiguity spec
+      assert Aprs.UtilityHelpers.calculate_position_ambiguity("1234.5 N", "09876.5 W") == 1
+      assert Aprs.UtilityHelpers.calculate_position_ambiguity("1234.  N", "09876.  W") == 2
+      assert Aprs.UtilityHelpers.calculate_position_ambiguity("123 .  N", "098 .  W") == 3
+      assert Aprs.UtilityHelpers.calculate_position_ambiguity("12  .  N", "09  .  W") == 4
     end
 
     test "returns 0 for mismatched space counts" do
-      assert Aprs.UtilityHelpers.calculate_position_ambiguity(" 1234.56N", "09876.54W") == 0
-      assert Aprs.UtilityHelpers.calculate_position_ambiguity("1234.56N", " 09876.54W") == 0
-      assert Aprs.UtilityHelpers.calculate_position_ambiguity("  1234.56N", " 09876.54W") == 0
+      assert Aprs.UtilityHelpers.calculate_position_ambiguity("1234.5 N", "09876.54W") == 0
+      assert Aprs.UtilityHelpers.calculate_position_ambiguity("1234.56N", "09876.5 W") == 0
     end
 
     test "returns 0 for more than 4 spaces" do
-      assert Aprs.UtilityHelpers.calculate_position_ambiguity("     1234.56N", "     09876.54W") == 0
-    end
-
-    test "returns 0 for non-binary input" do
-      assert Aprs.UtilityHelpers.calculate_position_ambiguity(nil, nil) == 0
-      assert Aprs.UtilityHelpers.calculate_position_ambiguity(123, "1234.56N") == 0
-    end
-  end
-
-  describe "validate_position_data/2" do
-    property "validates correct position formats" do
-      check all lat_deg <- StreamData.integer(0..89),
-                lat_min <- StreamData.float(min: 0.0, max: 59.99),
-                lon_deg <- StreamData.integer(0..179),
-                lon_min <- StreamData.float(min: 0.0, max: 59.99),
-                lat_dir <- StreamData.member_of(["N", "S"]),
-                lon_dir <- StreamData.member_of(["E", "W"]) do
-        lat_min_str = IO.iodata_to_binary(:io_lib.format("~.2f", [lat_min]))
-        lon_min_str = IO.iodata_to_binary(:io_lib.format("~.2f", [lon_min]))
-
-        lat_str =
-          String.pad_leading(to_string(lat_deg), 2, "0") <>
-            String.pad_leading(lat_min_str, 5, "0") <> lat_dir
-
-        lon_str =
-          String.pad_leading(to_string(lon_deg), 3, "0") <>
-            String.pad_leading(lon_min_str, 5, "0") <> lon_dir
-
-        case Aprs.UtilityHelpers.validate_position_data(lat_str, lon_str) do
-          {:ok, {lat, lon}} ->
-            assert is_float(lat)
-            assert is_float(lon)
-
-          {:error, _} ->
-            :ok
-        end
-      end
-    end
-
-    test "validates correct latitude and longitude" do
-      result = Aprs.UtilityHelpers.validate_position_data("1234.56N", "09876.54W")
-      assert {:ok, {lat, lon}} = result
-      assert is_float(lat)
-      assert is_float(lon)
-    end
-
-    test "handles southern latitude" do
-      result = Aprs.UtilityHelpers.validate_position_data("1234.56S", "09876.54E")
-      assert {:ok, {lat, lon}} = result
-      assert lat < 0
-      assert lon > 0
-    end
-
-    test "handles western longitude" do
-      result = Aprs.UtilityHelpers.validate_position_data("1234.56N", "09876.54W")
-      assert {:ok, {lat, lon}} = result
-      assert lat > 0
-      assert lon < 0
-    end
-
-    test "returns error for invalid latitude format" do
-      assert {:error, :invalid_position} = Aprs.UtilityHelpers.validate_position_data("invalid", "09876.54W")
-      assert {:error, :invalid_position} = Aprs.UtilityHelpers.validate_position_data("1234.56", "09876.54W")
-      assert {:error, :invalid_position} = Aprs.UtilityHelpers.validate_position_data("1234.56X", "09876.54W")
-    end
-
-    test "returns error for invalid longitude format" do
-      assert {:error, :invalid_position} = Aprs.UtilityHelpers.validate_position_data("1234.56N", "invalid")
-      assert {:error, :invalid_position} = Aprs.UtilityHelpers.validate_position_data("1234.56N", "09876.54")
-      assert {:error, :invalid_position} = Aprs.UtilityHelpers.validate_position_data("1234.56N", "09876.54X")
-    end
-
-    test "returns error for out of range values" do
-      # The implementation clamps rather than errors, so update expectations
-      result1 = Aprs.UtilityHelpers.validate_position_data("9034.56N", "09876.54W")
-      assert match?({:ok, _}, result1)
-      result2 = Aprs.UtilityHelpers.validate_position_data("1234.56N", "18076.54W")
-      assert match?({:ok, _}, result2)
-    end
-
-    test "handles edge cases" do
-      # Valid edge cases
-      assert {:ok, _} = Aprs.UtilityHelpers.validate_position_data("0000.00N", "00000.00E")
-      assert {:ok, _} = Aprs.UtilityHelpers.validate_position_data("8959.99S", "17959.99W")
-
-      # Out-of-range values are clamped, not errors
-      result1 = Aprs.UtilityHelpers.validate_position_data("9000.00N", "09876.54W")
-      assert match?({:ok, _}, result1)
-      result2 = Aprs.UtilityHelpers.validate_position_data("1234.56N", "18000.00W")
-      assert match?({:ok, _}, result2)
+      assert Aprs.UtilityHelpers.calculate_position_ambiguity("1    .  N", "0    .  W") == 0
     end
   end
 

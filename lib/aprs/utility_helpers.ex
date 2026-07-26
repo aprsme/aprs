@@ -5,108 +5,6 @@ defmodule Aprs.UtilityHelpers do
 
   import Aprs.Guards
 
-  @spec validate_position_data(String.t(), String.t()) ::
-          {:ok, {float(), float()}} | {:error, :invalid_position}
-  def validate_position_data(latitude, longitude) do
-    lat =
-      case parse_latitude_binary(latitude) do
-        {:ok, degrees, minutes, direction} ->
-          lat_val = String.to_integer(degrees) + String.to_float(minutes) / 60
-          apply_latitude_direction(lat_val, direction)
-
-        _ ->
-          nil
-      end
-
-    lon =
-      case parse_longitude_binary(longitude) do
-        {:ok, degrees, minutes, direction} ->
-          lon_val = String.to_integer(degrees) + String.to_float(minutes) / 60
-          apply_longitude_direction(lon_val, direction)
-
-        _ ->
-          nil
-      end
-
-    validate_coordinates(lat, lon)
-  end
-
-  # Parse latitude using binary pattern matching
-  @spec parse_latitude_binary(binary()) :: {:ok, binary(), binary(), binary()} | :error
-  defp parse_latitude_binary(<<d1::8, d2::8, m1::8, m2::8, ?., rest::binary>>)
-       when is_digit(d1) and is_digit(d2) and is_digit(m1) and is_digit(m2) do
-    case parse_lat_fraction_and_dir(rest) do
-      {:ok, fraction, dir} ->
-        degrees = <<d1, d2>>
-        minutes = <<m1, m2, ?., fraction::binary>>
-        {:ok, degrees, minutes, dir}
-
-      _ ->
-        :error
-    end
-  end
-
-  defp parse_latitude_binary(_), do: :error
-
-  # Parse longitude using binary pattern matching
-  @spec parse_longitude_binary(binary()) :: {:ok, binary(), binary(), binary()} | :error
-  defp parse_longitude_binary(<<d1::8, d2::8, d3::8, m1::8, m2::8, ?., rest::binary>>)
-       when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(m1) and is_digit(m2) do
-    case parse_lon_fraction_and_dir(rest) do
-      {:ok, fraction, dir} ->
-        degrees = <<d1, d2, d3>>
-        minutes = <<m1, m2, ?., fraction::binary>>
-        {:ok, degrees, minutes, dir}
-
-      _ ->
-        :error
-    end
-  end
-
-  defp parse_longitude_binary(_), do: :error
-
-  # Parse fraction and direction for latitude
-  @spec parse_lat_fraction_and_dir(binary()) :: {:ok, binary(), binary()} | :error
-  defp parse_lat_fraction_and_dir(data), do: parse_fraction_and_dir(data, [?N, ?S])
-
-  # Parse fraction and direction for longitude
-  @spec parse_lon_fraction_and_dir(binary()) :: {:ok, binary(), binary()} | :error
-  defp parse_lon_fraction_and_dir(data), do: parse_fraction_and_dir(data, [?E, ?W])
-
-  # Generic fraction and direction parser
-  @spec parse_fraction_and_dir(binary(), [non_neg_integer()]) :: {:ok, binary(), binary()} | :error
-  defp parse_fraction_and_dir(data, valid_dirs) do
-    parse_fraction_digits(data, <<>>, valid_dirs)
-  end
-
-  @spec parse_fraction_digits(binary(), binary(), [non_neg_integer()]) :: {:ok, binary(), binary()} | :error
-  defp parse_fraction_digits(<<d::8, rest::binary>>, acc, valid_dirs) when d >= ?0 and d <= ?9 do
-    parse_fraction_digits(rest, acc <> <<d>>, valid_dirs)
-  end
-
-  defp parse_fraction_digits(<<dir::8>>, acc, valid_dirs) when byte_size(acc) > 0 do
-    if dir in valid_dirs do
-      {:ok, acc, <<dir>>}
-    else
-      :error
-    end
-  end
-
-  defp parse_fraction_digits(_, _, _), do: :error
-
-  @spec apply_latitude_direction(float(), String.t()) :: float()
-  defp apply_latitude_direction(value, "S"), do: -value
-  defp apply_latitude_direction(value, _), do: value
-
-  @spec apply_longitude_direction(float(), String.t()) :: float()
-  defp apply_longitude_direction(value, "W"), do: -value
-  defp apply_longitude_direction(value, _), do: value
-
-  @spec validate_coordinates(float() | nil, float() | nil) ::
-          {:ok, {float(), float()}} | {:error, :invalid_position}
-  defp validate_coordinates(lat, lon) when is_float(lat) and is_float(lon), do: {:ok, {lat, lon}}
-  defp validate_coordinates(_, _), do: {:error, :invalid_position}
-
   @spec validate_timestamp(String.t()) :: integer() | nil
   def validate_timestamp(time) when is_binary(time) do
     # Parse APRS timestamp formats based on length
@@ -217,15 +115,10 @@ defmodule Aprs.UtilityHelpers do
   def position_resolution(_), do: 19
 
   @doc """
-  Count spaces in a string.
+  Count spaces in a string. Delegates to `Aprs.Position.count_spaces/1`.
   """
-  @spec count_spaces(String.t()) :: integer()
-  def count_spaces(str) when is_binary(str) do
-    str
-    |> String.to_charlist()
-    |> Enum.count(&(&1 == ?\s))
-  end
-
+  @spec count_spaces(String.t()) :: non_neg_integer()
+  def count_spaces(str) when is_binary(str), do: Aprs.Position.count_spaces(str)
   def count_spaces(_), do: 0
 
   @doc """
@@ -246,34 +139,11 @@ defmodule Aprs.UtilityHelpers do
   defp count_leading_braces_binary(_, count), do: count
 
   @doc """
-  Calculate position ambiguity based on leading spaces.
+  Calculate position ambiguity based on spaces in coordinate strings.
+  Delegates to `Aprs.Position.calculate_position_ambiguity/2`.
   """
-  @spec calculate_position_ambiguity(String.t(), String.t()) :: integer()
-  def calculate_position_ambiguity(lat, lon) when is_binary(lat) and is_binary(lon) do
-    lat_spaces = count_leading_spaces(lat)
-    lon_spaces = count_leading_spaces(lon)
-
-    # Return 0 if spaces don't match or if more than 4 spaces
-    if lat_spaces != lon_spaces or lat_spaces > 4 do
-      0
-    else
-      lat_spaces
-    end
-  end
-
-  def calculate_position_ambiguity(_, _), do: 0
-
-  @spec count_leading_spaces(binary()) :: non_neg_integer()
-  defp count_leading_spaces(str) when is_binary(str) do
-    count_leading_spaces_binary(str, 0)
-  end
-
-  @spec count_leading_spaces_binary(binary(), non_neg_integer()) :: non_neg_integer()
-  defp count_leading_spaces_binary(<<32, rest::binary>>, count) do
-    count_leading_spaces_binary(rest, count + 1)
-  end
-
-  defp count_leading_spaces_binary(_, count), do: count
+  @spec calculate_position_ambiguity(String.t(), String.t()) :: non_neg_integer()
+  def calculate_position_ambiguity(lat, lon), do: Aprs.Position.calculate_position_ambiguity(lat, lon)
 
   @doc """
   Calculate position resolution based on ambiguity.

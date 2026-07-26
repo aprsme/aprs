@@ -96,7 +96,7 @@ defmodule Aprs.FieldMappingTest do
 
       # Check default values
       assert parsed.posambiguity == 0
-      assert parsed.format == "uncompressed"
+      assert parsed.format == :uncompressed
       assert parsed.messaging == 0
     end
 
@@ -118,7 +118,7 @@ defmodule Aprs.FieldMappingTest do
       assert {:ok, parsed} = Aprs.parse(packet)
 
       # Should be identified as compressed
-      assert parsed.format == "compressed"
+      assert parsed.format == :compressed
       assert parsed.data_type == :position
     end
 
@@ -206,7 +206,7 @@ defmodule Aprs.FieldMappingTest do
       assert {:ok, parsed} = Aprs.parse(packet)
       assert parsed.daodatumbyte == "W"
       assert parsed.object_name == "X1323381"
-      assert parsed.format == "uncompressed"
+      assert parsed.format == :uncompressed
       assert parsed.symboltable == "/"
       assert parsed.symbolcode == "O"
       assert_in_delta String.to_float("#{parsed.latitude}"), 47.71365, 0.001

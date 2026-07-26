@@ -16,7 +16,7 @@ defmodule Aprs.CompressedPositionWithTelemetryTest do
       assert data.compressed? == true
       assert data.symbol_table_id == "L"
       assert data.symbol_code == "#"
-      assert data.format == "compressed"
+      assert data.format == :compressed
       assert_in_delta data.latitude, 43.4993463297333, 0.0001
       assert_in_delta data.longitude, -3.54185327333917, 0.0001
       # cs and compression type bytes consumed per APRS compressed spec
@@ -41,7 +41,7 @@ defmodule Aprs.CompressedPositionWithTelemetryTest do
       # Check position data
       data = parsed.data_extended
       assert data.compressed? == false
-      assert data.format == "uncompressed"
+      assert data.format == :uncompressed
       assert_in_delta data.latitude, -23.3268333333333, 0.0001
       assert_in_delta data.longitude, -51.1323333333333, 0.0001
       assert data.symbol_table_id == "/"

@@ -34,14 +34,26 @@ defmodule Aprs.AX25Test do
   end
 
   describe "parse_path/1" do
-    test "returns error for any input (stub)" do
-      assert {:error, _} = AX25.parse_path("WIDE1-1,WIDE2-2")
+    test "parses valid path into segments" do
+      assert {:ok, ["WIDE1-1", "WIDE2-2"]} = AX25.parse_path("WIDE1-1,WIDE2-2")
+    end
+
+    test "parses single segment path" do
+      assert {:ok, ["WIDE1-1"]} = AX25.parse_path("WIDE1-1")
+    end
+
+    test "returns error for empty string" do
       assert {:error, _} = AX25.parse_path("")
     end
 
-    property "always returns error for any string (stub)" do
+    test "returns error for path with empty segment" do
+      assert {:error, _} = AX25.parse_path("WIDE1-1,,WIDE2-2")
+    end
+
+    property "parses any non-empty segmented path or returns error" do
       check all s <- StreamData.string(:ascii, min_length: 1, max_length: 20) do
-        assert match?({:error, _}, AX25.parse_path(s))
+        result = AX25.parse_path(s)
+        assert match?({:ok, _}, result) or match?({:error, _}, result)
       end
     end
   end

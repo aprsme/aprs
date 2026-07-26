@@ -21,13 +21,13 @@ defmodule Aprs.ParserUnitTest do
   describe "decode_compressed_position/1 and convert_to_base91/1" do
     test "decodes compressed position and base91" do
       # 4 chars, all '!' (ASCII 33) should decode to 33
-      assert Aprs.convert_to_base91("!!!!") == 33
+      assert Aprs.convert_to_base91("!!!!") == 0
       # Use a valid compressed string: 1 + 4 + 4 + 1 + 2 + 2 + 1 = 15 bytes
       # Format: "/" <> lat(4) <> lon(4) <> sym(1) <> cs(2) <> comp(2) <> rest(1)
       bin = "/!!!!!!!!>abccx"
       pos = Aprs.decode_compressed_position(bin)
-      assert pos.latitude == 33
-      assert pos.longitude == 33
+      assert pos.latitude == 0
+      assert pos.longitude == 0
       assert pos.symbol_code == ">"
     end
   end

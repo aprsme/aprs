@@ -141,7 +141,7 @@ defmodule Aprs.Item do
       comment: cleaned_comment,
       phg: phg,
       position_format: :uncompressed,
-      format: "uncompressed",
+      format: :uncompressed,
       posambiguity: ambiguity
     }
   end
@@ -189,7 +189,7 @@ defmodule Aprs.Item do
       symbol_code: symbol_code,
       comment: comment,
       position_format: :compressed,
-      format: "compressed",
+      format: :compressed,
       compression_type: compression_type,
       posambiguity: 0
     }

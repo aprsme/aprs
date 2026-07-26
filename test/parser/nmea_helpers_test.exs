@@ -144,7 +144,7 @@ defmodule Aprs.NMEAHelpersTest do
       assert_in_delta result.longitude, -85.454655, 0.000001
       assert result.speed == 0
       assert result.course == 209
-      assert result.format == "nmea"
+      assert result.format == :nmea
     end
 
     test "parses $GPRMC with non-zero speed" do
@@ -155,7 +155,7 @@ defmodule Aprs.NMEAHelpersTest do
       assert_in_delta result.longitude, 11.516667, 0.001
       assert result.speed == 22
       assert result.course == 84
-      assert result.format == "nmea"
+      assert result.format == :nmea
     end
 
     test "rejects $GPRMC with void status" do
@@ -206,7 +206,7 @@ defmodule Aprs.NMEAHelpersTest do
 
       assert {:ok, result} = Aprs.parse(packet)
       assert result.type == "location"
-      assert result.format == "nmea"
+      assert result.format == :nmea
       assert_in_delta result.latitude, 32.707615, 0.000001
       assert_in_delta result.longitude, -85.454655, 0.000001
       assert result.symboltable == "/"
