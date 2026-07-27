@@ -169,7 +169,11 @@ defmodule Aprs.MicE do
 
   # FAP centering: adjust latitude minutes/hundredths based on ambiguity level
   @spec apply_lat_centering(
-          non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()
+          non_neg_integer(),
+          non_neg_integer(),
+          non_neg_integer(),
+          non_neg_integer(),
+          non_neg_integer()
         ) :: {non_neg_integer(), non_neg_integer()}
   defp apply_lat_centering(minutes, hundredths, _d3_digit, _d5_digit, 0), do: {minutes, hundredths}
   defp apply_lat_centering(minutes, _hundredths, _d3_digit, d5_digit, 1), do: {minutes, d5_digit * 10 + 5}

@@ -899,8 +899,8 @@ defmodule Aprs do
   # Patch parse_position_without_timestamp to include course/speed
   @spec parse_position_without_timestamp(String.t()) :: map() | nil
   def parse_position_without_timestamp(
-        <<latitude::binary-size(8), sym_table_id::binary-size(1),
-          longitude::binary-size(9), symbol_code::binary-size(1), comment::binary>> = position_data
+        <<latitude::binary-size(8), sym_table_id::binary-size(1), longitude::binary-size(9), symbol_code::binary-size(1),
+          comment::binary>> = position_data
       ) do
     if valid_aprs_coordinate?(latitude, longitude) do
       parse_position_uncompressed(latitude, sym_table_id, longitude, symbol_code, comment)
@@ -1311,7 +1311,13 @@ defmodule Aprs do
   end
 
   @spec build_fallback_position_result(
-          boolean(), String.t(), String.t(), String.t(), String.t(), String.t(), String.t()
+          boolean(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t()
         ) :: map()
   defp build_fallback_position_result(aprs_messaging?, lat, lon, time, sym_table, sym_code, comment) do
     pos = parse_aprs_position(lat, lon)
@@ -1350,7 +1356,14 @@ defmodule Aprs do
   end
 
   @spec build_position_result(
-          boolean(), String.t(), String.t(), String.t(), String.t(), String.t(), String.t(), atom()
+          boolean(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          atom()
         ) :: map()
   defp build_position_result(aprs_messaging?, lat, lon, time, sym_table_id, symbol_code, comment, data_type) do
     position = parse_aprs_position(lat, lon)

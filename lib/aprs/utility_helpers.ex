@@ -100,7 +100,7 @@ defmodule Aprs.UtilityHelpers do
     case ambiguity do
       # ~18.52 meters
       0 -> 19
-       # ~185.2 meters
+      # ~185.2 meters
       1 -> 185
       # ~1.852 km
       2 -> 1852
