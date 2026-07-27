@@ -13,16 +13,8 @@ jobs:
   test:
     name: Build and test
     runs-on: ubuntu-latest
-    container:
-      image: ubuntu:noble
 
     steps:
-      - name: Install system packages
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends git ca-certificates nodejs npm
-          rm -rf /var/lib/apt/lists/*
-
       - name: Checkout
         uses: https://code.forgejo.org/actions/checkout@v4
 
