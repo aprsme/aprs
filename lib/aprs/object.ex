@@ -37,8 +37,8 @@ defmodule Aprs.Object do
             comment
           )
 
-        <<latitude::binary-size(8), sym_table_id::binary-size(1), longitude::binary-size(9), symbol_code::binary-size(1),
-          rest2::binary>> ->
+        <<latitude::binary-size(8), sym_table_id::binary-size(1),
+          longitude::binary-size(9), symbol_code::binary-size(1), rest2::binary>> ->
           parse_object_uncompressed_position(latitude, sym_table_id, longitude, symbol_code, rest2)
 
         _ ->

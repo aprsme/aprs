@@ -115,7 +115,7 @@ defmodule Aprs.CompressedPositionResolutionTest do
       # Complex example: 'S' (0x53 = 83)
       # offset = 83 - 33 = 50 = 0b110010
       # bits 0-1: 10 = RMC
-      # bits 2-4: 100 = resolution 4  
+      # bits 2-4: 100 = resolution 4
       # bit 5: 1 = old data
       assert Aprs.CompressedPositionHelpers.parse_compression_type("S") == %{
                gps_fix_type: :rmc,

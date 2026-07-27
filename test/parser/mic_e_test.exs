@@ -88,7 +88,7 @@ defmodule Aprs.MicETest do
     end
 
     test "handles edge case longitude directions" do
-      # Test unknown longitude direction  
+      # Test unknown longitude direction
       destination = "ABCDE!"
       data = <<40, 41, 42, 43, 44, 45, 46, 47, "test">>
       result = MicE.parse(data, destination)
@@ -103,7 +103,7 @@ defmodule Aprs.MicETest do
       result = MicE.parse(data, destination)
       assert result[:message_type] == :custom
 
-      # Standard message (P-Z)  
+      # Standard message (P-Z)
       destination = "P23456"
       data = <<40, 41, 42, 43, 44, 45, 46, 47, "test">>
       result = MicE.parse(data, destination)
@@ -232,7 +232,7 @@ defmodule Aprs.MicETest do
       # The altitude should be parsed from the data extension format ]"6M}
       assert parsed.data_extended.altitude == 236
 
-      # Verify coordinates  
+      # Verify coordinates
       assert_in_delta parsed.data_extended.latitude, 33.207833, 0.0001
       assert_in_delta parsed.data_extended.longitude, -96.7685, 0.0001
 

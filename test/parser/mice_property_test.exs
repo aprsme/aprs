@@ -184,7 +184,7 @@ defmodule Aprs.MicEPropertyTest do
           case msg_type do
             # Pattern for emergency
             :emergency -> "TTRTTV"
-            # Pattern for priority  
+            # Pattern for priority
             :priority -> "TSRTTV"
             # Pattern for custom
             :custom -> "T7STUV"
