@@ -8,12 +8,11 @@ on:
 
 env:
   MIX_ENV: test
-  ImageOS: ubuntu24
 
 jobs:
   test:
     name: Build and test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -22,7 +21,7 @@ jobs:
       - name: Set up Elixir
         uses: http://forgejo:3000/graham/setup-beam@v1
         with:
-          version-type: loose
+          version-type: strict
           elixir-version: '1.20.2'
           otp-version: '29.0'
 
