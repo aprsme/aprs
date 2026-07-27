@@ -19,7 +19,7 @@ jobs:
         uses: https://code.forgejo.org/actions/checkout@v4
 
       - name: Set up Elixir
-        uses: graham/setup-beam@v1
+        uses: http://forgejo:3000/graham/setup-beam@v1
         with:
           version-type: loose
           elixir-version: '1.20.2'
