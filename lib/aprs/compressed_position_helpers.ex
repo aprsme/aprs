@@ -189,7 +189,7 @@ defmodule Aprs.CompressedPositionHelpers do
   defp decode_gps_fix_type(0), do: :other
   # From GLL or GGA NMEA sentence
   defp decode_gps_fix_type(1), do: :gll_gga
-  # From RMC NMEA sentence  
+  # From RMC NMEA sentence
   defp decode_gps_fix_type(2), do: :rmc
   # Unknown/reserved
   defp decode_gps_fix_type(3), do: :unknown
@@ -199,7 +199,7 @@ defmodule Aprs.CompressedPositionHelpers do
   defp map_resolution_to_ambiguity(0), do: 0
   # 0.1 minute
   defp map_resolution_to_ambiguity(1), do: 1
-  # 1 minute  
+  # 1 minute
   defp map_resolution_to_ambiguity(2), do: 2
   # 10 minutes
   defp map_resolution_to_ambiguity(3), do: 3

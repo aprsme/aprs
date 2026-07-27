@@ -150,7 +150,7 @@ defmodule Aprs.CompressedPositionHelpersTest do
       assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("arest") == 0
       # 'Z' = 0x5A - 33 = 57, bits 2-4 = 110 = 6
       assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("Zrest") == 0
-      # '0' = 0x30 - 33 = 15, bits 2-4 = 011 = 3  
+      # '0' = 0x30 - 33 = 15, bits 2-4 = 011 = 3
       assert Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity("0rest") == 3
     end
 
