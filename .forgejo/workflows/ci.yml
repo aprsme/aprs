@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Elixir
-        uses: https://git.mcintire.me/graham/setup-beam@v1
+        uses: http://forgejo:3000/graham/setup-beam@v1
         with:
           version-type: strict
           elixir-version: '1.20.2'
