@@ -126,8 +126,8 @@ defmodule Aprs.Item do
           optional(:posambiguity) => non_neg_integer()
         }
   defp parse_uncompressed_position(
-         <<latitude::binary-size(8), sym_table_id::binary-size(1),
-           longitude::binary-size(9), symbol_code::binary-size(1), comment::binary>>
+         <<latitude::binary-size(8), sym_table_id::binary-size(1), longitude::binary-size(9), symbol_code::binary-size(1),
+           comment::binary>>
        ) do
     pos = Aprs.Position.parse_aprs_position(latitude, longitude)
     ambiguity = Map.get(pos, :ambiguity, 0)
