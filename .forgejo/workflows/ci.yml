@@ -21,7 +21,7 @@ jobs:
       - name: Set up Elixir
         uses: http://forgejo:3000/graham/setup-beam.git@v1
         with:
-          version-type: strict
+          version-type: loose
           elixir-version: '1.20.2'
           otp-version: '29.0'
 
