@@ -1,7 +1,7 @@
 defmodule Aprs.MixProject do
   use Mix.Project
 
-  @source_url "https://github.com/gmcintire/aprs"
+  @source_url "https://github.com/aprsme/aprs"
   @version "1.0.1"
 
   def project do
@@ -39,7 +39,7 @@ defmodule Aprs.MixProject do
   defp package do
     [
       maintainers: ["Graham McIntire"],
-      licenses: ["GPL-2.0"],
+      licenses: ["GPL-3.0-or-later"],
       links: %{
         "GitHub" => @source_url,
         "HexDocs" => "https://hexdocs.pm/aprs"
