@@ -4,6 +4,10 @@ defmodule Aprs.TelemetryFromComment do
 
   A telemetry block contains a sequence pair, one to five analog pairs, and,
   when all seven pairs are present, one digital pair.
+
+  The values are base-91 counts, so `vals` holds integers in 0..8280. That is
+  not the same shape as a `T#` telemetry packet, whose analog values are decimal
+  text and are reported as floats by `Aprs.Telemetry`.
   """
 
   @base91_min 33
