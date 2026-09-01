@@ -16,17 +16,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: https://code.forgejo.org/actions/checkout@v4
+        uses: actions/checkout@v4
 
       - name: Set up Elixir
-        uses: http://forgejo:3000/graham/setup-beam@v1
+        uses: erlef/setup-beam@v1
         with:
+          version-file: .tool-versions
           version-type: strict
-          elixir-version: '1.20.2'
-          otp-version: '29.0'
 
       - name: Restore dependency and build caches
-        uses: https://code.forgejo.org/actions/cache@v4
+        uses: actions/cache@v4
         with:
           path: |
             deps
