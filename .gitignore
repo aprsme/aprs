@@ -1,3 +1,10 @@
+# Nix/direnv dev environment state. flake.nix, flake.lock, nix/ and .envrc are
+# tracked; only the per-checkout caches below are not.
+/.direnv/
+/.nix-mix/
+/.nix-hex/
+.env.local
+
 # The directory Mix will write compiled artifacts to.
 /_build/
 
