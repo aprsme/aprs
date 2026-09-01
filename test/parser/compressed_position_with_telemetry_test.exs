@@ -72,5 +72,33 @@ defmodule Aprs.CompressedPositionWithTelemetryTest do
       assert data.telemetry.vals == ["0.00", "0.20", "0.00", "0.00", "1.00"]
       assert data.telemetry.bits == "00000000"
     end
+
+    test "parses uncompressed position with embedded telemetry in comment" do
+      packet = ~s(N0CALL>APRS,TCPIP*,qAC,T2TEST:!4903.50N/07201.75W-iGate |%g%\\!H|)
+      {:ok, parsed} = Aprs.parse(packet)
+
+      data = parsed.data_extended
+      assert data.compressed? == false
+      assert data.comment == "iGate"
+      assert data.telemetry.seq == 434
+      assert data.telemetry.vals == [423, 39]
+    end
+
+    test "parses timestamped position with embedded telemetry in comment" do
+      packet = ~s(N0CALL>APRS,TCPIP*,qAC,T2TEST:@092345z4903.50N/07201.75W-iGate |%g%\\!H|)
+      {:ok, parsed} = Aprs.parse(packet)
+
+      data = parsed.data_extended
+      assert data.comment == "iGate"
+      assert data.telemetry.seq == 434
+      assert data.telemetry.vals == [423, 39]
+    end
+
+    test "omits the telemetry key when the comment has none" do
+      packet = "N0CALL>APRS,TCPIP*,qAC,T2TEST:!4903.50N/07201.75W-plain comment"
+      {:ok, parsed} = Aprs.parse(packet)
+
+      refute Map.has_key?(parsed.data_extended, :telemetry)
+    end
   end
 end
