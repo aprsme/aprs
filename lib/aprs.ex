@@ -1029,7 +1029,7 @@ defmodule Aprs do
     {altitude, comment_after_alt} = extract_altitude_and_clean_comment(comment_after_ext)
 
     # Then comment telemetry |...|
-    {_telemetry, comment_after_telemetry} =
+    {telemetry, comment_after_telemetry} =
       Aprs.TelemetryFromComment.extract_telemetry_from_comment(comment_after_alt)
 
     # Then DAO !XYZ!
@@ -1066,7 +1066,9 @@ defmodule Aprs do
     }
 
     # Check if this is a weather packet and merge accordingly
-    merge_weather_if_present(base_map, sym_table_id, symbol_code, comment)
+    base_map
+    |> maybe_put_telemetry(telemetry)
+    |> merge_weather_if_present(sym_table_id, symbol_code, comment)
   end
 
   @spec parse_position_short_uncompressed(String.t(), String.t(), String.t()) :: map()
@@ -1327,7 +1329,7 @@ defmodule Aprs do
     {course, speed, phg_string, radiorange, comment_after_ext} = extract_data_extension(comment)
     {altitude, comment_after_alt} = extract_altitude_and_clean_comment(comment_after_ext)
 
-    {_telemetry, comment_after_telemetry} =
+    {telemetry, comment_after_telemetry} =
       Aprs.TelemetryFromComment.extract_telemetry_from_comment(comment_after_alt)
 
     {_dao_data, comment_after_dao} = parse_dao_extension(comment_after_telemetry)
@@ -1352,7 +1354,9 @@ defmodule Aprs do
       posambiguity: ambiguity
     }
 
-    merge_weather_if_present(base_map, sym_table, sym_code, comment)
+    base_map
+    |> maybe_put_telemetry(telemetry)
+    |> merge_weather_if_present(sym_table, sym_code, comment)
   end
 
   @spec build_position_result(
@@ -1375,7 +1379,7 @@ defmodule Aprs do
     {course, speed, phg_string, radiorange, comment_after_ext} = extract_data_extension(comment)
     {altitude, comment_after_alt} = extract_altitude_and_clean_comment(comment_after_ext)
 
-    {_telemetry, comment_after_telemetry} =
+    {telemetry, comment_after_telemetry} =
       Aprs.TelemetryFromComment.extract_telemetry_from_comment(comment_after_alt)
 
     {dao_data, comment_after_dao} = parse_dao_extension(comment_after_telemetry)
@@ -1408,7 +1412,9 @@ defmodule Aprs do
       posresolution: posresolution
     }
 
-    merge_weather_if_present(base_map, sym_table_id, symbol_code, comment)
+    base_map
+    |> maybe_put_telemetry(telemetry)
+    |> merge_weather_if_present(sym_table_id, symbol_code, comment)
   end
 
   # Status Report parsing
