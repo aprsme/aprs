@@ -50,6 +50,11 @@ defmodule Aprs.AX25Test do
       assert {:error, _} = AX25.parse_path("WIDE1-1,,WIDE2-2")
     end
 
+    test "returns error for non-binary input" do
+      assert {:error, _} = AX25.parse_path(nil)
+      assert {:error, _} = AX25.parse_path(123)
+    end
+
     property "parses any non-empty segmented path or returns error" do
       check all s <- StreamData.string(:ascii, min_length: 1, max_length: 20) do
         result = AX25.parse_path(s)

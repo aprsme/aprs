@@ -174,6 +174,33 @@ defmodule Aprs.PositionTest do
     end
   end
 
+  describe "parse_aprs_position/2 with space digits not masked by ambiguity" do
+    # Ambiguity is derived from trailing spaces in the *latitude* minutes only,
+    # so a space can land in a minute slot that the ambiguity clause still
+    # reads. Those spaces are interpreted as the digit zero.
+    test "space in longitude hundredths digit is treated as zero" do
+      # Latitude has no trailing spaces → ambiguity 0, so the full-precision
+      # clause reads the longitude's hundredths digit, which is a space.
+      spaced = Position.parse_aprs_position("4903.50N", "07201.7 W")
+      zeroed = Position.parse_aprs_position("4903.50N", "07201.70W")
+
+      assert spaced.ambiguity == 0
+      assert spaced.latitude == zeroed.latitude
+      assert spaced.longitude == zeroed.longitude
+      assert_in_delta spaced.longitude, -72.0283333, 0.0000001
+    end
+
+    test "space in latitude minute-tens digit is treated as zero" do
+      spaced = Position.parse_aprs_position("49 3.50N", "07201.75W")
+      zeroed = Position.parse_aprs_position("4903.50N", "07201.75W")
+
+      assert spaced.ambiguity == 0
+      assert spaced.latitude == zeroed.latitude
+      assert spaced.longitude == zeroed.longitude
+      assert_in_delta spaced.latitude, 49.0583333, 0.0000001
+    end
+  end
+
   describe "full packet parsing with position ambiguity" do
     test "WINLINK object with ambiguity=2 spaces" do
       packet =
@@ -226,5 +253,139 @@ defmodule Aprs.PositionTest do
       assert_in_delta data.longitude, -123.075833, 0.001
       assert data.position_ambiguity == 1
     end
+  end
+
+  describe "parse_aprs_position/2 properties" do
+    # Half-width, in degrees, of the cell that each ambiguity level collapses
+    # the minute field down to: 1 masked digit → 0.1', 2 → 1', 3 → 10', 4 → 60'.
+    @ambiguity_cell_half_degrees %{1 => 0.05 / 60, 2 => 0.5 / 60, 3 => 5.0 / 60, 4 => 30.0 / 60}
+
+    property "decodes a full-precision coordinate to degrees + minutes/60" do
+      check all lat_deg <- StreamData.integer(0..89),
+                lat_min <- StreamData.integer(0..59),
+                lat_hundredths <- StreamData.integer(0..99),
+                lat_dir <- StreamData.member_of(["N", "S"]),
+                lon_deg <- StreamData.integer(0..179),
+                lon_min <- StreamData.integer(0..59),
+                lon_hundredths <- StreamData.integer(0..99),
+                lon_dir <- StreamData.member_of(["E", "W"]) do
+        lat_str = pad(lat_deg, 2) <> pad(lat_min, 2) <> "." <> pad(lat_hundredths, 2) <> lat_dir
+        lon_str = pad(lon_deg, 3) <> pad(lon_min, 2) <> "." <> pad(lon_hundredths, 2) <> lon_dir
+
+        expected_lat = sign(lat_dir) * (lat_deg + (lat_min + lat_hundredths / 100) / 60)
+        expected_lon = sign(lon_dir) * (lon_deg + (lon_min + lon_hundredths / 100) / 60)
+
+        result = Position.parse_aprs_position(lat_str, lon_str)
+
+        assert result.ambiguity == 0
+        assert_in_delta result.latitude, expected_lat, 1.0e-9
+        assert_in_delta result.longitude, expected_lon, 1.0e-9
+      end
+    end
+
+    property "masking the last N minute digits yields ambiguity N and stays within that cell" do
+      check all lat_deg <- StreamData.integer(0..89),
+                lat_min <- StreamData.integer(0..59),
+                lat_hundredths <- StreamData.integer(0..99),
+                lon_deg <- StreamData.integer(0..179),
+                lon_min <- StreamData.integer(0..59),
+                lon_hundredths <- StreamData.integer(0..99),
+                masked <- StreamData.integer(1..4) do
+        lat_digits = pad(lat_min, 2) <> pad(lat_hundredths, 2)
+        lon_digits = pad(lon_min, 2) <> pad(lon_hundredths, 2)
+
+        precise_lat = pad(lat_deg, 2) <> insert_point(lat_digits) <> "N"
+        precise_lon = pad(lon_deg, 3) <> insert_point(lon_digits) <> "W"
+
+        ambiguous_lat = pad(lat_deg, 2) <> insert_point(mask_trailing(lat_digits, masked)) <> "N"
+        ambiguous_lon = pad(lon_deg, 3) <> insert_point(mask_trailing(lon_digits, masked)) <> "W"
+
+        precise = Position.parse_aprs_position(precise_lat, precise_lon)
+        result = Position.parse_aprs_position(ambiguous_lat, ambiguous_lon)
+
+        # Ambiguity is derived from trailing spaces in the latitude minutes.
+        assert result.ambiguity == masked
+
+        # A truncated coordinate can sit exactly on the cell edge, so allow a
+        # small epsilon for float rounding at that boundary.
+        tolerance = @ambiguity_cell_half_degrees[masked] + 1.0e-9
+        assert abs(result.latitude - precise.latitude) <= tolerance
+        assert abs(result.longitude - precise.longitude) <= tolerance
+      end
+    end
+
+    property "always returns the three position keys and never raises on arbitrary binaries" do
+      check all lat <- StreamData.binary(max_length: 12),
+                lon <- StreamData.binary(max_length: 12) do
+        result = Position.parse_aprs_position(lat, lon)
+
+        assert result |> Map.keys() |> Enum.sort() == [:ambiguity, :latitude, :longitude]
+        assert result.ambiguity in 0..4
+        assert is_nil(result.latitude) or is_float(result.latitude)
+        assert is_nil(result.longitude) or is_float(result.longitude)
+      end
+    end
+
+    property "latitude and longitude are either both parsed or both nil" do
+      check all lat <- StreamData.string([?0..?9, ?\s, ?., ?N, ?S], max_length: 10),
+                lon <- StreamData.string([?0..?9, ?\s, ?., ?E, ?W], max_length: 11) do
+        result = Position.parse_aprs_position(lat, lon)
+        assert is_nil(result.latitude) == is_nil(result.longitude)
+      end
+    end
+
+    property "from_aprs/2 delegates to parse_aprs_position/2" do
+      check all lat <- StreamData.string([?0..?9, ?\s, ?., ?N, ?S], max_length: 10),
+                lon <- StreamData.string([?0..?9, ?\s, ?., ?E, ?W], max_length: 11) do
+        assert Position.from_aprs(lat, lon) == Position.parse_aprs_position(lat, lon)
+      end
+    end
+  end
+
+  describe "calculate_position_ambiguity/2 properties" do
+    property "always returns a level between 0 and 4" do
+      check all lat <- StreamData.string([?0..?9, ?\s, ?., ?N, ?S], max_length: 12),
+                lon <- StreamData.string([?0..?9, ?\s, ?., ?E, ?W], max_length: 12) do
+        assert Position.calculate_position_ambiguity(lat, lon) in 0..4
+      end
+    end
+
+    property "returns the shared space count when both coordinates agree, else 0" do
+      check all spaces <- StreamData.integer(0..6),
+                other <- StreamData.integer(0..6) do
+        lat = String.duplicate(" ", spaces)
+        lon = String.duplicate(" ", other)
+
+        expected = if spaces == other and spaces <= 4, do: spaces, else: 0
+        assert Position.calculate_position_ambiguity(lat, lon) == expected
+      end
+    end
+  end
+
+  describe "from_decimal/2 properties" do
+    property "returns the given coordinates as floats" do
+      check all lat <- StreamData.one_of([StreamData.integer(-90..90), StreamData.float(min: -90.0, max: 90.0)]),
+                lon <- StreamData.one_of([StreamData.integer(-180..180), StreamData.float(min: -180.0, max: 180.0)]) do
+        result = Position.from_decimal(lat, lon)
+
+        assert is_float(result.latitude)
+        assert is_float(result.longitude)
+        assert result.latitude == lat / 1
+        assert result.longitude == lon / 1
+      end
+    end
+  end
+
+  defp pad(value, width), do: String.pad_leading(to_string(value), width, "0")
+
+  defp sign(dir) when dir in ["S", "W"], do: -1
+  defp sign(_), do: 1
+
+  # "2763" -> "27.63"
+  defp insert_point(<<m1, m2, f1, f2>>), do: <<m1, m2, ?., f1, f2>>
+
+  defp mask_trailing(digits, count) do
+    keep = 4 - count
+    String.slice(digits, 0, keep) <> String.duplicate(" ", count)
   end
 end
