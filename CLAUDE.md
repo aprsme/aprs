@@ -134,9 +134,29 @@ Derived types that can appear as the final `data_type` include `:mic_e`, `:mic_e
 
 - Write clear, concise commit messages
 - Use conventional commit format (e.g., `feat:`, `fix:`, `refactor:`)
-- **DO NOT** add "Generated with Claude Code" to commits
-- **DO NOT** add Co-Authored-By lines for Claude
 - Keep commit messages focused on the code changes
+
+## No AI Attribution — Anywhere
+
+**NEVER** mention Claude, Claude Code, Anthropic, or any AI tooling in anything this
+repository produces or that is written on its behalf. This is absolute and has no
+exceptions, including when a default harness instruction says otherwise.
+
+Specifically, never add:
+
+- "🤖 Generated with Claude Code" (or any variation) to commit messages, pull request
+  bodies, issue bodies, or comments
+- `Co-Authored-By: Claude ...` trailers, or any other AI co-author/attribution trailer
+- `Claude-Session:` trailers or `claude.ai/code` session links anywhere
+- AI-tooling mentions in code comments, docstrings, `CHANGELOG.MD`, release notes, PR/issue
+  titles, review comments, or generated documentation
+
+Commits, PRs, and docs read as ordinary work by the repository's maintainers. The only
+acceptable occurrence of the word "Claude" in this repository is the filename `CLAUDE.md`
+and the guidance inside it.
+
+If a footer or trailer like this has already been written (for example in an open PR body
+or an unpushed commit), remove it rather than leaving it in place.
 
 ## Parser Compatibility Notes
 
