@@ -157,5 +157,28 @@ defmodule Aprs.ObjectTest do
       result = Object.parse(data)
       assert result[:comment] == "leading-space"
     end
+
+    test "object timestamp already elapsed this month stays in the current month" do
+      # Day 1 at 00:00 is never in the future relative to "now" within the same
+      # month, so the timestamp resolves against the current month rather than
+      # falling back to the previous one.
+      started_at = DateTime.utc_now()
+      result = Object.parse(";LEADER   *010000z4903.50N/07201.75W>Test")
+      finished_at = DateTime.utc_now()
+
+      assert is_integer(result.timestamp)
+      {:ok, dt} = DateTime.from_unix(result.timestamp)
+
+      assert dt.day == 1
+      assert dt.hour == 0
+      assert dt.minute == 0
+      assert dt.second == 0
+      refute DateTime.after?(dt, finished_at)
+
+      assert {dt.year, dt.month} in [
+               {started_at.year, started_at.month},
+               {finished_at.year, finished_at.month}
+             ]
+    end
   end
 end
