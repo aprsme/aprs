@@ -194,16 +194,16 @@ defmodule Aprs.ParserTest do
         {"=", :position_with_message},
         {"@", :timestamped_position_with_message},
         {";", :object},
-        {"`", :mic_e_old},
+        {"`", :mic_e},
         {"'", :mic_e_old},
         {"_", :weather},
-        {"T", :telemetry},
+        {"T#", :telemetry},
         {"$", :raw_gps_ultimeter},
         {"<", :station_capabilities},
         {"?", :query},
         {"{", :user_defined},
         {"}", :third_party_traffic},
-        {"%", :item},
+        {"%", :agrelo_dfjr},
         {")", :item},
         {"*", :peet_logging},
         {",", :invalid_test_data}
@@ -218,26 +218,21 @@ defmodule Aprs.ParserTest do
 
     property "parse_datatype handles special cases for # prefix" do
       check all rest <- StreamData.string(:printable, min_length: 0, max_length: 20) do
-        # DFS case
-        dfs_data = "#DFS" <> rest
-        assert Aprs.parse_datatype(dfs_data) == :df_report
+        assert Aprs.parse_datatype("#DFS" <> rest) == :df_report
+        assert Aprs.parse_datatype("#PHG" <> rest) == :phg_data
 
-        # PHG case
-        phg_data = "#PHG" <> rest
-        assert Aprs.parse_datatype(phg_data) == :phg_data
-
-        # Other # cases
-        other_data = "#" <> rest
-        assert Aprs.parse_datatype(other_data) == :phg_data
+        # A bare `#` is a Peet Bros U-II weather station, not PHG data.
+        assert Aprs.parse_datatype("#" <> rest) == :peet_logging
       end
     end
 
     property "parse_datatype returns :unknown_datatype for unrecognized first characters" do
-      # Generate all uppercase A..Z except T and X
-      valid_chars = Enum.to_list(?A..?Z) -- [?T, ?X]
+      # Generate all uppercase A..Z except X, and without the legacy `!`-anywhere
+      # position form in the first 40 bytes.
+      valid_chars = Enum.to_list(?A..?Z) -- [?X]
 
       check all char <- StreamData.member_of(valid_chars),
-                rest <- StreamData.string(:printable, min_length: 0, max_length: 20) do
+                rest <- StreamData.string([?a..?z, ?0..?9, ?\s], min_length: 0, max_length: 20) do
         data = <<char>> <> rest
         assert Aprs.parse_datatype(data) == :unknown_datatype
       end
@@ -256,23 +251,27 @@ defmodule Aprs.ParserTest do
       assert Aprs.parse_datatype("=posmsg") == :position_with_message
       assert Aprs.parse_datatype("@tsmsg") == :timestamped_position_with_message
       assert Aprs.parse_datatype(";object") == :object
-      assert Aprs.parse_datatype("`mic_e") == :mic_e_old
+      assert Aprs.parse_datatype("`mic_e") == :mic_e
       assert Aprs.parse_datatype("'mic_e_old") == :mic_e_old
       assert Aprs.parse_datatype("_weather") == :weather
-      assert Aprs.parse_datatype("Ttele") == :telemetry
+      assert Aprs.parse_datatype("T#tele") == :telemetry
       assert Aprs.parse_datatype("$raw") == :raw_gps_ultimeter
       assert Aprs.parse_datatype("<cap") == :station_capabilities
       assert Aprs.parse_datatype("?query") == :query
       assert Aprs.parse_datatype("{userdef") == :user_defined
       assert Aprs.parse_datatype("}thirdparty") == :third_party_traffic
-      assert Aprs.parse_datatype("%item") == :item
+      assert Aprs.parse_datatype("%agrelo") == :agrelo_dfjr
       assert Aprs.parse_datatype(")item") == :item
       assert Aprs.parse_datatype("*peet") == :peet_logging
       assert Aprs.parse_datatype(",test") == :invalid_test_data
       assert Aprs.parse_datatype("#DFSfoo") == :df_report
       assert Aprs.parse_datatype("#PHGfoo") == :phg_data
-      assert Aprs.parse_datatype("#foo") == :phg_data
+      assert Aprs.parse_datatype("#foo") == :peet_logging
       assert Aprs.parse_datatype("Xunknown") == :unknown_datatype
+      assert Aprs.parse_datatype("[IO91SX") == :maidenhead_grid
+
+      # Legacy form: the `!` indicator may appear in the first 40 bytes.
+      assert Aprs.parse_datatype("TEST!4903.50N/07201.75W-") == :position
     end
   end
 
@@ -420,14 +419,14 @@ defmodule Aprs.ParserTest do
       third_party = parsed.data_extended.third_party_packet
       assert third_party.sender == "F1IQH"
       assert third_party.destination == "TWPQR3"
-      assert third_party.data_type == :mic_e_old
+      assert third_party.data_type == :mic_e
 
       # Check the Mic-E data was parsed
       assert is_map(third_party.data_extended)
-      assert third_party.data_extended.data_type == :mic_e_old
+      assert third_party.data_extended.data_type == :mic_e
       assert is_float(third_party.data_extended.latitude)
       assert is_float(third_party.data_extended.longitude)
-      assert third_party.data_extended.comment == "`439.750MHz t077 -940 michael_1"
+      assert third_party.data_extended.comment == "439.750MHz t077 -940 michael_1"
     end
 
     test "handles third-party packet with embedded position from KO6TX-1" do
@@ -564,13 +563,14 @@ defmodule Aprs.ParserTest do
       assert data[:has_position] == true
     end
 
-    test "handles raw GPS ultimeter data" do
+    test "handles a GGA sentence under the $ data type indicator" do
       result =
         Aprs.parse_data(:raw_gps_ultimeter, "", "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47")
 
-      assert is_map(result)
-      assert result[:data_type] == :raw_gps_ultimeter
-      assert result[:error] == "Unsupported NMEA sentence type"
+      assert result[:data_type] == :nmea
+      assert result[:nmea_type] == :gga
+      assert_in_delta result[:latitude], 48.1173, 0.0001
+      assert_in_delta result[:altitude], 1789.37, 0.01
     end
 
     test "handles Mic-E data" do
@@ -656,7 +656,7 @@ defmodule Aprs.ParserTest do
           {:ok, parsed} ->
             assert parsed.sender == sender
             assert parsed.destination == destination
-            assert parsed.data_type in [:position, :malformed_position]
+            assert parsed.data_type in [:position, :malformed_position, :position_error]
             assert is_map(parsed.data_extended) or is_nil(parsed.data_extended)
             assert is_binary(parsed.id)
             assert is_struct(parsed.received_at, DateTime)
@@ -750,17 +750,13 @@ defmodule Aprs.ParserTest do
   end
 
   describe "helper functions" do
-    test "convert_to_base91/1" do
-      # Test with known values
-      assert Aprs.convert_to_base91("ABCD") == 24_390_674
-      assert Aprs.convert_to_base91("!!!!") == 0
-      assert Aprs.convert_to_base91("~~~~") == 70_860_792
-    end
+    test "base91 compressed coordinates decode through parse/1" do
+      {:ok, parsed} = Aprs.parse("N0CALL>APRS:!/5L!!<*e7>7P[")
+      data = parsed.data_extended
 
-    test "decode_compressed_position/1" do
-      # Decode a valid compressed position format
-      assert %{latitude: _, longitude: _, symbol_code: _} =
-               Aprs.decode_compressed_position("/ABCDEFGHI12")
+      assert_in_delta data.latitude, 49.5, 0.001
+      assert_in_delta data.longitude, -72.75, 0.001
+      assert data.symbol_code == ">"
     end
 
     test "extract_course_and_speed/1" do
@@ -772,88 +768,43 @@ defmodule Aprs.ParserTest do
       assert data[:speed] == 45.0
     end
 
-    test "parse_position_with_datetime_and_weather/7" do
-      result =
-        Aprs.parse_position_with_datetime_and_weather(
-          false,
-          "123456z",
-          "1234.56N",
-          "/",
-          "09876.54W",
-          "!",
-          "_123/045g015t090h60b10161"
-        )
+    test "station capabilities are decoded into a keyed map" do
+      result = Aprs.parse_data(:station_capabilities, "APRS", "IGATE,MSG_CNT=99,LOC_CNT=1234")
 
-      assert is_map(result)
-      assert result[:data_type] == :weather
-      assert result[:timestamp] == "123456z"
-      assert result[:aprs_messaging?] == false
+      assert result.data_type == :station_capabilities
+      assert result.capabilities == %{"IGATE" => nil, "MSG_CNT" => "99", "LOC_CNT" => "1234"}
     end
 
-    test "parse_status/1" do
-      result = Aprs.parse_status(">Test status message")
-      assert is_map(result)
-      assert result[:data_type] == :status
-      assert result[:status_text] == "Test status message"
+    test "status reports keep their text" do
+      result = Aprs.parse_data(:status, "APRS", "Test status message")
 
-      result = Aprs.parse_status("Test status without >")
-      assert is_map(result)
-      assert result[:data_type] == :status
-      assert result[:status_text] == "Test status without >"
+      assert result.data_type == :status
+      assert result.status_text == "Test status message"
     end
 
-    test "parse_station_capabilities/1" do
-      result = Aprs.parse_station_capabilities("<Test capabilities")
-      assert is_map(result)
-      assert result[:data_type] == :station_capabilities
-      assert result[:capabilities] == "Test capabilities"
+    test "queries keep their query type byte" do
+      result = Aprs.parse_data(:query, "APRS", "WXQuery data")
 
-      result = Aprs.parse_station_capabilities("Test capabilities without <")
-      assert is_map(result)
-      assert result[:data_type] == :station_capabilities
-      assert result[:capabilities] == "Test capabilities without <"
+      assert result.data_type == :query
+      assert result.query_type == "W"
+      assert result.query_data == "XQuery data"
     end
 
-    test "parse_query/1" do
-      result = Aprs.parse_query("?AQuery data")
-      assert is_map(result)
-      assert result[:data_type] == :query
-      assert result[:query_type] == "A"
-      assert result[:query_data] == "Query data"
+    test "user defined data keeps its user id" do
+      result = Aprs.parse_data(:user_defined, "APRS", "AExperimental data")
 
-      result = Aprs.parse_query("Query data without ?")
-      assert is_map(result)
-      assert result[:data_type] == :query
-      assert result[:query_data] == "Query data without ?"
+      assert result.data_type == :user_defined
+      assert result.user_id == "A"
+      assert result.user_data == "Experimental data"
+      refute result.experimental?
     end
 
-    test "parse_user_defined/1" do
-      result = Aprs.parse_user_defined("{AExperimental data")
-      assert is_map(result)
-      assert result[:data_type] == :user_defined
-      assert result[:user_id] == "A"
-      assert result[:format] == :experimental_a
-      assert result[:content] == "Experimental data"
+    test "only {{ is experimental user defined data" do
+      result = Aprs.parse_data(:user_defined, "APRS", "{payload")
 
-      result = Aprs.parse_user_defined("User data without {")
-      assert is_map(result)
-      assert result[:data_type] == :user_defined
-      assert result[:user_data] == "User data without {"
-    end
-
-    test "parse_user_defined_format/2" do
-      # Test through public interface
-      result = Aprs.parse_user_defined("{AExperimental data")
-      assert result[:format] == :experimental_a
-
-      result = Aprs.parse_user_defined("{BCustom data")
-      assert result[:format] == :experimental_b
-
-      result = Aprs.parse_user_defined("{CMore data")
-      assert result[:format] == :custom_c
-
-      result = Aprs.parse_user_defined("{XUnknown data")
-      assert result[:format] == :unknown
+      assert result.user_id == "{"
+      assert result.experimental?
+      assert result.user_data == "payload"
     end
   end
 end

@@ -182,12 +182,15 @@ defmodule Aprs.CoverageTest do
     end
   end
 
-  describe "DAO alternative format" do
-    test "parses DAO with & prefix" do
-      packet = "N0CALL>APRS:!1234.56N/12345.67W-&!H test"
-      result = Aprs.parse(packet)
-      assert {:ok, parsed} = result
-      assert parsed.data_extended.dao
+  describe "DAO extension" do
+    test "parses a DAO extension and applies its extra precision" do
+      packet = "N0CALL>APRS:!4903.50N/07201.75W-Test!W52!"
+      assert {:ok, parsed} = Aprs.parse(packet)
+
+      assert parsed.data_extended.dao.datum == "W"
+      assert parsed.daodatumbyte == "W"
+      assert parsed.data_extended.comment == "Test"
+      assert_in_delta parsed.data_extended.latitude, 49.0584166, 0.000001
     end
   end
 

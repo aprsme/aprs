@@ -3,10 +3,6 @@ defmodule Aprs.Types do
   Type definitions for APRS parsing.
   """
 
-  alias Aprs.Types.MicE
-
-  @type mice :: MicE.t()
-
   defmodule Position do
     @moduledoc """
     Represents position data with latitude, longitude, and associated metadata.

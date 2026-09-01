@@ -82,8 +82,10 @@ Aprs.parse("not a packet")
 #=> {:error, :invalid_packet}
 ```
 
-Coordinates are plain floats. Speed and altitude are left in the units decoded from the
-packet — the library does not convert them.
+Coordinates are plain floats. Every packet format reports the same units, whichever way
+the packet encoded them: `speed` in knots, `altitude` in feet, `course` in degrees
+(1-360, where 360 is due north and 0 or a missing value means unknown) and
+`posresolution` in metres.
 
 ### Reference-parser compatibility fields
 
@@ -118,11 +120,12 @@ Mic-E:
 ```elixir
 {:ok, packet} = Aprs.parse(~s(KD8XYZ-9>T2SXTS,WIDE1-1:`(_fn"Oj/]"4H}Testing Mic-E))
 
-packet.data_type                    #=> :mic_e_old
+packet.data_type                    #=> :mic_e
 packet.latitude                     #=> 42.6405
 packet.longitude                    #=> -112.129
-packet.data_extended.speed          #=> 17.37952
+packet.data_extended.speed          #=> 20.0
 packet.data_extended.course         #=> 251
+packet.data_extended.altitude       #=> 160.761154855
 packet.data_extended.message_type   #=> :standard
 ```
 
@@ -151,7 +154,7 @@ Telemetry:
 
 packet.data_type            #=> :telemetry
 packet.data_extended.telemetry
-#=> %{seq: "005", vals: ["199.00", "0.00", "255.00", "73.00", "123.00"], bits: "01101001"}
+#=> %{seq: "005", vals: [199.0, 0.0, 255.0, 73.0, 123.0], bits: "01101001"}
 ```
 
 Message:
@@ -161,7 +164,8 @@ Message:
 
 packet.data_type                  #=> :message
 packet.data_extended.addressee    #=> "WU2Z"
-packet.data_extended.message_text #=> "Hello there{001"
+packet.data_extended.message_text #=> "Hello there"
+packet.data_extended.message_number #=> "001"
 ```
 
 Object:
@@ -173,7 +177,7 @@ packet.data_type                 #=> :object
 packet.data_extended.object_name #=> "LEADER"
 packet.data_extended.live_killed #=> "*"
 packet.data_extended.course      #=> 88
-packet.data_extended.speed       #=> 36
+packet.data_extended.speed       #=> 36.0
 ```
 
 ## Supported packet types
@@ -184,37 +188,45 @@ packet.data_extended.speed       #=> 36
 | `=` | `:position_with_message` | |
 | `/` | `:timestamped_position` | |
 | `@` | `:timestamped_position_with_message` | |
-| `` ` `` `'` | `:mic_e_old` / `:mic_e` | Position, course/speed, altitude, message bits |
+| `` ` `` | `:mic_e` | Position, course/speed, altitude, message bits |
+| `'` | `:mic_e_old` | Old Mic-E; `0x1C`/`0x1D` are the rev-0 forms |
 | `_` | `:weather` | Full weather field set |
-| `;` | `:object` | Live/killed, course/speed, altitude, DAO |
-| `%` `)` | `:item` | |
-| `:` | `:message` | Addressee, message text, message numbers |
-| `>` | `:status` | |
-| `T` | `:telemetry` | Analog values, digital bits, sequence |
-| `#PHG` / `#` | `:phg_data` | Power, height, gain, directivity |
+| `;` | `:object` | Live/killed, course/speed, altitude, RNG, DAO, weather |
+| `)` | `:item` | Live/killed, course/speed, altitude, RNG, DAO, weather |
+| `:` | `:message` | Addressee, text, message number, reply-ack, `ack`/`rej` |
+| `>` | `:status` | Timestamp, Maidenhead locator, beam heading/ERP |
+| `T#` | `:telemetry` | 1-5 analog values, digital bits, sequence |
+| `[` | `:maidenhead_grid` | Grid locator beacon, decoded to a position |
+| `%` | `:agrelo_dfjr` | Agrelo DFJr / MicroFinder |
+| `#PHG` | `:phg_data` | Power, height, gain, directivity |
 | `#DFS` | `:df_report` | |
-| `$` | `:raw_gps_ultimeter` | NMEA sentences decoded to `:nmea` |
-| `<` | `:station_capabilities` | |
+| `$` | `:raw_gps_ultimeter` | NMEA (RMC, GGA, GLL, VTG, WPL) and `$ULTW` |
+| `<` | `:station_capabilities` | Decoded into a capability map |
 | `?` | `:query` | |
-| `{` | `:user_defined` | |
+| `{` | `:user_defined` | `{{` is the spec's experimental form |
 | `}` | `:third_party_traffic` | |
-| `*` | `:peet_logging` | |
+| `#` `*` | `:peet_logging` | Peet Bros U-II weather station |
 | `,` | `:invalid_test_data` | |
+
+The legacy rule that `!` may appear anywhere in the first 40 bytes of the information
+field is honoured when the leading byte is not itself a data type indicator.
 
 Additional handling for position-bearing packets, following the same order as the
 reference `Ham::APRS::FAP` parser:
 
-- A leading data extension — course/speed (`088/036`), PHG (`PHG5132`) or RNG
-  (`RNG0050`) — parsed as mutually exclusive alternatives and removed from the comment
-- Altitude anywhere in the comment (`/A=001234`)
+- A leading data extension — course/speed (`088/036`), PHG (`PHG5132`), RNG (`RNG0050`)
+  or DFS (`DFS2360`) — parsed as mutually exclusive alternatives and removed from the
+  comment; a course/speed pair followed by `/BRG/NRQ` is decoded as a DF report
+- Altitude anywhere in the comment (`/A=001234`), validated to −10 000..500 000 ft
 - Base91 telemetry embedded in the comment (`|SS...|`), removed from the comment and
-  decoded into `telemetry: %{seq: integer, vals: [integer]}` (the key is absent when the
-  comment carries no telemetry)
-- DAO precision extensions (`!W12!`), exposed as `dao` and `daodatumbyte`
+  decoded into `telemetry: %{seq: integer, vals: [integer], bits: String.t() | nil}`
+  (the key is absent when the comment carries no telemetry)
+- DAO precision extensions (`!W12!`), exposed as `dao` and `daodatumbyte`, with the
+  extra digit applied to the returned coordinates
 - Position ambiguity, with the matching `posresolution` in metres
-- Weather data embedded in a position comment, promoted to `:wx` and a `:weather`
-  `data_type`
-- Device identification from the TOCALL or legacy Mic-E suffixes (`Aprs.DeviceParser`)
+- Weather data on the `_` symbol, exposed as `:wx` and `:weather`
+- Device identification from the TOCALL, or from the Mic-E comment prefix/suffix
+  (`Aprs.DeviceParser`)
 
 ## Other public helpers
 
@@ -222,7 +234,7 @@ reference `Ham::APRS::FAP` parser:
 - `Aprs.AX25` — callsign and path parsing/validation
 - `Aprs.KISSHelpers` — KISS ↔ TNC2 frame conversion
 - `Aprs.DeviceParser` — device identification from a packet or raw string
-- `Aprs.Convert` — Ultimeter and knots→mph unit conversions
+- `Aprs.Convert` — Ultimeter unit conversions
 
 ## Development
 

@@ -115,19 +115,24 @@ defmodule Aprs.PropertyTest do
     end
 
     property "handles position with DAO extension" do
-      check all lat_dao <- string(:alphanumeric, length: 1),
-                lon_dao <- string(:alphanumeric, length: 1),
-                datum <- member_of(["W", " ", "!"]),
-                comment <- string(:printable, max_length: 20) do
-        dao = "!#{datum}#{lat_dao}#{lon_dao}!"
+      check all lat_digit <- integer(0..9),
+                lon_digit <- integer(0..9),
+                datum <- member_of(["W", "G"]),
+                comment <- string(:alphanumeric, max_length: 20) do
+        dao = "!#{datum}#{lat_digit}#{lon_digit}!"
         packet = "TEST>APRS:!4903.50N/07201.75W>#{comment}#{dao}"
 
         result = parse_packet(packet)
 
-        if result != nil && result.data_type == :position && result.data_extended[:dao] != nil do
-          # DAO parsing swaps the order - first char is lat_dao in packet
-          assert result.data_extended.dao.lat_dao == datum
-          assert result.data_extended.dao.lon_dao == lat_dao
+        if result != nil && result.data_type == :position do
+          assert result.data_extended.dao.datum == datum
+          assert result.daodatumbyte == datum
+          refute String.contains?(result.data_extended.comment, dao)
+
+          # The extra digits add thousandths of a minute of precision.
+          assert_in_delta result.data_extended.latitude,
+                          49.0 + (3.5 + lat_digit * 0.001) / 60,
+                          0.0000001
         end
       end
     end

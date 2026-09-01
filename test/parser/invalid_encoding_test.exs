@@ -12,8 +12,10 @@ defmodule Aprs.InvalidEncodingTest do
 
       # The parser should handle this gracefully
       assert {:ok, parsed} = result
-      # '=' indicator means position_with_message
-      assert parsed.data_type == :position_with_message
+      # A '=' packet whose body is neither a valid uncompressed nor a valid
+      # compressed position reports the position error, not the position type
+      # it failed to parse.
+      assert parsed.data_type == :position_error
 
       # Check that the packet was parsed despite encoding issues
       assert parsed.sender == "DB0WV-11"
@@ -62,8 +64,7 @@ defmodule Aprs.InvalidEncodingTest do
       # This should parse successfully
       result = Aprs.parse(fixed_packet)
       assert {:ok, parsed} = result
-      # '=' indicator
-      assert parsed.data_type == :position_with_message
+      assert parsed.data_type == :position_error
     end
   end
 end

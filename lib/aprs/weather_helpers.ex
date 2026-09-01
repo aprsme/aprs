@@ -1,248 +1,315 @@
 defmodule Aprs.WeatherHelpers do
   @moduledoc """
-  Weather field extraction helpers for APRS using binary pattern matching.
+  Binary weather field scanning helpers for APRS.
   """
 
   import Aprs.Guards
 
-  @spec extract_timestamp(String.t() | binary()) :: String.t() | nil
-  def extract_timestamp(data), do: extract_timestamp_scan(data)
+  @type weather_value :: integer() | float() | nil
+  @type weather_values :: %{required(atom()) => weather_value()}
 
-  # Look for timestamp pattern anywhere in the data
-  @spec extract_timestamp_scan(binary()) :: String.t() | nil
-  defp extract_timestamp_scan(<<d1::8, d2::8, d3::8, d4::8, d5::8, d6::8, marker::8, _rest::binary>>)
-       when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(d4) and is_digit(d5) and is_digit(d6) and
-              marker in [?h, ?z, ?/, ?c] do
-    <<d1, d2, d3, d4, d5, d6, marker>>
+  @spec extract_timestamp_and_data(binary()) :: {String.t() | nil, binary()}
+  def extract_timestamp_and_data(<<d1, d2, d3, d4, d5, d6, d7, d8, ?c, _rest::binary>> = data)
+      when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(d4) and is_digit(d5) and is_digit(d6) and
+             is_digit(d7) and is_digit(d8) do
+    timestamp = binary_part(data, 0, 8)
+    weather_data = binary_part(data, 8, byte_size(data) - 8)
+    {timestamp, weather_data}
   end
 
-  defp extract_timestamp_scan(<<_::8, rest::binary>>), do: extract_timestamp_scan(rest)
-  defp extract_timestamp_scan(<<>>), do: nil
-
-  @spec remove_timestamp(String.t() | binary()) :: binary()
-  def remove_timestamp(data), do: remove_timestamp_scan(data, <<>>)
-
-  @spec remove_timestamp_scan(binary(), binary()) :: binary()
-  defp remove_timestamp_scan(<<d1::8, d2::8, d3::8, d4::8, d5::8, d6::8, marker::8, rest::binary>>, acc)
-       when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(d4) and is_digit(d5) and is_digit(d6) and
-              marker in [?h, ?z, ?/, ?c] do
-    acc <> rest
+  def extract_timestamp_and_data(data) when is_binary(data) do
+    extract_legacy_timestamp(data, data, 0)
   end
 
-  defp remove_timestamp_scan(<<char::8, rest::binary>>, acc) do
-    remove_timestamp_scan(rest, acc <> <<char>>)
+  @spec extract_timestamp(binary()) :: String.t() | nil
+  def extract_timestamp(data) do
+    {timestamp, _weather_data} = extract_timestamp_and_data(data)
+    timestamp
   end
 
-  defp remove_timestamp_scan(<<>>, acc), do: acc
+  @spec remove_timestamp(binary()) :: binary()
+  def remove_timestamp(data) do
+    {_timestamp, weather_data} = extract_timestamp_and_data(data)
+    weather_data
+  end
+
+  @spec scan_weather_data(binary()) :: {weather_values(), binary()}
+  def scan_weather_data(data) when is_binary(data) do
+    {rest, weather} = scan_leading_wind(data, empty_weather_values())
+    scan_tokens(rest, weather)
+  end
 
   @spec parse_wind_direction(binary()) :: integer() | nil
-  def parse_wind_direction(data) do
-    case parse_wind_direction_scan(data) do
-      nil -> nil
-      direction -> normalize_wind_direction(direction)
-    end
-  end
-
-  # Handle dots pattern (missing data)
-  @spec parse_wind_direction_scan(binary()) :: non_neg_integer() | nil
-  defp parse_wind_direction_scan(<<?., ?., ?., ?/, ?., ?., ?., _::binary>>), do: nil
-  defp parse_wind_direction_scan(<<?/, ?., ?., ?., _::binary>>), do: nil
-
-  # Handle 3-digit wind direction with slash
-  defp parse_wind_direction_scan(<<d1::8, d2::8, d3::8, ?/, _::binary>>)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 do
-    (d1 - ?0) * 100 + (d2 - ?0) * 10 + (d3 - ?0)
-  end
-
-  # Handle 3-digit wind direction followed by 's' (for positionless format)
-  defp parse_wind_direction_scan(<<d1::8, d2::8, d3::8, ?s, _::binary>>)
-       when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 and d3 >= ?0 and d3 <= ?9 do
-    (d1 - ?0) * 100 + (d2 - ?0) * 10 + (d3 - ?0)
-  end
-
-  # Handle 2-digit wind direction
-  defp parse_wind_direction_scan(<<d1::8, d2::8, ?/, _::binary>>) when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 do
-    (d1 - ?0) * 10 + (d2 - ?0)
-  end
-
-  # Handle 1-digit wind direction
-  defp parse_wind_direction_scan(<<d1::8, ?/, _::binary>>) when d1 >= ?0 and d1 <= ?9 do
-    d1 - ?0
-  end
-
-  defp parse_wind_direction_scan(<<_::8, rest::binary>>), do: parse_wind_direction_scan(rest)
-  defp parse_wind_direction_scan(<<>>), do: nil
-
-  @spec normalize_wind_direction(integer()) :: integer()
-  defp normalize_wind_direction(direction) when direction >= 0 and direction <= 359, do: direction
-  # 360 degrees = 0 degrees (full circle)
-  defp normalize_wind_direction(direction) when direction == 360, do: 0
-  # Invalid values (> 360 or negative) normalized to 0
-  defp normalize_wind_direction(_invalid_direction), do: 0
+  def parse_wind_direction(data), do: weather_value(data, :wind_direction)
 
   @spec parse_wind_speed(binary()) :: integer() | nil
-  def parse_wind_speed(data), do: parse_wind_speed_scan(data)
-
-  @spec parse_wind_speed_scan(binary()) :: non_neg_integer() | nil
-  defp parse_wind_speed_scan(<<?/, s1::8, s2::8, s3::8, _::binary>>)
-       when s1 >= ?0 and s1 <= ?9 and s2 >= ?0 and s2 <= ?9 and s3 >= ?0 and s3 <= ?9 do
-    (s1 - ?0) * 100 + (s2 - ?0) * 10 + (s3 - ?0)
-  end
-
-  # Also handle 's' prefix for wind speed (sustained wind)
-  defp parse_wind_speed_scan(<<?s, s1::8, s2::8, s3::8, _::binary>>)
-       when s1 >= ?0 and s1 <= ?9 and s2 >= ?0 and s2 <= ?9 and s3 >= ?0 and s3 <= ?9 do
-    (s1 - ?0) * 100 + (s2 - ?0) * 10 + (s3 - ?0)
-  end
-
-  defp parse_wind_speed_scan(<<_::8, rest::binary>>), do: parse_wind_speed_scan(rest)
-  defp parse_wind_speed_scan(<<>>), do: nil
+  def parse_wind_speed(data), do: weather_value(data, :wind_speed)
 
   @spec parse_wind_gust(binary()) :: integer() | nil
-  def parse_wind_gust(data), do: parse_wind_gust_scan(data)
-
-  @spec parse_wind_gust_scan(binary()) :: non_neg_integer() | nil
-  defp parse_wind_gust_scan(<<?g, g1::8, g2::8, g3::8, _::binary>>)
-       when g1 >= ?0 and g1 <= ?9 and g2 >= ?0 and g2 <= ?9 and g3 >= ?0 and g3 <= ?9 do
-    (g1 - ?0) * 100 + (g2 - ?0) * 10 + (g3 - ?0)
-  end
-
-  defp parse_wind_gust_scan(<<_::8, rest::binary>>), do: parse_wind_gust_scan(rest)
-  defp parse_wind_gust_scan(<<>>), do: nil
+  def parse_wind_gust(data), do: weather_value(data, :wind_gust)
 
   @spec parse_temperature(binary()) :: integer() | nil
-  def parse_temperature(data) do
-    case parse_temperature_scan(data) do
-      nil -> nil
-      temp -> validate_temperature(temp)
+  def parse_temperature(data), do: weather_value(data, :temperature)
+
+  @spec parse_rainfall_1h(binary()) :: float() | nil
+  def parse_rainfall_1h(data), do: weather_value(data, :rain_1h)
+
+  @spec parse_rainfall_24h(binary()) :: float() | nil
+  def parse_rainfall_24h(data), do: weather_value(data, :rain_24h)
+
+  @spec parse_rainfall_since_midnight(binary()) :: float() | nil
+  def parse_rainfall_since_midnight(data), do: weather_value(data, :rain_since_midnight)
+
+  @spec parse_humidity(binary()) :: integer() | nil
+  def parse_humidity(data), do: weather_value(data, :humidity)
+
+  @spec parse_pressure(binary()) :: float() | nil
+  def parse_pressure(data), do: weather_value(data, :pressure)
+
+  @spec parse_luminosity(binary()) :: integer() | nil
+  def parse_luminosity(data), do: weather_value(data, :luminosity)
+
+  @spec parse_snow(binary()) :: float() | nil
+  def parse_snow(data), do: weather_value(data, :snow)
+
+  @spec extract_legacy_timestamp(binary(), binary(), non_neg_integer()) :: {String.t() | nil, binary()}
+  defp extract_legacy_timestamp(<<d1, d2, d3, d4, d5, d6, marker, _rest::binary>> = current, original, offset)
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(d4) and is_digit(d5) and is_digit(d6) and
+              marker in [?h, ?z, ?/] do
+    timestamp = binary_part(current, 0, 7)
+    {timestamp, remove_binary_part(original, offset, 7)}
+  end
+
+  defp extract_legacy_timestamp(<<_byte, rest::binary>>, original, offset) do
+    extract_legacy_timestamp(rest, original, offset + 1)
+  end
+
+  defp extract_legacy_timestamp(<<>>, original, _offset), do: {nil, original}
+
+  @spec remove_binary_part(binary(), non_neg_integer(), pos_integer()) :: binary()
+  defp remove_binary_part(data, 0, length) do
+    binary_part(data, length, byte_size(data) - length)
+  end
+
+  defp remove_binary_part(data, offset, length) do
+    prefix = binary_part(data, 0, offset)
+    suffix_offset = offset + length
+    suffix = binary_part(data, suffix_offset, byte_size(data) - suffix_offset)
+    prefix <> suffix
+  end
+
+  @spec empty_weather_values() :: weather_values()
+  defp empty_weather_values do
+    %{
+      wind_direction: nil,
+      wind_speed: nil,
+      wind_gust: nil,
+      temperature: nil,
+      rain_1h: nil,
+      rain_24h: nil,
+      rain_since_midnight: nil,
+      humidity: nil,
+      pressure: nil,
+      luminosity: nil,
+      snow: nil
+    }
+  end
+
+  @spec scan_leading_wind(binary(), weather_values()) :: {binary(), weather_values()}
+  defp scan_leading_wind(<<?_, rest::binary>> = data, weather) do
+    case consume_leading_wind(rest, weather) do
+      {:ok, rest, weather} -> {rest, weather}
+      :error -> {data, weather}
     end
   end
 
-  # Validate temperature is within reasonable range for weather
-  # Valid range: -100°F to 150°F
-  # (Coldest recorded on Earth ~-130°F, hottest ~134°F, with some margin)
+  defp scan_leading_wind(data, weather) do
+    case consume_leading_wind(data, weather) do
+      {:ok, rest, weather} -> {rest, weather}
+      :error -> {data, weather}
+    end
+  end
+
+  @spec consume_leading_wind(binary(), weather_values()) ::
+          {:ok, binary(), weather_values()} | :error
+  defp consume_leading_wind(<<d1, d2, d3, ?/, s1, s2, s3, rest::binary>>, weather)
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(s1) and is_digit(s2) and is_digit(s3) do
+    weather = %{
+      weather
+      | wind_direction: normalize_wind_direction(three_digits(d1, d2, d3)),
+        wind_speed: three_digits(s1, s2, s3)
+    }
+
+    {:ok, rest, weather}
+  end
+
+  defp consume_leading_wind(<<d1, d2, d3, ?/, ?., ?., ?., rest::binary>>, weather)
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) do
+    weather = %{weather | wind_direction: normalize_wind_direction(three_digits(d1, d2, d3))}
+    {:ok, rest, weather}
+  end
+
+  defp consume_leading_wind(<<?., ?., ?., ?/, s1, s2, s3, rest::binary>>, weather)
+       when is_digit(s1) and is_digit(s2) and is_digit(s3) do
+    weather = %{weather | wind_speed: three_digits(s1, s2, s3)}
+    {:ok, rest, weather}
+  end
+
+  defp consume_leading_wind(<<?., ?., ?., ?/, ?., ?., ?., rest::binary>>, weather) do
+    {:ok, rest, weather}
+  end
+
+  defp consume_leading_wind(<<?c, d1, d2, d3, rest::binary>>, weather)
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) do
+    weather = %{weather | wind_direction: normalize_wind_direction(three_digits(d1, d2, d3))}
+    {rest, weather} = consume_positionless_speed(rest, weather)
+    {:ok, rest, weather}
+  end
+
+  defp consume_leading_wind(<<?c, ?., ?., ?., rest::binary>>, weather) do
+    {rest, weather} = consume_positionless_speed(rest, weather)
+    {:ok, rest, weather}
+  end
+
+  defp consume_leading_wind(_data, _weather), do: :error
+
+  @spec consume_positionless_speed(binary(), weather_values()) :: {binary(), weather_values()}
+  defp consume_positionless_speed(<<?s, s1, s2, s3, rest::binary>>, weather)
+       when is_digit(s1) and is_digit(s2) and is_digit(s3) do
+    {rest, %{weather | wind_speed: three_digits(s1, s2, s3)}}
+  end
+
+  # Some stations mix the two forms and send `cNNN/NNN`.
+  defp consume_positionless_speed(<<?/, s1, s2, s3, rest::binary>>, weather)
+       when is_digit(s1) and is_digit(s2) and is_digit(s3) do
+    {rest, %{weather | wind_speed: three_digits(s1, s2, s3)}}
+  end
+
+  defp consume_positionless_speed(<<?s, ?., ?., ?., rest::binary>>, weather), do: {rest, weather}
+  defp consume_positionless_speed(data, weather), do: {data, weather}
+
+  @spec scan_tokens(binary(), weather_values()) :: {weather_values(), binary()}
+  defp scan_tokens(<<?g, d1, d2, d3, rest::binary>>, weather) when is_digit(d1) and is_digit(d2) and is_digit(d3) do
+    scan_tokens(rest, %{weather | wind_gust: three_digits(d1, d2, d3)})
+  end
+
+  defp scan_tokens(<<?g, ?., ?., ?., rest::binary>>, weather), do: scan_tokens(rest, weather)
+
+  defp scan_tokens(<<?t, ?-, digit, rest::binary>>, weather) when is_digit(digit) do
+    {temperature, rest} = consume_digits(rest, digit - ?0)
+    scan_tokens(rest, %{weather | temperature: validate_temperature(-temperature)})
+  end
+
+  defp scan_tokens(<<?t, d1, d2, d3, rest::binary>>, weather) when is_digit(d1) and is_digit(d2) and is_digit(d3) do
+    temperature = d1 |> three_digits(d2, d3) |> validate_temperature()
+    scan_tokens(rest, %{weather | temperature: temperature})
+  end
+
+  defp scan_tokens(<<?t, ?., ?., ?., rest::binary>>, weather), do: scan_tokens(rest, weather)
+
+  defp scan_tokens(<<?r, d1, d2, d3, rest::binary>>, weather) when is_digit(d1) and is_digit(d2) and is_digit(d3) do
+    scan_tokens(rest, %{weather | rain_1h: three_digits(d1, d2, d3) / 100.0})
+  end
+
+  defp scan_tokens(<<?r, ?., ?., ?., rest::binary>>, weather), do: scan_tokens(rest, weather)
+
+  defp scan_tokens(<<?p, d1, d2, d3, rest::binary>>, weather) when is_digit(d1) and is_digit(d2) and is_digit(d3) do
+    scan_tokens(rest, %{weather | rain_24h: three_digits(d1, d2, d3) / 100.0})
+  end
+
+  defp scan_tokens(<<?p, ?., ?., ?., rest::binary>>, weather), do: scan_tokens(rest, weather)
+
+  defp scan_tokens(<<?P, d1, d2, d3, rest::binary>>, weather) when is_digit(d1) and is_digit(d2) and is_digit(d3) do
+    scan_tokens(rest, %{weather | rain_since_midnight: three_digits(d1, d2, d3) / 100.0})
+  end
+
+  defp scan_tokens(<<?P, ?., ?., ?., rest::binary>>, weather), do: scan_tokens(rest, weather)
+
+  defp scan_tokens(<<?h, d1, d2, rest::binary>>, weather) when is_digit(d1) and is_digit(d2) do
+    humidity = d1 |> two_digits(d2) |> normalize_humidity()
+    scan_tokens(rest, %{weather | humidity: humidity})
+  end
+
+  defp scan_tokens(<<?h, ?., ?., rest::binary>>, weather), do: scan_tokens(rest, weather)
+
+  defp scan_tokens(<<?b, d1, d2, d3, d4, d5, rest::binary>>, weather)
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(d4) and is_digit(d5) do
+    pressure = five_digits(d1, d2, d3, d4, d5) / 10.0
+    scan_tokens(rest, %{weather | pressure: pressure})
+  end
+
+  defp scan_tokens(<<?b, ?., ?., ?., ?., ?., rest::binary>>, weather), do: scan_tokens(rest, weather)
+
+  defp scan_tokens(<<?L, d1, d2, d3, rest::binary>>, weather) when is_digit(d1) and is_digit(d2) and is_digit(d3) do
+    scan_tokens(rest, %{weather | luminosity: three_digits(d1, d2, d3)})
+  end
+
+  defp scan_tokens(<<?l, d1, d2, d3, rest::binary>>, weather) when is_digit(d1) and is_digit(d2) and is_digit(d3) do
+    scan_tokens(rest, %{weather | luminosity: 1000 + three_digits(d1, d2, d3)})
+  end
+
+  defp scan_tokens(<<marker, ?., ?., ?., rest::binary>>, weather) when marker in [?L, ?l] do
+    scan_tokens(rest, weather)
+  end
+
+  defp scan_tokens(<<?s, d1, d2, d3, rest::binary>>, weather) when is_digit(d1) and is_digit(d2) and is_digit(d3) do
+    scan_tokens(rest, %{weather | snow: three_digits(d1, d2, d3) / 10.0})
+  end
+
+  defp scan_tokens(<<?s, ?., ?., ?., rest::binary>>, weather), do: scan_tokens(rest, weather)
+
+  defp scan_tokens(<<?#, digit, rest::binary>>, weather) when is_digit(digit) do
+    {_counter, rest} = consume_digits(rest, digit - ?0)
+    scan_tokens(rest, weather)
+  end
+
+  defp scan_tokens(<<?v, sign, digit, rest::binary>>, weather) when sign in [?+, ?-] and is_digit(digit) do
+    {_voltage, rest} = consume_digits(rest, digit - ?0)
+    scan_tokens(rest, weather)
+  end
+
+  defp scan_tokens(<<?v, digit, rest::binary>>, weather) when is_digit(digit) do
+    {_voltage, rest} = consume_digits(rest, digit - ?0)
+    scan_tokens(rest, weather)
+  end
+
+  defp scan_tokens(data, weather), do: {weather, data}
+
+  @spec consume_digits(binary(), non_neg_integer()) :: {non_neg_integer(), binary()}
+  defp consume_digits(<<digit, rest::binary>>, value) when is_digit(digit) do
+    consume_digits(rest, value * 10 + digit - ?0)
+  end
+
+  defp consume_digits(rest, value), do: {value, rest}
+
+  @spec weather_value(binary(), atom()) :: weather_value()
+  defp weather_value(data, key) do
+    {weather, _remainder} = scan_weather_data(data)
+    Map.fetch!(weather, key)
+  end
+
+  @spec normalize_wind_direction(non_neg_integer()) :: non_neg_integer()
+  defp normalize_wind_direction(direction) when direction < 360, do: direction
+  defp normalize_wind_direction(360), do: 0
+  defp normalize_wind_direction(_direction), do: 0
+
   @spec validate_temperature(integer()) :: integer() | nil
-  defp validate_temperature(temp) when temp >= -100 and temp <= 150, do: temp
-  defp validate_temperature(_invalid_temp), do: nil
+  defp validate_temperature(temperature) when temperature >= -100 and temperature <= 150, do: temperature
 
-  # Handle negative temperature with minus sign
-  @spec parse_temperature_scan(binary()) :: integer() | nil
-  defp parse_temperature_scan(<<?t, ?-, t1::8, t2::8, t3::8, _::binary>>)
-       when t1 >= ?0 and t1 <= ?9 and t2 >= ?0 and t2 <= ?9 and t3 >= ?0 and t3 <= ?9 do
-    -((t1 - ?0) * 100 + (t2 - ?0) * 10 + (t3 - ?0))
-  end
-
-  # Handle negative temperature with minus sign and 2 digits
-  defp parse_temperature_scan(<<?t, ?-, t1::8, t2::8, _::binary>>) when t1 >= ?0 and t1 <= ?9 and t2 >= ?0 and t2 <= ?9 do
-    -((t1 - ?0) * 10 + (t2 - ?0))
-  end
-
-  # Handle negative temperature with minus sign and 1 digit
-  defp parse_temperature_scan(<<?t, ?-, t1::8, _::binary>>) when t1 >= ?0 and t1 <= ?9 do
-    -(t1 - ?0)
-  end
-
-  # Handle malformed negative temperature (like t0-1)
-  defp parse_temperature_scan(<<?t, d1::8, ?-, d2::8, _::binary>>) when d1 >= ?0 and d1 <= ?9 and d2 >= ?0 and d2 <= ?9 do
-    # Parse as -d2 (ignore the leading digit)
-    -(d2 - ?0)
-  end
-
-  # Handle positive temperature
-  defp parse_temperature_scan(<<?t, t1::8, t2::8, t3::8, _::binary>>)
-       when t1 >= ?0 and t1 <= ?9 and t2 >= ?0 and t2 <= ?9 and t3 >= ?0 and t3 <= ?9 do
-    (t1 - ?0) * 100 + (t2 - ?0) * 10 + (t3 - ?0)
-  end
-
-  defp parse_temperature_scan(<<_::8, rest::binary>>), do: parse_temperature_scan(rest)
-  defp parse_temperature_scan(<<>>), do: nil
-
-  @spec parse_rainfall_1h(binary()) :: float() | nil
-  def parse_rainfall_1h(data), do: parse_rainfall_1h_scan(data)
-
-  @spec parse_rainfall_1h_scan(binary()) :: float() | nil
-  defp parse_rainfall_1h_scan(<<?r, r1::8, r2::8, r3::8, _::binary>>)
-       when r1 >= ?0 and r1 <= ?9 and r2 >= ?0 and r2 <= ?9 and r3 >= ?0 and r3 <= ?9 do
-    ((r1 - ?0) * 100 + (r2 - ?0) * 10 + (r3 - ?0)) / 100.0
-  end
-
-  defp parse_rainfall_1h_scan(<<_::8, rest::binary>>), do: parse_rainfall_1h_scan(rest)
-  defp parse_rainfall_1h_scan(<<>>), do: nil
-
-  @spec parse_rainfall_24h(binary()) :: float() | nil
-  def parse_rainfall_24h(data), do: parse_rainfall_24h_scan(data)
-
-  @spec parse_rainfall_24h_scan(binary()) :: float() | nil
-  defp parse_rainfall_24h_scan(<<?p, p1::8, p2::8, p3::8, _::binary>>)
-       when p1 >= ?0 and p1 <= ?9 and p2 >= ?0 and p2 <= ?9 and p3 >= ?0 and p3 <= ?9 do
-    ((p1 - ?0) * 100 + (p2 - ?0) * 10 + (p3 - ?0)) / 100.0
-  end
-
-  defp parse_rainfall_24h_scan(<<_::8, rest::binary>>), do: parse_rainfall_24h_scan(rest)
-  defp parse_rainfall_24h_scan(<<>>), do: nil
-
-  @spec parse_rainfall_since_midnight(binary()) :: float() | nil
-  def parse_rainfall_since_midnight(data), do: parse_rainfall_since_midnight_scan(data)
-
-  @spec parse_rainfall_since_midnight_scan(binary()) :: float() | nil
-  defp parse_rainfall_since_midnight_scan(<<?P, p1::8, p2::8, p3::8, _::binary>>)
-       when p1 >= ?0 and p1 <= ?9 and p2 >= ?0 and p2 <= ?9 and p3 >= ?0 and p3 <= ?9 do
-    ((p1 - ?0) * 100 + (p2 - ?0) * 10 + (p3 - ?0)) / 100.0
-  end
-
-  defp parse_rainfall_since_midnight_scan(<<_::8, rest::binary>>), do: parse_rainfall_since_midnight_scan(rest)
-
-  defp parse_rainfall_since_midnight_scan(<<>>), do: nil
-
-  @spec parse_humidity(binary()) :: integer() | nil
-  def parse_humidity(data), do: parse_humidity_scan(data)
-
-  @spec parse_humidity_scan(binary()) :: pos_integer() | nil
-  defp parse_humidity_scan(<<?h, h1::8, h2::8, _::binary>>) when h1 >= ?0 and h1 <= ?9 and h2 >= ?0 and h2 <= ?9 do
-    humidity = (h1 - ?0) * 10 + (h2 - ?0)
-    normalize_humidity(humidity)
-  end
-
-  defp parse_humidity_scan(<<_::8, rest::binary>>), do: parse_humidity_scan(rest)
-  defp parse_humidity_scan(<<>>), do: nil
+  defp validate_temperature(_temperature), do: nil
 
   @spec normalize_humidity(non_neg_integer()) :: pos_integer()
   defp normalize_humidity(0), do: 100
-  defp normalize_humidity(val), do: val
+  defp normalize_humidity(humidity), do: humidity
 
-  @spec parse_pressure(binary()) :: float() | nil
-  def parse_pressure(data), do: parse_pressure_scan(data)
+  @spec two_digits(byte(), byte()) :: non_neg_integer()
+  defp two_digits(d1, d2), do: (d1 - ?0) * 10 + d2 - ?0
 
-  @spec parse_pressure_scan(binary()) :: float() | nil
-  defp parse_pressure_scan(<<?b, b1::8, b2::8, b3::8, b4::8, b5::8, _::binary>>)
-       when is_digit(b1) and is_digit(b2) and is_digit(b3) and is_digit(b4) and is_digit(b5) do
-    ((b1 - ?0) * 10_000 + (b2 - ?0) * 1000 + (b3 - ?0) * 100 + (b4 - ?0) * 10 + (b5 - ?0)) / 10.0
+  @spec three_digits(byte(), byte(), byte()) :: non_neg_integer()
+  defp three_digits(d1, d2, d3), do: (d1 - ?0) * 100 + (d2 - ?0) * 10 + d3 - ?0
+
+  @spec five_digits(byte(), byte(), byte(), byte(), byte()) :: non_neg_integer()
+  defp five_digits(d1, d2, d3, d4, d5) do
+    (d1 - ?0) * 10_000 + (d2 - ?0) * 1000 + (d3 - ?0) * 100 + (d4 - ?0) * 10 + d5 - ?0
   end
-
-  defp parse_pressure_scan(<<_::8, rest::binary>>), do: parse_pressure_scan(rest)
-  defp parse_pressure_scan(<<>>), do: nil
-
-  @spec parse_luminosity(binary()) :: integer() | nil
-  def parse_luminosity(data), do: parse_luminosity_scan(data)
-
-  @spec parse_luminosity_scan(binary()) :: non_neg_integer() | nil
-  defp parse_luminosity_scan(<<marker::8, l1::8, l2::8, l3::8, _::binary>>)
-       when marker in [?l, ?L] and l1 >= ?0 and l1 <= ?9 and l2 >= ?0 and l2 <= ?9 and l3 >= ?0 and l3 <= ?9 do
-    (l1 - ?0) * 100 + (l2 - ?0) * 10 + (l3 - ?0)
-  end
-
-  defp parse_luminosity_scan(<<_::8, rest::binary>>), do: parse_luminosity_scan(rest)
-  defp parse_luminosity_scan(<<>>), do: nil
-
-  @spec parse_snow(binary()) :: float() | nil
-  def parse_snow(data), do: parse_snow_scan(data)
-
-  @spec parse_snow_scan(binary()) :: float() | nil
-  defp parse_snow_scan(<<?s, s1::8, s2::8, s3::8, _::binary>>)
-       when s1 >= ?0 and s1 <= ?9 and s2 >= ?0 and s2 <= ?9 and s3 >= ?0 and s3 <= ?9 do
-    ((s1 - ?0) * 100 + (s2 - ?0) * 10 + (s3 - ?0)) / 10.0
-  end
-
-  defp parse_snow_scan(<<_::8, rest::binary>>), do: parse_snow_scan(rest)
-  defp parse_snow_scan(<<>>), do: nil
 end

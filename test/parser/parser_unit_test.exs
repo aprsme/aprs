@@ -18,38 +18,28 @@ defmodule Aprs.ParserUnitTest do
     end
   end
 
-  describe "decode_compressed_position/1 and convert_to_base91/1" do
-    test "decodes compressed position and base91" do
-      # 4 chars, all '!' (ASCII 33) should decode to 33
-      assert Aprs.convert_to_base91("!!!!") == 0
-      # Use a valid compressed string: 1 + 4 + 4 + 1 + 2 + 2 + 1 = 15 bytes
-      # Format: "/" <> lat(4) <> lon(4) <> sym(1) <> cs(2) <> comp(2) <> rest(1)
-      bin = "/!!!!!!!!>abccx"
-      pos = Aprs.decode_compressed_position(bin)
-      assert pos.latitude == 0
-      assert pos.longitude == 0
+  describe "compressed position decoding" do
+    test "decodes a compressed position" do
+      # 1 symbol table + 4 lat + 4 lon + 1 symbol code + 2 cs + 1 type + comment
+      pos = Aprs.parse_position_without_timestamp("/!!!!!!!!>abcx")
+
+      assert pos.latitude == 90.0
+      assert pos.longitude == -180.0
       assert pos.symbol_code == ">"
+      assert pos.format == :compressed
     end
   end
 
-  describe "parse_position_with_datetime_and_weather/7" do
+  describe "timestamped position with weather" do
     test "returns map with lat/lon and weather" do
-      result =
-        Aprs.parse_position_with_datetime_and_weather(
-          false,
-          "201750z",
-          "4916.45N",
-          "/",
-          "12311.12W",
-          ">",
-          "_12345678c000s000"
-        )
+      {:ok, parsed} = Aprs.parse("N0CALL>APRS:@201750z4916.45N/12311.12W_c000s000g005t077")
+      result = parsed.data_extended
 
-      assert is_map(result)
       assert Float.round(result.latitude, 4) == 49.2742
       assert Float.round(result.longitude, 4) == -123.1853
       assert result.weather
-      assert result.timestamp == "201750z"
+      assert result.weather.temperature == 77
+      assert is_integer(result.timestamp)
     end
   end
 

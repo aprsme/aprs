@@ -81,6 +81,21 @@ defmodule Aprs.MicEPropertyTest do
       end
     end
 
+    property "reports Mic-E speed as float knots" do
+      check all speed_byte <- integer(28..123),
+                course_tens_byte <- integer(28..123) do
+        data = <<40, 40, 40, speed_byte, course_tens_byte, 40, ?>, ?/>>
+        result = Aprs.MicE.parse(data, "123456")
+
+        speed_part = speed_byte - 28
+        course_part = course_tens_byte - 28
+        encoded_speed = div(speed_part, 10) * 100 + rem(speed_part, 10) * 10 + div(course_part, 10)
+        expected_speed = if encoded_speed >= 800, do: encoded_speed - 800, else: encoded_speed
+
+        assert result.speed == expected_speed * 1.0
+      end
+    end
+
     property "handles Mic-E with telemetry data" do
       check all telemetry_flag <- member_of(["`", "'"]),
                 has_telemetry <- boolean() do

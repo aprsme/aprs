@@ -4,231 +4,117 @@ defmodule Aprs.WeatherTest do
 
   alias Aprs.Weather
 
+  @weather_keys [
+    :humidity,
+    :luminosity,
+    :pressure,
+    :rain_1h,
+    :rain_24h,
+    :rain_since_midnight,
+    :raw_weather_data,
+    :snow,
+    :temperature,
+    :timestamp,
+    :wind_direction,
+    :wind_gust,
+    :wind_speed
+  ]
+
   describe "parse/1" do
-    test "returns a map with :data_type => :weather for valid input" do
-      result = Weather.parse("_12345678c000s000g000t000r000p000P000h00b00000")
-      assert is_map(result)
-      assert result[:data_type] == :weather
+    test "parses the APRS positionless weather example" do
+      result = Weather.parse("10090556c220s004g005t077r000p000P000h50b09900wRSW")
+
+      assert result.data_type == :weather
+      assert result.timestamp == "10090556"
+      assert result.wind_direction == 220
+      assert result.wind_speed == 4
+      assert result.wind_gust == 5
+      assert result.temperature == 77
+      assert result.rain_1h == 0.0
+      assert result.rain_24h == 0.0
+      assert result.rain_since_midnight == 0.0
+      assert result.humidity == 50
+      assert result.pressure == 990.0
+      assert result.snow == nil
+      assert result.raw_weather_data == "c220s004g005t077r000p000P000h50b09900wRSW"
     end
 
-    property "always returns a map with :data_type == :weather for any string" do
-      check all s <- StreamData.string(:ascii, min_length: 1, max_length: 30) do
-        result = Weather.parse(s)
-        assert is_map(result)
-        assert result[:data_type] == :weather
+    test "adds the weather data type without nesting a wx copy" do
+      result = Weather.parse("090/004g005t077")
+
+      assert result.data_type == :weather
+      refute Map.has_key?(result, :wx)
+      assert result |> Map.delete(:data_type) |> Map.keys() |> Enum.sort() == @weather_keys
+    end
+
+    property "always returns a weather map for a binary" do
+      check all data <- StreamData.string(:ascii, max_length: 40) do
+        assert %{data_type: :weather} = Weather.parse(data)
       end
     end
   end
 
-  describe "parse_from_comment/1" do
-    test "parses weather data from comment with wind direction/speed" do
-      comment = "175/002g003t085r000p000P000h74b10219L364AmbientCWOP.com"
-      result = Weather.parse_from_comment(comment)
-
-      assert is_map(result)
-      assert result[:data_type] == :weather
-      assert result[:comment] == comment
-      assert result[:wind_direction] == 175
-      assert result[:wind_speed] == 2
-      assert result[:wind_gust] == 3
-      assert result[:temperature] == 85
-      assert result[:rain_1h] == 0
-      assert result[:rain_24h] == 0
-      assert result[:rain_since_midnight] == 0
-      assert result[:humidity] == 74
-      assert result[:pressure] == 1021.9
-    end
-
-    test "parses weather data from comment with temperature and humidity" do
-      comment = "t072h45b10132"
-      result = Weather.parse_from_comment(comment)
-
-      assert is_map(result)
-      assert result[:data_type] == :weather
-      assert result[:comment] == comment
-      assert result[:temperature] == 72
-      assert result[:humidity] == 45
-      assert result[:pressure] == 1013.2
-    end
-
-    test "returns nil for comment without weather data" do
-      comment = "Just a regular comment"
-      result = Weather.parse_from_comment(comment)
-
-      assert result == nil
-    end
-
-    test "returns nil for non-string input" do
-      assert Weather.parse_from_comment(nil) == nil
-      assert Weather.parse_from_comment(123) == nil
-      assert Weather.parse_from_comment(%{}) == nil
-    end
-  end
-
-  describe "weather_packet_comment?/1" do
-    test "returns false for bare wind direction/speed patterns" do
-      # Bare wind patterns are NOT considered weather to avoid confusion with position course/speed
-      refute Weather.weather_packet_comment?("175/002")
-      refute Weather.weather_packet_comment?("Some text 180/015 more text")
-    end
-
-    test "returns true for comments with wind gust data" do
-      # Wind gust with 'g' prefix is recognized as weather
-      assert Weather.weather_packet_comment?("g015")
-      assert Weather.weather_packet_comment?("Wind gust g025")
-    end
-
-    test "returns true for comments with temperature" do
-      assert Weather.weather_packet_comment?("t072")
-      assert Weather.weather_packet_comment?("Temp: t085 degrees")
-    end
-
-    test "returns true for comments with humidity" do
-      assert Weather.weather_packet_comment?("h45")
-      assert Weather.weather_packet_comment?("Humidity: h67%")
-    end
-
-    test "returns true for comments with pressure" do
-      assert Weather.weather_packet_comment?("b10132")
-      assert Weather.weather_packet_comment?("Pressure: b10219 hPa")
-    end
-
-    test "returns true for comments with rain data" do
-      assert Weather.weather_packet_comment?("r000")
-      assert Weather.weather_packet_comment?("p123")
-      assert Weather.weather_packet_comment?("P456")
-    end
-
-    test "returns true for comments with wind gust" do
-      assert Weather.weather_packet_comment?("g015")
-      assert Weather.weather_packet_comment?("Gusts: g025 mph")
-    end
-
-    test "returns true for complex weather comments" do
-      assert Weather.weather_packet_comment?("175/002g003t085r000p000P000h74b10219L364AmbientCWOP.com")
-      assert Weather.weather_packet_comment?("Wind: 180/010 Temp: t072 Humidity: h45")
-    end
-
-    test "returns false for regular comments" do
-      refute Weather.weather_packet_comment?("Just a regular comment")
-      refute Weather.weather_packet_comment?("Temperature is 72 degrees")
-      refute Weather.weather_packet_comment?("Wind speed 10 mph")
-    end
-
-    test "returns false for non-string input" do
-      refute Weather.weather_packet_comment?(nil)
-      refute Weather.weather_packet_comment?(123)
-      refute Weather.weather_packet_comment?(%{})
-    end
-  end
-
   describe "parse_weather_data/1" do
-    test "parses complete weather data string" do
-      weather_string = "175/002g003t085r000p000P000h74b10219L364"
-      result = Weather.parse_weather_data(weather_string)
+    test "returns one flat map with every weather key present" do
+      weather = "175/002g003t085r000p000P000h74b10219L364s003"
+      result = Weather.parse_weather_data(weather)
 
-      assert is_map(result)
-      assert result[:data_type] == :weather
-      assert result[:raw_weather_data] == weather_string
-      assert result[:wind_direction] == 175
-      assert result[:wind_speed] == 2
-      assert result[:wind_gust] == 3
-      assert result[:temperature] == 85
-      assert result[:rain_1h] == 0
-      assert result[:rain_24h] == 0
-      assert result[:rain_since_midnight] == 0
-      assert result[:humidity] == 74
-      assert result[:pressure] == 1021.9
-      assert result[:luminosity] == 364
+      assert result |> Map.keys() |> Enum.sort() == @weather_keys
+      assert result.raw_weather_data == weather
+      assert result.timestamp == nil
+      assert result.wind_direction == 175
+      assert result.wind_speed == 2
+      assert result.wind_gust == 3
+      assert result.temperature == 85
+      assert result.rain_1h == 0.0
+      assert result.rain_24h == 0.0
+      assert result.rain_since_midnight == 0.0
+      assert result.humidity == 74
+      assert result.pressure == 1021.9
+      assert result.luminosity == 364
+      assert result.snow == 0.3
+      refute Map.has_key?(result, :data_type)
+      refute Map.has_key?(result, :wx)
     end
 
-    test "handles partial weather data" do
-      weather_string = "t072h45"
-      result = Weather.parse_weather_data(weather_string)
+    test "uses nil for absent and dotted fields" do
+      result = Weather.parse_weather_data(".../...g...t...r...p...P...h..b.....L...s...")
 
-      assert is_map(result)
-      assert result[:data_type] == :weather
-      assert result[:temperature] == 72
-      assert result[:humidity] == 45
-      # Other fields should be nil
-      assert result[:wind_direction] == nil
-      assert result[:wind_speed] == nil
+      assert result.wind_direction == nil
+      assert result.wind_speed == nil
+      assert result.wind_gust == nil
+      assert result.temperature == nil
+      assert result.rain_1h == nil
+      assert result.rain_24h == nil
+      assert result.rain_since_midnight == nil
+      assert result.humidity == nil
+      assert result.pressure == nil
+      assert result.luminosity == nil
+      assert result.snow == nil
     end
 
-    test "parses weather data with snow" do
-      weather_string = "s003"
-      result = Weather.parse_weather_data(weather_string)
-
-      assert is_map(result)
-      assert result[:data_type] == :weather
-      assert result[:snow] == 0.3
+    test "normalises wind direction and validates temperature" do
+      assert Weather.parse_weather_data("360/001t150").wind_direction == 0
+      assert Weather.parse_weather_data("999/001t151").wind_direction == 0
+      assert Weather.parse_weather_data("000/001t151").temperature == nil
+      assert Weather.parse_weather_data("000/001t-100").temperature == -100
+      assert Weather.parse_weather_data("000/001t-101").temperature == nil
     end
 
-    test "handles weather data with timestamp prefix" do
-      # Test the timestamp extraction and removal
-      weather_string = "12345678c175/002g003t085"
-      result = Weather.parse_weather_data(weather_string)
-
-      assert is_map(result)
-      assert result[:data_type] == :weather
-      # Timestamp extraction may vary
-      # Timestamp extraction may vary, just verify it's set
-      assert Map.has_key?(result, :timestamp)
-      assert result[:wind_direction] == 175
-      assert result[:wind_speed] == 2
+    test "normalises zero humidity to one hundred percent" do
+      assert Weather.parse_weather_data("h00").humidity == 100
     end
 
-    test "handles weather data with mixed string and atom keys" do
-      # This tests the atomize_keys_recursive function
-      weather_string = "t072"
-      result = Weather.parse_weather_data(weather_string)
-
-      # All keys should be atoms
-      Enum.each(result, fn {k, _v} ->
-        assert is_atom(k)
-      end)
+    test "decodes upper- and lowercase luminosity markers differently" do
+      assert Weather.parse_weather_data("L100").luminosity == 100
+      assert Weather.parse_weather_data("l100").luminosity == 1100
     end
 
-    test "handles nested maps in weather data" do
-      # While weather data doesn't typically have nested maps,
-      # this tests the recursive nature of atomize_keys_recursive
-      result = Weather.parse_weather_data("t072")
-      # Add a nested map manually to test recursion
-      _result_with_nested = Map.put(result, :nested, %{"string_key" => "value"})
-
-      # Apply the private atomize_keys_recursive function indirectly
-      # by calling parse_weather_data which uses it
-      final_result = Weather.parse_weather_data("t072")
-      assert is_atom(:data_type)
-      assert final_result[:data_type] == :weather
-    end
-  end
-
-  describe "weather_packet_comment?/1 with snow" do
-    test "returns true for comments with snow data" do
-      assert Weather.weather_packet_comment?("s003")
-      assert Weather.weather_packet_comment?("Snow: s005 inches")
-    end
-  end
-
-  describe "parse/1 without timestamp" do
-    test "parses weather data without leading underscore and timestamp" do
-      # Test the second branch of parse/1
-      result = Weather.parse("c175/002g003t085r000p000P000h74b10219")
-      assert is_map(result)
-      assert result[:data_type] == :weather
-      assert result[:wind_direction] == 175
-      assert result[:temperature] == 85
-    end
-  end
-
-  describe "weather property tests with real-world patterns" do
-    property "handles weather data with all fields present" do
-      check all wind_dir <- integer(0..360),
+    property "decodes complete weather reports" do
+      check all wind_direction <- integer(0..360),
                 wind_speed <- integer(0..999),
                 wind_gust <- integer(0..999),
-                # Temperature validation: -100 to 150°F (reasonable weather range)
-                temp <- integer(-99..150),
+                temperature <- integer(-100..150),
                 rain_1h <- integer(0..999),
                 rain_24h <- integer(0..999),
                 rain_midnight <- integer(0..999),
@@ -236,265 +122,76 @@ defmodule Aprs.WeatherTest do
                 pressure <- integer(8000..12_000),
                 luminosity <- integer(0..999),
                 snow <- integer(0..999) do
-        # Build complete weather string (prefix with fixed timestamp so wind data isn't stripped as timestamp)
+        temperature_token =
+          if temperature < 0 do
+            "t-" <> String.pad_leading(Integer.to_string(abs(temperature)), 3, "0")
+          else
+            "t" <> String.pad_leading(Integer.to_string(temperature), 3, "0")
+          end
+
         weather =
-          "_010203z#{String.pad_leading(to_string(rem(wind_dir, 361)), 3, "0")}/#{String.pad_leading(to_string(wind_speed), 3, "0")}"
+          String.pad_leading(Integer.to_string(wind_direction), 3, "0") <>
+            "/" <>
+            String.pad_leading(Integer.to_string(wind_speed), 3, "0") <>
+            "g" <>
+            String.pad_leading(Integer.to_string(wind_gust), 3, "0") <>
+            temperature_token <>
+            "r" <>
+            String.pad_leading(Integer.to_string(rain_1h), 3, "0") <>
+            "p" <>
+            String.pad_leading(Integer.to_string(rain_24h), 3, "0") <>
+            "P" <>
+            String.pad_leading(Integer.to_string(rain_midnight), 3, "0") <>
+            "h" <>
+            String.pad_leading(Integer.to_string(humidity), 2, "0") <>
+            "b" <>
+            String.pad_leading(Integer.to_string(pressure), 5, "0") <>
+            "L" <>
+            String.pad_leading(Integer.to_string(luminosity), 3, "0") <>
+            "s" <>
+            String.pad_leading(Integer.to_string(snow), 3, "0")
 
-        weather = weather <> "g#{String.pad_leading(to_string(wind_gust), 3, "0")}"
-        weather = weather <> "t#{String.pad_leading(to_string(temp), 3, "0")}"
-        weather = weather <> "r#{String.pad_leading(to_string(rain_1h), 3, "0")}"
-        weather = weather <> "p#{String.pad_leading(to_string(rain_24h), 3, "0")}"
-        weather = weather <> "P#{String.pad_leading(to_string(rain_midnight), 3, "0")}"
-        weather = weather <> "h#{String.pad_leading(to_string(humidity), 2, "0")}"
-        weather = weather <> "b#{String.pad_leading(to_string(pressure), 5, "0")}"
-        weather = weather <> "L#{String.pad_leading(to_string(luminosity), 3, "0")}"
-        weather = weather <> "s#{String.pad_leading(to_string(snow), 3, "0")}"
+        result = Weather.parse_weather_data(weather)
 
-        result = Weather.parse(weather)
-
-        assert result.data_type == :weather
-        # 360 wraps to 0 in the normalizer
-        assert result.wind_direction == rem(wind_dir, 360)
+        assert result.wind_direction == rem(wind_direction, 360)
         assert result.wind_speed == wind_speed
         assert result.wind_gust == wind_gust
-        assert result.temperature == temp
+        assert result.temperature == temperature
         assert result.rain_1h == rain_1h / 100.0
         assert result.rain_24h == rain_24h / 100.0
         assert result.rain_since_midnight == rain_midnight / 100.0
-        # APRS: h00 means 100% humidity
-        expected_humidity = if humidity == 0, do: 100, else: humidity
-        assert result.humidity == expected_humidity
+        assert result.humidity == if(humidity == 0, do: 100, else: humidity)
         assert result.pressure == pressure / 10.0
         assert result.luminosity == luminosity
         assert result.snow == snow / 10.0
       end
     end
+  end
 
-    property "handles weather data with missing fields (dots)" do
-      check all has_wind <- boolean(),
-                has_temp <- boolean(),
-                has_rain <- boolean(),
-                has_pressure <- boolean() do
-        # Prefix with fixed timestamp so wind data isn't stripped as timestamp
-        weather = "_010203z"
-        weather = weather <> if has_wind, do: "180/015", else: ".../..."
-        weather = weather <> "g..."
-        weather = weather <> if has_temp, do: "t072", else: "t..."
-        weather = weather <> if has_rain, do: "r001p002P003", else: "r...p...P..."
-        weather = weather <> "h.."
-        weather = weather <> if has_pressure, do: "b10150", else: "b....."
+  describe "parse_weather_data_with_remainder/1" do
+    test "returns the unconsumed comment" do
+      {weather, remainder} = Weather.parse_weather_data_with_remainder("090/000g005t077Weather station")
 
-        result = Weather.parse(weather)
-
-        assert result.data_type == :weather
-
-        if has_wind do
-          assert result.wind_direction == 180
-          assert result.wind_speed == 15
-        else
-          assert result.wind_direction == nil
-          assert result.wind_speed == nil
-        end
-
-        if has_temp do
-          assert result.temperature == 72
-        else
-          assert result.temperature == nil
-        end
-      end
+      assert weather.wind_direction == 90
+      assert weather.wind_speed == 0
+      assert weather.wind_gust == 5
+      assert weather.temperature == 77
+      assert remainder == "Weather station"
     end
 
-    property "handles weather with timestamp variations" do
-      check all day <- integer(1..31),
-                hour <- integer(0..23),
-                minute <- integer(0..59),
-                tz <- member_of(["z", "h", "c", "/"]),
-                temp <- integer(-50..150) do
-        # Format MDHM timestamp
-        timestamp = "#{String.pad_leading(to_string(rem(day, 32)), 2, "0")}"
-        timestamp = timestamp <> "#{String.pad_leading(to_string(hour), 2, "0")}"
-        timestamp = timestamp <> "#{String.pad_leading(to_string(minute), 2, "0")}"
+    test "trims the remainder and consumes rain-counter and voltage extensions" do
+      {weather, remainder} =
+        Weather.parse_weather_data_with_remainder("090/000g005#12345v-02  Station")
 
-        weather = "_#{timestamp}#{tz}175/002g003t#{String.pad_leading(to_string(temp), 3, "0")}"
-
-        result = Weather.parse(weather)
-
-        assert result.data_type == :weather
-        assert result.wind_direction == 175
-        assert result.wind_speed == 2
-        assert result.temperature == temp
-        # Timestamp should be parsed
-        assert result.timestamp
-      end
+      assert weather.wind_gust == 5
+      assert remainder == "Station"
     end
 
-    property "handles weather data from real CWOP stations" do
-      check all station_suffix <- member_of(["AmbientCWOP.com", "weewx", "WX3in1", "DVWP", "eMB62"]),
-                has_luminosity <- boolean(),
-                luminosity <- integer(0..999) do
-        # Real CWOP patterns
-        weather = "_159/003g009t084r000p000P000b09862h35"
+    test "does not consume weather-looking bytes after the comment begins" do
+      {_weather, remainder} =
+        Weather.parse_weather_data_with_remainder("000/000g000t010r000p000P000h80b10166ESP8266-BME280")
 
-        weather =
-          if has_luminosity do
-            weather <> "L#{String.pad_leading(to_string(luminosity), 3, "0")}"
-          else
-            weather
-          end
-
-        weather = weather <> station_suffix
-
-        result = Weather.parse(weather)
-
-        assert result.data_type == :weather
-        assert result.temperature == 84
-        assert result.humidity == 35
-        assert result.pressure == 986.2
-
-        if has_luminosity do
-          assert result.luminosity == luminosity
-        end
-      end
-    end
-
-    property "handles positionless weather reports" do
-      check all wind_dir <- integer(0..360),
-                wind_speed <- integer(0..200),
-                temp <- integer(-50..150),
-                has_wx_station_id <- boolean() do
-        # Positionless weather format (no position data)
-        weather = "c#{String.pad_leading(to_string(rem(wind_dir, 361)), 3, "0")}"
-        weather = weather <> "s#{String.pad_leading(to_string(wind_speed), 3, "0")}"
-        weather = weather <> "g..."
-        weather = weather <> "t#{String.pad_leading(to_string(temp), 3, "0")}"
-        weather = weather <> "r...p...P...h..b....."
-
-        weather =
-          if has_wx_station_id do
-            weather <> "xDVP"
-          else
-            weather
-          end
-
-        result = Weather.parse(weather)
-
-        assert result.data_type == :weather
-        # 360 wraps to 0 in the normalizer
-        assert result.wind_direction == rem(wind_dir, 360)
-        assert result.wind_speed == wind_speed
-        assert result.temperature == temp
-      end
-    end
-
-    property "handles weather with software identifiers" do
-      check all software <- member_of(["DsVP", "DVWP", "wDVP", "xDVP", "yAPRS", "zWX"]),
-                temp <- integer(0..150) do
-        weather = "_000/000g000t#{String.pad_leading(to_string(temp), 3, "0")}r000p000P000h00b00000#{software}"
-
-        result = Weather.parse(weather)
-
-        assert result.data_type == :weather
-        assert result.temperature == temp
-        # Software ID might be parsed into a field
-        assert String.contains?(result.raw_weather_data || "", software)
-      end
-    end
-
-    property "handles malformed weather data gracefully" do
-      check all prefix <- member_of(["_", "c", ""]),
-                malformed_data <- string(:printable, max_length: 50) do
-        weather = prefix <> malformed_data
-
-        result = Weather.parse(weather)
-
-        # Should always return a weather type map
-        assert result.data_type == :weather
-        # But fields might be nil or have default values
-      end
-    end
-
-    property "handles weather in position comment fields" do
-      check all wind_dir <- integer(0..360),
-                temp <- integer(0..150) do
-        # Weather data embedded in comment (no prefix to avoid interference with scanner)
-        comment =
-          "_#{String.pad_leading(to_string(rem(wind_dir, 361)), 3, "0")}/000g000t#{String.pad_leading(to_string(temp), 3, "0")}"
-
-        result = Weather.parse_from_comment(comment)
-
-        if result != nil do
-          assert result.data_type == :weather
-          # Wind direction is normalized: 360 -> 0 (full circle)
-          expected_direction = if rem(wind_dir, 361) == 360, do: 0, else: rem(wind_dir, 361)
-          assert result.wind_direction == expected_direction
-          assert result.temperature == temp
-          assert result.comment == comment
-        end
-      end
-    end
-
-    property "handles negative temperatures correctly" do
-      check all temp <- integer(-99..-1) do
-        # Negative temps are represented with leading minus
-        weather = "_000/000g000t#{String.pad_leading(to_string(temp), 3, "0")}r000p000P000h00b00000"
-
-        result = Weather.parse(weather)
-
-        assert result.data_type == :weather
-        assert result.temperature == temp
-      end
-    end
-
-    test "returns nil for non-binary input" do
-      assert Weather.parse_from_comment(nil) == nil
-      assert Weather.parse_from_comment(123) == nil
-    end
-
-    test "detects weather pattern with negative temperature (t- prefix)" do
-      comment = "t-012h50b10000"
-      result = Weather.parse_from_comment(comment)
-      assert is_map(result)
-      assert result[:data_type] == :weather
-      assert result[:temperature] == -12
-    end
-
-    test "detects weather pattern with luminosity l prefix" do
-      comment = "l500t075"
-      result = Weather.parse_from_comment(comment)
-      assert is_map(result)
-      assert result[:data_type] == :weather
-    end
-
-    test "detects weather pattern with luminosity L prefix" do
-      comment = "L500t075"
-      result = Weather.parse_from_comment(comment)
-      assert is_map(result)
-      assert result[:data_type] == :weather
-    end
-
-    test "weather_packet_comment? returns false for non-binary" do
-      assert Weather.weather_packet_comment?(nil) == false
-      assert Weather.weather_packet_comment?(123) == false
-    end
-
-    property "handles weather beacon formats" do
-      check all beacon_text <- member_of(["WX de", "Weather:", "WX rpt", "Conditions:"]),
-                temp <- integer(0..150),
-                humidity <- integer(0..99) do
-        weather =
-          beacon_text <>
-            " t#{String.pad_leading(to_string(temp), 3, "0")}h#{String.pad_leading(to_string(humidity), 2, "0")}"
-
-        result = Weather.parse_from_comment(weather)
-
-        if result != nil do
-          assert result.data_type == :weather
-          assert result.temperature == temp
-          # h00 is parsed as 100% humidity in APRS
-          expected_humidity = if humidity == 0, do: 100, else: humidity
-          assert result.humidity == expected_humidity
-        end
-      end
+      assert remainder == "ESP8266-BME280"
     end
   end
 end

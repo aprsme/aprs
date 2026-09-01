@@ -1,23 +1,36 @@
 defmodule Aprs.CompressedPositionHelpers do
   @moduledoc """
-  Compressed position helpers for APRS packets.
+  Decodes APRS compressed position coordinates, cs pairs, and compression metadata.
   """
 
   import Aprs.Guards
   import Bitwise
 
-  # Pre-calculated constants for better performance
   @lat_divisor 380_926
   @lon_divisor 190_463
 
+  @nmea_sources {:other, :gll, :gga, :rmc}
+
+  @origins {
+    :compressed,
+    :tnc_btext,
+    :software,
+    :tbd,
+    :kpc3,
+    :pico,
+    :other_tracker,
+    :digipeater_conversion
+  }
+
+  @doc """
+  Decodes a four-byte base-91 compressed latitude.
+  """
   @spec convert_compressed_lat(binary()) :: {:ok, float()} | {:error, String.t()}
   def convert_compressed_lat(lat) when is_binary(lat) and byte_size(lat) == 4 do
     case safe_to_charlist(lat) do
       {:ok, [l1, l2, l3, l4]}
       when is_base91(l1) and is_base91(l2) and is_base91(l3) and is_base91(l4) ->
-        value = calculate_base91_value([l1, l2, l3, l4])
-        lat_val = 90 - value / @lat_divisor
-        {:ok, clamp_lat(lat_val)}
+        validate_latitude(90 - calculate_base91_value([l1, l2, l3, l4]) / @lat_divisor)
 
       {:ok, _} ->
         {:error, "Invalid compressed latitude - contains non-ASCII characters"}
@@ -29,14 +42,15 @@ defmodule Aprs.CompressedPositionHelpers do
 
   def convert_compressed_lat(_), do: {:error, "Invalid compressed latitude"}
 
+  @doc """
+  Decodes a four-byte base-91 compressed longitude.
+  """
   @spec convert_compressed_lon(binary()) :: {:ok, float()} | {:error, String.t()}
   def convert_compressed_lon(lon) when is_binary(lon) and byte_size(lon) == 4 do
     case safe_to_charlist(lon) do
       {:ok, [l1, l2, l3, l4]}
       when is_base91(l1) and is_base91(l2) and is_base91(l3) and is_base91(l4) ->
-        value = calculate_base91_value([l1, l2, l3, l4])
-        lon_val = -180 + value / @lon_divisor
-        {:ok, clamp_lon(lon_val)}
+        validate_longitude(-180 + calculate_base91_value([l1, l2, l3, l4]) / @lon_divisor)
 
       {:ok, _} ->
         {:error, "Invalid compressed longitude - contains non-ASCII characters"}
@@ -47,6 +61,14 @@ defmodule Aprs.CompressedPositionHelpers do
   end
 
   def convert_compressed_lon(_), do: {:error, "Invalid compressed longitude"}
+
+  @spec validate_latitude(float()) :: {:ok, float()} | {:error, String.t()}
+  defp validate_latitude(latitude) when latitude >= -90 and latitude <= 90, do: {:ok, latitude}
+  defp validate_latitude(_latitude), do: {:error, "Invalid compressed latitude - out of range"}
+
+  @spec validate_longitude(float()) :: {:ok, float()} | {:error, String.t()}
+  defp validate_longitude(longitude) when longitude >= -180 and longitude <= 180, do: {:ok, longitude}
+  defp validate_longitude(_longitude), do: {:error, "Invalid compressed longitude - out of range"}
 
   @spec safe_to_charlist(binary()) :: {:ok, charlist()} | {:error, :invalid_utf8}
   defp safe_to_charlist(binary) do
@@ -63,150 +85,52 @@ defmodule Aprs.CompressedPositionHelpers do
       (c4 - 33)
   end
 
-  @doc false
-  @spec clamp_lat(number()) :: float()
-  def clamp_lat(lat_val) do
-    lat_val
-    |> max(-90.0)
-    |> min(90.0)
-  end
-
-  @doc false
-  @spec clamp_lon(number()) :: float()
-  def clamp_lon(lon_val) do
-    # Longitude wraps around, so normalize to -180 to 180 range
-    normalize_longitude(lon_val)
-  end
-
   @doc """
-  Normalize longitude to the -180 to 180 range by wrapping.
-  """
-  @spec normalize_longitude(float()) :: float()
-  def normalize_longitude(lon) when lon > 180, do: normalize_longitude(lon - 360)
-  def normalize_longitude(lon) when lon < -180, do: normalize_longitude(lon + 360)
-  def normalize_longitude(lon), do: lon
+  Decodes the GPS fix age, NMEA source, and encoder origin from a compression type byte.
 
-  # Map of resolution values to ambiguity levels
-  @resolution_to_ambiguity %{
-    # No ambiguity
-    0 => 0,
-    # 0.1 minute
-    1 => 1,
-    # 1 minute
-    2 => 2,
-    # 10 minutes
-    3 => 3,
-    # 1 degree
-    4 => 4
-  }
-
-  @doc """
-  Calculate position resolution (ambiguity) from the compression type byte.
-
-  In compressed format, the compression type byte encodes:
-  - Bits 0-1: GPS fix type/NMEA source
-  - Bits 2-4: Position resolution
-  - Bit 5: Old/Current GPS data
-
-  Position resolution values:
-  - 0: No resolution specified (full precision)
-  - 1: 0.1' (about 600 feet)
-  - 2: 1' (about 0.01 degree)
-  - 3: 10' (about 0.1 degree)  
-  - 4: 1 degree
-  """
-  @spec calculate_compressed_ambiguity(binary()) :: integer()
-  def calculate_compressed_ambiguity(<<char::8, _rest::binary>>) do
-    # The compression type is offset by 33 to make it printable ASCII
-    # Special case for space character which is 0x20 (32)
-    type_value = calculate_type_value(char)
-
-    # Extract bits 2-4 for position resolution
-    # Shift right by 2 bits and mask with 0b111 (7)
-    resolution = type_value >>> 2 &&& 0x07
-
-    # Map to standard ambiguity levels (0-4), default to 0 for invalid values
-    Map.get(@resolution_to_ambiguity, resolution, 0)
-  end
-
-  def calculate_compressed_ambiguity("") do
-    0
-  end
-
-  @doc """
-  Parse the compression type byte to extract all encoded information.
-
-  Returns a map with:
-  - gps_fix_type: NMEA source/GPS fix type (0-3)
-  - position_resolution: Position ambiguity level (0-4)
-  - old_gps_data: Whether this is old GPS data
-  - aprs_messaging: APRS messaging capability (bit 6)
+  An empty value, or a leading byte below the base-91 offset, decodes as zero.
   """
   @spec parse_compression_type(binary()) :: %{
-          gps_fix_type: :other | :gll_gga | :rmc | :unknown,
-          position_resolution: non_neg_integer(),
-          old_gps_data: boolean(),
-          aprs_messaging: non_neg_integer()
+          gps_fix: :old | :current,
+          nmea_source: :other | :gll | :gga | :rmc,
+          origin:
+            :compressed
+            | :tnc_btext
+            | :software
+            | :tbd
+            | :kpc3
+            | :pico
+            | :other_tracker
+            | :digipeater_conversion
         }
-  def parse_compression_type(<<char::8, _rest::binary>>) do
-    # The compression type is offset by 33 to make it printable ASCII
-    # Special case for space character which is 0x20 (32)
-    type_value = calculate_type_value(char)
-
-    # Extract individual bit fields
-    # Bits 0-1
-    gps_fix = type_value &&& 0x03
-    # Bits 2-4
-    resolution = type_value >>> 2 &&& 0x07
-    # Bit 5
-    old_data = type_value >>> 5 &&& 0x01
-    # Bit 6 - APRS messaging capability
-    messaging = type_value >>> 6 &&& 0x01
-
-    %{
-      gps_fix_type: decode_gps_fix_type(gps_fix),
-      position_resolution: map_resolution_to_ambiguity(resolution),
-      old_gps_data: old_data == 1,
-      aprs_messaging: messaging
-    }
+  def parse_compression_type(<<char, _rest::binary>>) do
+    char
+    |> calculate_type_value()
+    |> decode_compression_type()
   end
 
-  def parse_compression_type("") do
-    %{
-      gps_fix_type: :unknown,
-      position_resolution: 0,
-      old_gps_data: false,
-      aprs_messaging: 0
-    }
-  end
+  def parse_compression_type(""), do: decode_compression_type(0)
 
-  @spec calculate_type_value(integer()) :: integer()
+  @spec calculate_type_value(integer()) :: non_neg_integer()
   defp calculate_type_value(char) when char < 33, do: 0
   defp calculate_type_value(char), do: char - 33
 
-  @spec decode_gps_fix_type(integer()) :: atom()
-  # Compressed from other source
-  defp decode_gps_fix_type(0), do: :other
-  # From GLL or GGA NMEA sentence
-  defp decode_gps_fix_type(1), do: :gll_gga
-  # From RMC NMEA sentence
-  defp decode_gps_fix_type(2), do: :rmc
-  # Unknown/reserved
-  defp decode_gps_fix_type(3), do: :unknown
+  @spec decode_compression_type(non_neg_integer()) :: map()
+  defp decode_compression_type(type_value) do
+    %{
+      gps_fix: if((type_value &&& 0x20) == 0, do: :old, else: :current),
+      nmea_source: elem(@nmea_sources, type_value >>> 3 &&& 0x03),
+      origin: elem(@origins, type_value &&& 0x07)
+    }
+  end
 
-  @spec map_resolution_to_ambiguity(integer()) :: integer()
-  # No ambiguity
-  defp map_resolution_to_ambiguity(0), do: 0
-  # 0.1 minute
-  defp map_resolution_to_ambiguity(1), do: 1
-  # 1 minute
-  defp map_resolution_to_ambiguity(2), do: 2
-  # 10 minutes
-  defp map_resolution_to_ambiguity(3), do: 3
-  # 1 degree
-  defp map_resolution_to_ambiguity(4), do: 4
-  # Default to no ambiguity for invalid values
-  defp map_resolution_to_ambiguity(_), do: 0
+  @spec gga_compression_type?(binary()) :: boolean()
+  defp gga_compression_type?(<<char, _rest::binary>>) do
+    type_value = calculate_type_value(char)
+    (type_value >>> 3 &&& 0x03) == 0x02
+  end
+
+  defp gga_compression_type?(""), do: false
 
   @doc false
   @spec convert_to_base91(binary()) :: non_neg_integer()
@@ -215,34 +139,42 @@ defmodule Aprs.CompressedPositionHelpers do
     calculate_base91_value([v1, v2, v3, v4])
   end
 
-  @spec convert_compressed_cs(binary() | nil) :: %{
-          optional(:course) => non_neg_integer(),
+  @doc """
+  Decodes a compressed cs pair that has no compression type byte to go with it.
+  """
+  @spec convert_compressed_cs(binary()) :: map()
+  def convert_compressed_cs(cs), do: convert_compressed_cs(cs, " ")
+
+  @doc """
+  Decodes a compressed cs pair.
+
+  GGA-originated positions use the pair for altitude in feet. Other positions use it for course
+  and speed in knots, except for the radio-range marker.
+  """
+  @spec convert_compressed_cs(binary(), binary()) :: %{
+          optional(:course) => pos_integer(),
           optional(:speed) => float(),
-          optional(:range) => float()
+          optional(:range) => float(),
+          optional(:altitude) => float()
         }
-  # Check for DAO extension pattern
-  def convert_compressed_cs("&!"), do: %{}
+  def convert_compressed_cs(<<c, s>>, compression_type)
+      when is_binary(compression_type) and is_base91(c) and is_base91(s) do
+    gga? = gga_compression_type?(compression_type)
+    c_value = c - 33
+    s_value = s - 33
 
-  def convert_compressed_cs(<<c, s>> = cs) when is_binary(cs) do
-    s_val = s - 33
-    decode_course_speed(c, s_val)
+    cond do
+      gga? ->
+        %{altitude: 1.002 ** (c_value * 91 + s_value)}
+
+      c == ?{ ->
+        %{range: 2 * 1.08 ** s_value}
+
+      true ->
+        course = if c_value == 0, do: 360, else: c_value * 4
+        %{course: course, speed: 1.08 ** s_value - 1}
+    end
   end
 
-  def convert_compressed_cs(_), do: %{}
-
-  @spec decode_course_speed(integer(), integer()) :: %{
-          optional(:course) => non_neg_integer(),
-          optional(:speed) => float(),
-          optional(:range) => float()
-        }
-  defp decode_course_speed(?Z, s_val) do
-    %{range: 2 * 1.08 ** s_val}
-  end
-
-  defp decode_course_speed(c, s_val) when c in ?!..?~ and c != ?Z do
-    speed = max(Aprs.Convert.speed(1.08 ** s_val - 1, :knots, :mph), 0.01)
-    %{course: s_val * 4, speed: speed}
-  end
-
-  defp decode_course_speed(_, _), do: %{}
+  def convert_compressed_cs(_, _), do: %{}
 end

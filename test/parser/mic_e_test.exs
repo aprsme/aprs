@@ -11,7 +11,7 @@ defmodule Aprs.MicETest do
 
       {:ok, parsed} = Aprs.parse(packet)
 
-      assert parsed.data_type == :mic_e_old
+      assert parsed.data_type == :mic_e
       assert parsed.sender == "KG5EIU-9"
       assert parsed.destination == "S3PS2V"
 
@@ -24,10 +24,60 @@ defmodule Aprs.MicETest do
       # Verify other MicE data
       assert parsed.data_extended.symbol_table_id == "/"
       assert parsed.data_extended.symbol_code == "j"
-      assert_in_delta parsed.data_extended.speed, 34.759, 0.001
+      assert parsed.data_extended.speed == 40.0
       assert parsed.data_extended.course == 91
       assert parsed.data_extended.message_bits == {1, 0, 1}
       assert parsed.data_extended.message_type == :standard
+    end
+
+    test "keeps decoded speed in knots and decodes the course" do
+      result = MicE.parse("(_fn\"Oj/", "T7SYWU", :mic_e)
+
+      assert result.speed == 20.0
+      assert result.course == 251
+      assert result.has_position
+      assert result.posresolution == 18.52
+      assert result.messaging == 0
+    end
+
+    test "parses the APRS Mic-E speed and course example" do
+      {:ok, parsed} = Aprs.parse("N0CALL>T7SYWU:`(_fn\"Oj/")
+
+      assert parsed.data_type == :mic_e
+      assert parsed.data_extended.speed == 20.0
+      assert parsed.data_extended.course == 251
+    end
+
+    test "keeps course 360 as due north" do
+      result = MicE.parse("(_fn)Xj/", "T7SYWU", :mic_e)
+
+      assert result.course == 360
+    end
+
+    test "does not turn the symbol table byte into a comment prefix" do
+      data = <<96, 124, 62, 102, 32, 119, ?j, ?/>> <> "Hi"
+
+      assert MicE.parse(data, "S3PS2V").comment == "Hi"
+    end
+
+    test "applies DAO precision and reports the datum byte" do
+      data = <<96, 124, 62, 102, 32, 119, ?j, ?/>>
+      baseline = MicE.parse(data, "S3PS2V")
+      result = MicE.parse(data <> "!w52!Hi", "S3PS2V")
+
+      assert result.comment == "Hi"
+      assert result.daodatumbyte == "W"
+      assert result.dao.datum == "W"
+      assert result.latitude > baseline.latitude
+      assert result.longitude < baseline.longitude
+    end
+
+    test "extracts base-91 telemetry from the comment" do
+      data = <<96, 124, 62, 102, 32, 119, ?j, ?/>> <> "|ss11|Hi"
+      result = MicE.parse(data, "S3PS2V")
+
+      assert result.comment == "Hi"
+      assert result.telemetry == %{seq: 7544, vals: [1472], bits: nil}
     end
 
     test "returns parsed map for valid Mic-E destination and data" do
@@ -146,10 +196,7 @@ defmodule Aprs.MicETest do
       result = MicE.parse(data, destination)
       assert is_map(result)
       assert result[:data_type] == :mic_e
-      # Speed should be normalized
-      # Speed is in knots after conversion (* 0.868976)
-      # Original speed may have been normalized but conversion makes it larger
-      assert is_number(result[:speed])
+      assert is_float(result[:speed])
     end
 
     test "handles course normalization for values >= 400" do
@@ -197,15 +244,15 @@ defmodule Aprs.MicETest do
 
       {:ok, parsed} = Aprs.parse(packet)
 
-      assert parsed.data_type == :mic_e_old
+      assert parsed.data_type == :mic_e
       assert parsed.sender == "W5DGK-9"
       assert parsed.destination == "S3RS2Y"
 
       # FAP preserves device type code prefix and _% suffix in the comment
-      assert parsed.data_extended.comment == "`Happy Trails ...146.52 or 469-247-2654_%"
+      assert parsed.data_extended.comment == "Happy Trails ...146.52 or 469-247-2654_%"
 
-      # Verify altitude was parsed from the prefix
-      assert parsed.data_extended.altitude == 218
+      # Mic-E altitude is encoded in metres and reported in feet.
+      assert_in_delta parsed.data_extended.altitude, 715.22309711, 0.000001
 
       # Verify coordinates
       assert_in_delta parsed.data_extended.latitude, 33.388167, 0.0001
@@ -222,15 +269,15 @@ defmodule Aprs.MicETest do
 
       {:ok, parsed} = Aprs.parse(packet)
 
-      assert parsed.data_type == :mic_e_old
+      assert parsed.data_type == :mic_e
       assert parsed.sender == "KD5OVR-1"
       assert parsed.destination == "SS1R4W"
 
       # FAP preserves device type code ] and the remaining = after altitude extraction
       assert parsed.data_extended.comment == "]="
 
-      # The altitude should be parsed from the data extension format ]"6M}
-      assert parsed.data_extended.altitude == 236
+      # The altitude is encoded as 236 metres and reported in feet.
+      assert_in_delta parsed.data_extended.altitude, 774.27821522, 0.000001
 
       # Verify coordinates
       assert_in_delta parsed.data_extended.latitude, 33.207833, 0.0001
@@ -267,7 +314,7 @@ defmodule Aprs.MicETest do
 
       {:ok, parsed} = Aprs.parse(packet)
 
-      assert parsed.data_type == :mic_e_old
+      assert parsed.data_type == :mic_e
       assert parsed.sender == "VE6LY-7"
       assert parsed.destination == "U0TVXY"
 
@@ -358,7 +405,7 @@ defmodule Aprs.MicETest do
     end
 
     test "handles invalid course values by normalizing to 0" do
-      # Test that invalid course values (negative or > 359) are normalized to 0
+      # Invalid courses normalize to 0, the Mic-E value for an unknown course.
       # This can happen when the speed/course bytes in the packet contain control characters
       # For example, when se_c byte is 24 (Ctrl-X), we get se = 24 - 28 = -4
       # We can't easily construct such a packet in plain text, so we'll test the normalize_course function

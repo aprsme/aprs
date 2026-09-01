@@ -71,13 +71,15 @@ defmodule Aprs.GuardsTest do
   end
 
   describe "is_base91/1" do
-    test "accepts printable ASCII (33..126)" do
-      for b <- 33..126, do: assert(Helper.base91?(b))
+    test "accepts the APRS base-91 range (33..123)" do
+      for b <- 33..123, do: assert(Helper.base91?(b))
     end
 
-    test "rejects control chars and high bytes" do
+    test "rejects control chars, high bytes and the out-of-range printables" do
       refute Helper.base91?(0)
       refute Helper.base91?(32)
+      refute Helper.base91?(124)
+      refute Helper.base91?(126)
       refute Helper.base91?(127)
       refute Helper.base91?(200)
     end

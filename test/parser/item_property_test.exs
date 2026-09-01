@@ -47,6 +47,8 @@ defmodule Aprs.ItemPropertyTest do
         if result != nil && result.data_type == :item do
           assert result.item_name == name
           assert result.live_killed == if(is_live, do: "!", else: "_")
+          assert result.alive == if(is_live, do: 1, else: 0)
+          assert result.itemname == name
           assert result.data_extended.latitude
           assert result.data_extended.longitude
           assert result.data_extended.symbol_table_id == symbol_table
@@ -58,53 +60,53 @@ defmodule Aprs.ItemPropertyTest do
     property "handles item reports with compressed positions" do
       check all name <- string(:alphanumeric, min_length: 3, max_length: 9),
                 is_live <- boolean(),
-                lat_chars <- string(Enum.to_list(33..126), length: 4),
-                lon_chars <- string(Enum.to_list(33..126), length: 4),
-                symbol_table <- member_of(["/", "\\"]),
-                symbol_code <- string(Enum.to_list(33..126), length: 1),
-                cs_chars <- string(Enum.to_list(33..126), length: 2),
-                type_char <- string(Enum.to_list(33..126), length: 1),
+                lat_chars <- string(Enum.to_list(33..123), length: 4),
+                lon_chars <- string(Enum.to_list(33..123), length: 4),
+                symbol_table <-
+                  member_of(
+                    ["/", "\\"] ++
+                      (?A..?Z |> Enum.to_list() |> Enum.map(&<<&1>>)) ++
+                      (?a..?j |> Enum.to_list() |> Enum.map(&<<&1>>))
+                  ),
+                symbol_code <- string(Enum.to_list(33..123), length: 1),
+                cs_chars <- string(Enum.to_list(33..123), length: 2),
+                type_char <- string(Enum.to_list(33..123), length: 1),
                 comment <- string(:printable, max_length: 20) do
         live_dead = if is_live, do: "!", else: "_"
 
-        # Compressed position format (must start with "/" for compressed)
-        compressed_pos =
-          if symbol_table == "/" do
-            "/#{lat_chars}#{lon_chars}#{symbol_code}#{cs_chars}#{type_char}"
-          else
-            # Use uncompressed format for non-"/" symbol tables
-            "4903.50N\\07201.75W#{symbol_code}"
-          end
+        compressed_pos = "#{symbol_table}#{lat_chars}#{lon_chars}#{symbol_code}#{cs_chars}#{type_char}"
 
         packet = "TEST>APRS:)#{name}#{live_dead}#{compressed_pos}#{comment}"
 
         result = parse_packet(packet)
 
         if result != nil && result.data_type == :item do
-          # The parser might include extra characters in item_name for compressed positions
-          # or might parse live_killed differently for compressed vs uncompressed
-          assert String.contains?(result.item_name || "", name) ||
-                   result.item_name == name
-
-          # Live/killed indicator should be present
-          assert result.live_killed in ["!", "_"]
+          assert result.item_name == name
+          assert result.itemname == name
+          assert result.live_killed == live_dead
+          assert result.alive == if(is_live, do: 1, else: 0)
+          assert result.data_extended.position_format == :compressed
+          assert result.data_extended.symbol_table_id == symbol_table
+          assert result.data_extended.has_position
+          assert result.data_extended.posresolution == 0.291
         end
       end
     end
 
     property "handles item reports with DAO extension" do
       check all name <- string(:alphanumeric, min_length: 3, max_length: 9),
-                dao_lat <- string(:alphanumeric, length: 1),
-                dao_lon <- string(:alphanumeric, length: 1),
-                datum <- member_of(["W", " ", "!"]),
-                comment <- string(:printable, max_length: 20) do
-        dao = "!#{datum}#{dao_lat}#{dao_lon}!"
+                dao_lat <- string(Enum.to_list(?0..?9), length: 1),
+                dao_lon <- string(Enum.to_list(?0..?9), length: 1),
+                comment <- string(:alphanumeric, max_length: 20) do
+        dao = "!W#{dao_lat}#{dao_lon}!"
         packet = "TEST>APRS:)#{name}!4903.50N/07201.75W>#{comment}#{dao}"
 
         result = parse_packet(packet)
 
-        if result != nil && result.data_type == :item && result.data_extended[:dao] != nil do
-          assert is_map(result.data_extended.dao)
+        if result != nil && result.data_type == :item do
+          assert result.data_extended.daodatumbyte == "W"
+          assert is_float(result.data_extended.latitude)
+          assert is_float(result.data_extended.longitude)
         end
       end
     end

@@ -153,7 +153,7 @@ defmodule Aprs.FieldMappingTest do
       # IO.inspect(parsed, pretty: true)
 
       # Should have correct comment
-      assert parsed.comment == "HLilyTTGO Tracker"
+      assert parsed.comment == "LilyTTGO Tracker"
     end
   end
 

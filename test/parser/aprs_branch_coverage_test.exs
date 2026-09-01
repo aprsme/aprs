@@ -30,13 +30,13 @@ defmodule Aprs.BranchCoverageTest do
       assert is_binary(reason) or reason == :invalid_packet
     end
 
-    test "exception during parse is caught and reported as 'Parse exception'" do
-      # Telemetry.parse(":EQNS.<data>") chunks the comma-separated values into
-      # groups of three; a non-multiple-of-3 number of values causes the
-      # inner Enum.map fn-clause to raise FunctionClauseError. The do_parse
-      # rescue at line 119 must catch it and return {:error, "Parse exception"}.
-      packet = "N0CALL>APRS,WIDE1-1:T:EQNS.1,2"
-      assert {:error, "Parse exception"} = Aprs.parse(packet)
+    test "a telemetry definition with an incomplete coefficient set does not raise" do
+      # Telemetry EQNS coefficients are read in groups of three; a trailing
+      # partial group used to raise FunctionClauseError inside the parser.
+      packet = "N0CALL>APRS,WIDE1-1::N0CALL   :EQNS.1,2"
+      assert {:ok, parsed} = Aprs.parse(packet)
+      assert parsed.data_type == :telemetry_message
+      assert parsed.data_extended.equations == []
     end
   end
 

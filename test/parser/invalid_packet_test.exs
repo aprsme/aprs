@@ -9,7 +9,7 @@ defmodule Aprs.InvalidPacketTest do
       # The packet should parse successfully but with position error
       {:ok, parsed} = Aprs.parse(packet)
       assert parsed.sender == "DB0WV-11"
-      assert parsed.data_type == :position_with_message
+      assert parsed.data_type == :position_error
 
       # The position data should have an error
       assert is_map(parsed.data_extended)
@@ -53,7 +53,7 @@ defmodule Aprs.InvalidPacketTest do
 
       {:ok, parsed} = Aprs.parse(packet)
       assert parsed.sender == "HB9ZF-12"
-      assert parsed.data_type == :position
+      assert parsed.data_type == :position_error
 
       # The position data should have an error about invalid compressed data
       assert is_map(parsed.data_extended)
@@ -68,7 +68,7 @@ defmodule Aprs.InvalidPacketTest do
       # The packet structure is valid but the position data is malformed
       {:ok, parsed} = Aprs.parse(packet)
       assert parsed.sender == "TSwWV-8"
-      assert parsed.data_type == :position
+      assert parsed.data_type == :position_error
 
       # The position data should have an error
       assert is_map(parsed.data_extended)

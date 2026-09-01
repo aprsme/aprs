@@ -136,67 +136,159 @@ defmodule Aprs.NMEAHelpersTest do
   end
 
   describe "parse_nmea_sentence/1" do
-    test "parses valid $GPRMC sentence" do
-      sentence = "$GPRMC,214531,A,3242.4569,N,08527.2793,W,000,209,180226,,*05"
+    test "parses RMC from any talker with speed in knots and an integer course" do
+      sentence = "$GNRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W"
 
       assert {:ok, result} = NMEAHelpers.parse_nmea_sentence(sentence)
-      assert_in_delta result.latitude, 32.707615, 0.000001
-      assert_in_delta result.longitude, -85.454655, 0.000001
-      assert result.speed == 0
-      assert result.course == 209
-      assert result.format == :nmea
-    end
-
-    test "parses $GPRMC with non-zero speed" do
-      sentence = "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,,*23"
-
-      assert {:ok, result} = NMEAHelpers.parse_nmea_sentence(sentence)
-      assert_in_delta result.latitude, 48.1173, 0.001
-      assert_in_delta result.longitude, 11.516667, 0.001
-      assert result.speed == 22
+      assert_in_delta result.latitude, 48.1173, 0.000001
+      assert_in_delta result.longitude, 11.516667, 0.000001
+      assert result.speed == 22.4
       assert result.course == 84
+      assert result.altitude == nil
+      assert result.nmea_type == :rmc
       assert result.format == :nmea
     end
 
-    test "rejects $GPRMC with void status" do
+    test "normalizes a zero RMC course to due north and accepts a stripped prefix" do
+      sentence = "QZRMC,214531,A,3242.4569,N,08527.2793,W,000,000,180226,,"
+
+      assert {:ok, result} = NMEAHelpers.parse_nmea_sentence(sentence)
+      assert result.speed == 0.0
+      assert result.course == 360
+      assert result.nmea_type == :rmc
+    end
+
+    test "rejects RMC with void status" do
       sentence = "$GPRMC,214531,V,3242.4569,N,08527.2793,W,000,209,180226,,*05"
 
-      assert {:error, "GPRMC void status"} = NMEAHelpers.parse_nmea_sentence(sentence)
+      assert {:error, "RMC void status"} = NMEAHelpers.parse_nmea_sentence(sentence)
     end
 
-    test "rejects non-GPRMC sentences" do
-      assert {:error, "Unsupported NMEA sentence type"} =
-               NMEAHelpers.parse_nmea_sentence("$GPGGA,123456,4903.50,N,07201.75,W,1,04,2.3,545.4,M,46.9,M,,*47")
+    test "rejects malformed RMC speed and course instead of substituting zero" do
+      assert {:error, "Invalid speed"} =
+               NMEAHelpers.parse_nmea_sentence("$GPRMC,214531,A,3242.4569,N,08527.2793,W,abc,209,180226,,")
+
+      assert {:error, "Invalid course"} =
+               NMEAHelpers.parse_nmea_sentence("$GPRMC,214531,A,3242.4569,N,08527.2793,W,000,xyz,180226,,")
     end
 
-    test "rejects sentences with too few fields" do
-      assert {:error, _reason} = NMEAHelpers.parse_nmea_sentence("$GPRMC,214531,A")
-    end
-
-    test "rejects non-string input" do
-      assert {:error, _reason} = NMEAHelpers.parse_nmea_sentence(nil)
-      assert {:error, _reason} = NMEAHelpers.parse_nmea_sentence(123)
-    end
-
-    test "rejects empty string" do
-      assert {:error, _reason} = NMEAHelpers.parse_nmea_sentence("")
-    end
-
-    test "rejects non-NMEA string" do
-      assert {:error, _reason} = NMEAHelpers.parse_nmea_sentence("not an nmea sentence")
-    end
-
-    test "rejects non-GPRMC sentences with stripped $ prefix (dispatcher case)" do
-      assert {:error, "Unsupported NMEA sentence type"} =
-               NMEAHelpers.parse_nmea_sentence("GPGGA,123456,4903.50,N,07201.75,W,1,04,2.3,545.4,M,46.9,M,,*47")
-    end
-
-    test "$GPRMC with non-numeric speed/course parses to 0" do
-      sentence = "$GPRMC,214531,A,3242.4569,N,08527.2793,W,abc,xyz,180226,,*05"
+    test "parses GGA position and converts altitude from metres to feet" do
+      sentence = "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,"
 
       assert {:ok, result} = NMEAHelpers.parse_nmea_sentence(sentence)
-      assert result.speed == 0
-      assert result.course == 0
+      assert_in_delta result.latitude, 48.1173, 0.000001
+      assert_in_delta result.longitude, 11.516667, 0.000001
+      assert_in_delta result.altitude, 1789.370079, 0.000001
+      assert result.speed == nil
+      assert result.course == nil
+      assert result.nmea_type == :gga
+    end
+
+    test "rejects GGA without a fix" do
+      sentence = "$GNGGA,123519,4807.038,N,01131.000,E,0,00,9.9,0.0,M,0.0,M,,"
+
+      assert {:error, "GGA no fix"} = NMEAHelpers.parse_nmea_sentence(sentence)
+    end
+
+    test "parses stripped-prefix GLL and checks its status" do
+      assert {:ok, result} = NMEAHelpers.parse_nmea_sentence("GPGLL,4916.45,N,12311.12,W,225444,A")
+      assert_in_delta result.latitude, 49.274167, 0.000001
+      assert_in_delta result.longitude, -123.185333, 0.000001
+      assert result.speed == nil
+      assert result.course == nil
+      assert result.altitude == nil
+      assert result.nmea_type == :gll
+
+      assert {:error, "GLL void status"} =
+               NMEAHelpers.parse_nmea_sentence("$GLGLL,4916.45,N,12311.12,W,225444,V*00")
+    end
+
+    test "parses VTG course and speed without inventing a position" do
+      sentence = "$GAVTG,054.7,T,034.4,M,005.5,N,010.2,K*00"
+
+      assert {:ok, result} = NMEAHelpers.parse_nmea_sentence(sentence)
+      assert result.latitude == nil
+      assert result.longitude == nil
+      assert result.speed == 5.5
+      assert result.course == 54
+      assert result.altitude == nil
+      assert result.nmea_type == :vtg
+    end
+
+    test "parses WPL coordinates and waypoint name" do
+      sentence = "$BDWPL,4917.16,N,12310.64,W,003*65"
+
+      assert {:ok, result} = NMEAHelpers.parse_nmea_sentence(sentence)
+      assert_in_delta result.latitude, 49.286, 0.000001
+      assert_in_delta result.longitude, -123.177333, 0.000001
+      assert result.waypoint_name == "003"
+      assert result.speed == nil
+      assert result.course == nil
+      assert result.altitude == nil
+      assert result.nmea_type == :wpl
+    end
+
+    test "parses a complete Ultimeter packet into converted weather values" do
+      sentence = "$ULTW000000BE02EB000027700000023A023A0025005800000000"
+
+      assert {:ok, result} = NMEAHelpers.parse_nmea_sentence(sentence)
+      assert result.latitude == nil
+      assert result.longitude == nil
+      assert result.speed == nil
+      assert result.course == nil
+      assert result.altitude == nil
+      assert result.nmea_type == :ultimeter
+      assert result.format == :nmea
+      assert result.weather.wind_peak == 0.0
+      assert_in_delta result.weather.wind_direction, 267.1875, 0.000001
+      assert result.weather.outdoor_temperature == 74.7
+      assert result.weather.rain_total == 0.0
+      assert result.weather.barometer == 1009.6
+      assert result.weather.outdoor_humidity == 57.0
+      assert result.weather.indoor_humidity == 57.0
+      assert result.weather.date == 37
+      assert result.weather.time == 88
+      assert result.weather.rain_today == 0.0
+      assert result.weather.wind_average == 0.0
+    end
+
+    test "decodes signed Ultimeter temperatures" do
+      payload =
+        Enum.join(["----", "----", "FF9C", "----", "----", "FFF6", "----", "----", "----", "----", "----", "----"])
+
+      assert {:ok, %{weather: weather}} = NMEAHelpers.parse_nmea_sentence("ULTW" <> payload)
+      assert weather.outdoor_temperature == -10.0
+      assert weather.indoor_temperature == -1.0
+    end
+
+    test "accepts the short Ultimeter example and treats dashed fields as missing" do
+      assert {:ok, %{nmea_type: :ultimeter, weather: weather}} =
+               NMEAHelpers.parse_nmea_sentence("$ULTW0000000002700000000000208A00000000000000000000")
+
+      assert is_map(weather)
+
+      assert {:ok, %{weather: missing}} =
+               NMEAHelpers.parse_nmea_sentence("ULTW------------------------------------------------")
+
+      assert Enum.all?(missing, fn {_field, value} -> value == nil end)
+    end
+
+    test "distinguishes unknown NMEA sentence types from non-NMEA input" do
+      assert {:error, "Unsupported NMEA sentence type"} =
+               NMEAHelpers.parse_nmea_sentence("$GPXYZ,1,2,3")
+
+      assert {:error, "Unsupported NMEA sentence type"} =
+               NMEAHelpers.parse_nmea_sentence("GNXYZ,1,2,3")
+
+      assert {:error, "Not an NMEA sentence"} =
+               NMEAHelpers.parse_nmea_sentence("not an nmea sentence")
+    end
+
+    test "rejects malformed sentences and non-string input" do
+      assert {:error, "Invalid RMC sentence"} = NMEAHelpers.parse_nmea_sentence("$GPRMC,214531,A")
+      assert {:error, "Not an NMEA sentence"} = NMEAHelpers.parse_nmea_sentence("")
+      assert {:error, "Invalid NMEA input"} = NMEAHelpers.parse_nmea_sentence(nil)
+      assert {:error, "Invalid NMEA input"} = NMEAHelpers.parse_nmea_sentence(123)
     end
   end
 

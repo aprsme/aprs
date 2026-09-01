@@ -5,40 +5,63 @@ defmodule Aprs.TelemetryFromCommentTest do
   alias Aprs.TelemetryFromComment
 
   describe "extract_telemetry_from_comment/1" do
-    test "extracts telemetry from a comment with pipe-enclosed data" do
-      comment = "Hello |!!AB| World"
-      {telemetry, cleaned} = TelemetryFromComment.extract_telemetry_from_comment(comment)
-      assert is_map(telemetry)
-      assert is_binary(cleaned)
+    test "extracts a sequence and one analog value and removes the block" do
+      comment = "Hello |ss11| world"
+
+      assert {telemetry, "Hello  world"} =
+               TelemetryFromComment.extract_telemetry_from_comment(comment)
+
+      assert telemetry == %{
+               seq: decode_pair("ss"),
+               vals: [decode_pair("11")],
+               bits: nil
+             }
     end
 
-    test "returns nil telemetry when no telemetry pattern present" do
+    test "decodes the seventh pair as an eight-bit digital value" do
+      analog_pairs = ["!!", "!\"", "!#", "!$", "!%"]
+      digital_pair = encode_pair(170)
+      comment = "|" <> Enum.join(["!&" | analog_pairs] ++ [digital_pair]) <> "|"
+
+      assert {telemetry, ""} = TelemetryFromComment.extract_telemetry_from_comment(comment)
+      assert telemetry.seq == decode_pair("!&")
+      assert telemetry.vals == Enum.map(analog_pairs, &decode_pair/1)
+      assert telemetry.bits == "10101010"
+    end
+
+    test "rejects a nine-pair run and leaves the comment unchanged" do
+      comment = "Hello |" <> String.duplicate("!!", 9) <> "| world"
+
+      assert {nil, ^comment} = TelemetryFromComment.extract_telemetry_from_comment(comment)
+    end
+
+    test "rejects bytes outside the base91 range and missing closing delimiters" do
+      invalid_byte = "before |ss1~| after"
+      missing_delimiter = "before |ss11 after"
+
+      assert {nil, ^invalid_byte} =
+               TelemetryFromComment.extract_telemetry_from_comment(invalid_byte)
+
+      assert {nil, ^missing_delimiter} =
+               TelemetryFromComment.extract_telemetry_from_comment(missing_delimiter)
+    end
+
+    test "returns nil telemetry when no telemetry pattern is present" do
       comment = "No telemetry here"
-      {telemetry, cleaned} = TelemetryFromComment.extract_telemetry_from_comment(comment)
-      assert telemetry == nil
-      assert cleaned == comment
+
+      assert {nil, ^comment} = TelemetryFromComment.extract_telemetry_from_comment(comment)
+      assert {nil, ""} = TelemetryFromComment.extract_telemetry_from_comment("")
     end
 
-    test "returns nil telemetry for empty string" do
-      {telemetry, cleaned} = TelemetryFromComment.extract_telemetry_from_comment("")
-      assert telemetry == nil
-      assert cleaned == ""
-    end
-
-    test "handles non-binary input (fallback clause)" do
-      {telemetry, original} = TelemetryFromComment.extract_telemetry_from_comment(nil)
-      assert telemetry == nil
-      assert original == nil
-
-      {telemetry2, original2} = TelemetryFromComment.extract_telemetry_from_comment(123)
-      assert telemetry2 == nil
-      assert original2 == 123
+    test "handles non-binary input" do
+      assert {nil, nil} = TelemetryFromComment.extract_telemetry_from_comment(nil)
+      assert {nil, 123} = TelemetryFromComment.extract_telemetry_from_comment(123)
     end
   end
 
   describe "parse_base91_telemetry/1" do
     test "parses valid 2-character base91 string" do
-      # Both chars must be in range 33-123 (excluding 124)
+      # Both bytes must be in the inclusive range 33..123.
       result = TelemetryFromComment.parse_base91_telemetry("!!")
       assert result == 0
 
@@ -91,24 +114,38 @@ defmodule Aprs.TelemetryFromCommentTest do
   end
 
   describe "extract_telemetry_from_comment/1 properties" do
-    # Comment filler that cannot contain the "|" telemetry delimiter (0x7C),
-    # so the generated telemetry block is the only possible match.
     @filler_chars [?a..?z, ?A..?Z, ?0..?9, ?\s]
 
-    property "extracts the sequence and values and strips the block from the comment" do
+    property "extracts valid blocks containing two to seven base91 pairs" do
       check all prefix <- StreamData.string(@filler_chars, max_length: 10),
                 suffix <- StreamData.string(@filler_chars, max_length: 10),
-                pairs <- StreamData.list_of(base91_pair(), min_length: 1, max_length: 9) do
-        block = Enum.join(pairs)
-        comment = prefix <> "|" <> block <> "|" <> suffix
+                pairs <- StreamData.list_of(base91_pair(), min_length: 2, max_length: 7) do
+        comment = prefix <> "|" <> Enum.join(pairs) <> "|" <> suffix
 
-        {telemetry, cleaned} = TelemetryFromComment.extract_telemetry_from_comment(comment)
+        assert {telemetry, cleaned} =
+                 TelemetryFromComment.extract_telemetry_from_comment(comment)
 
         [seq_pair | value_pairs] = pairs
         assert telemetry.seq == decode_pair(seq_pair)
-        assert telemetry.vals == Enum.map(value_pairs, &decode_pair/1)
-        assert length(telemetry.vals) <= 8
+
+        if length(pairs) == 7 do
+          {analog_pairs, [digital_pair]} = Enum.split(value_pairs, 5)
+          assert telemetry.vals == Enum.map(analog_pairs, &decode_pair/1)
+          assert telemetry.bits == to_bits(decode_pair(digital_pair))
+        else
+          assert telemetry.vals == Enum.map(value_pairs, &decode_pair/1)
+          assert telemetry.bits == nil
+        end
+
         assert cleaned == String.trim(prefix <> suffix)
+      end
+    end
+
+    property "rejects base91 runs longer than seven pairs" do
+      check all pairs <- StreamData.list_of(base91_pair(), min_length: 8, max_length: 9) do
+        comment = "prefix|" <> Enum.join(pairs) <> "|suffix"
+
+        assert {nil, ^comment} = TelemetryFromComment.extract_telemetry_from_comment(comment)
       end
     end
 
@@ -125,10 +162,10 @@ defmodule Aprs.TelemetryFromCommentTest do
         assert is_binary(cleaned)
 
         if telemetry do
-          # Delimiters may be non-base91 characters, so entries can decode to nil.
-          assert is_nil(telemetry.seq) or telemetry.seq in 0..8280
-          assert Enum.all?(telemetry.vals, &(is_nil(&1) or &1 in 0..8280))
-          assert length(telemetry.vals) <= 8
+          assert telemetry.seq in 0..8280
+          assert Enum.all?(telemetry.vals, &(&1 in 0..8280))
+          assert length(telemetry.vals) in 1..5
+          assert telemetry.bits == nil or byte_size(telemetry.bits) == 8
         else
           assert cleaned == comment
         end
@@ -141,4 +178,12 @@ defmodule Aprs.TelemetryFromCommentTest do
   end
 
   defp decode_pair(<<c1, c2>>), do: (c1 - 33) * 91 + (c2 - 33)
+  defp encode_pair(value), do: <<div(value, 91) + 33, rem(value, 91) + 33>>
+
+  defp to_bits(value) do
+    value
+    |> rem(256)
+    |> Integer.to_string(2)
+    |> String.pad_leading(8, "0")
+  end
 end

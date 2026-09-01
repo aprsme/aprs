@@ -170,7 +170,7 @@ defmodule Aprs.MainTest do
       assert :position_with_message == Aprs.parse_datatype("=1234.56N/12345.67W-Test")
       assert :timestamped_position_with_message == Aprs.parse_datatype("@092345z1234.56N/12345.67W-Test")
       assert :object == Aprs.parse_datatype(";OBJECT   *092345z1234.56N/12345.67W-")
-      assert :mic_e_old == Aprs.parse_datatype("`1234.56N/12345.67W-")
+      assert :mic_e == Aprs.parse_datatype("`1234.56N/12345.67W-")
       assert :mic_e_old == Aprs.parse_datatype("'1234.56N/12345.67W-")
       assert :weather == Aprs.parse_datatype("_12345678c000s000g000")
       assert :telemetry == Aprs.parse_datatype("T#123,100,200,300,400,500,00000000")
@@ -180,12 +180,12 @@ defmodule Aprs.MainTest do
       assert :user_defined == Aprs.parse_datatype("{AUSERDEF")
       assert :third_party_traffic == Aprs.parse_datatype("}N0CALL>APRS,TCPIP*:data")
       assert :item == Aprs.parse_datatype(")ITEM!1234.56N/12345.67W-")
-      assert :item == Aprs.parse_datatype("%ITEM!1234.56N/12345.67W-")
+      assert :agrelo_dfjr == Aprs.parse_datatype("%DFR1234")
       assert :peet_logging == Aprs.parse_datatype("*wind data")
       assert :invalid_test_data == Aprs.parse_datatype(",test data")
       assert :df_report == Aprs.parse_datatype("#DFS2360")
       assert :phg_data == Aprs.parse_datatype("#PHG2360")
-      assert :phg_data == Aprs.parse_datatype("#2360")
+      assert :peet_logging == Aprs.parse_datatype("#2360")
       assert :unknown_datatype == Aprs.parse_datatype("X unknown")
     end
   end
@@ -270,7 +270,7 @@ defmodule Aprs.MainTest do
 
       case Aprs.parse("N0CALL>APRS:!" <> compressed_data) do
         {:ok, result} ->
-          assert result.data_type in [:position, :malformed_position]
+          assert result.data_type in [:position, :malformed_position, :position_error]
 
         {:error, _} ->
           :ok
@@ -288,7 +288,7 @@ defmodule Aprs.MainTest do
       for pos_data <- malformed_positions do
         case Aprs.parse("N0CALL>APRS:" <> pos_data) do
           {:ok, result} ->
-            assert result.data_type in [:position, :malformed_position]
+            assert result.data_type in [:position, :malformed_position, :position_error]
 
           {:error, _} ->
             :ok
@@ -326,15 +326,13 @@ defmodule Aprs.MainTest do
 
   describe "message parsing edge cases" do
     test "handles messages with acknowledgment numbers" do
-      msg_with_ack = ":N0CALL   :Hello world{123}"
+      msg_with_ack = ":N0CALL   :Hello world{123"
 
       case Aprs.parse("N0CALL>APRS:" <> msg_with_ack) do
         {:ok, result} ->
           assert result.data_type == :message
-
-          if result.data_extended do
-            assert result.data_extended.message_number == "123"
-          end
+          assert result.data_extended.message_text == "Hello world"
+          assert result.data_extended.message_number == "123"
 
         {:error, _} ->
           :ok
@@ -520,51 +518,40 @@ defmodule Aprs.MainTest do
   end
 
   describe "compressed position helpers" do
-    test "convert_to_base91 handles 4-character string" do
-      # Direct test of convert_to_base91
-      result = Aprs.convert_to_base91("5L!!")
-      assert is_integer(result)
-      assert result > 0
-    end
-
     test "decode_compressed_position extracts position data" do
-      # Test decode_compressed_position
       compressed = <<?/, "5L!!", "<*e7", ">", "12", "34", "rest">>
-      result = Aprs.decode_compressed_position(compressed)
-      assert is_map(result)
+      result = Aprs.parse_position_without_timestamp(compressed)
+
       assert result.latitude
       assert result.longitude
       assert result.symbol_code == ">"
     end
   end
 
-  describe "parse_status/1" do
-    test "parses status without leading >" do
-      result = Aprs.parse_status("Status message without prefix")
-      assert result.status_text == "Status message without prefix"
-      assert result.data_type == :status
-    end
-  end
+  describe "station capabilities" do
+    test "decodes bare and keyed capabilities" do
+      result = Aprs.parse_data(:station_capabilities, "APRS", "IGATE,MSG_CNT=99")
 
-  describe "parse_station_capabilities/1" do
-    test "parses capabilities without leading <" do
-      result = Aprs.parse_station_capabilities("IGATE,MSG")
-      assert result.capabilities == "IGATE,MSG"
+      assert result.capabilities == %{"IGATE" => nil, "MSG_CNT" => "99"}
       assert result.data_type == :station_capabilities
     end
   end
 
-  describe "parse_query/1" do
-    test "parses query without proper format" do
-      result = Aprs.parse_query("malformed query")
-      assert result.query_data == "malformed query"
+  describe "queries" do
+    test "keeps the query type byte" do
+      result = Aprs.parse_data(:query, "APRS", "APRS?")
+
+      assert result.query_type == "A"
+      assert result.query_data == "PRS?"
       assert result.data_type == :query
     end
   end
 
-  describe "parse_user_defined/1" do
-    test "parses user defined without proper format" do
-      result = Aprs.parse_user_defined("not user defined")
+  describe "user defined data" do
+    test "keeps the user id and payload" do
+      result = Aprs.parse_data(:user_defined, "APRS", "Anot user defined")
+
+      assert result.user_id == "A"
       assert result.user_data == "not user defined"
       assert result.data_type == :user_defined
     end
@@ -604,7 +591,7 @@ defmodule Aprs.MainTest do
       # Test the branch for position with exactly 18 characters (8 lat + 1 sym_table + 9 lon)
       result = Aprs.parse_position_without_timestamp("1234.56N\\12345.67W")
       assert result.data_type == :position
-      assert result.symbol_code == "_"
+      assert result.symbol_code == nil
       assert result.compressed? == false
     end
 

@@ -28,6 +28,9 @@ defmodule Aprs.ObjectTest do
       assert result[:position_format] == :uncompressed
       assert result[:latitude]
       assert result[:longitude]
+
+      assert result[:has_position]
+      assert result[:posresolution] == 18.52
     end
 
     test "parses compressed object position" do
@@ -37,6 +40,27 @@ defmodule Aprs.ObjectTest do
       assert is_map(result)
       assert result[:data_type] == :object
       assert result[:position_format] == :compressed
+    end
+
+    test "parses a compressed object with an alternate symbol table" do
+      result = Object.parse(";LEADER   *092345z\\5L!!<*e7>7P[Test")
+
+      assert result.position_format == :compressed
+      assert result.format == :compressed
+      assert result.symbol_table_id == "\\"
+      assert result.has_position
+      assert result.posresolution == 0.291
+      assert is_float(result.latitude)
+      assert is_float(result.longitude)
+      assert result.comment == "Test"
+    end
+
+    test "decodes compressed GGA cs bytes as altitude" do
+      result = Object.parse(";LEADER   *092345z/abcdabcd>!!1Test")
+
+      assert result.altitude == 1.0
+      refute Map.has_key?(result, :course)
+      refute Map.has_key?(result, :speed)
     end
 
     test "parses unknown/fallback object position" do
@@ -71,40 +95,38 @@ defmodule Aprs.ObjectTest do
       assert result[:comment] == "comment"
     end
 
-    test "parses object with DAO extension in comment" do
-      # Triggers Map.put(result, :daodatumbyte, dao_byte) - line 108
-      data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">Test !ABZ! position"
-      result = Object.parse(data)
-      assert is_map(result)
-      assert result[:data_type] == :object
-      assert result[:daodatumbyte] == "A"
+    test "parses and applies a DAO extension in the comment" do
+      result = Object.parse(";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">Test !W12! position")
+
+      assert result.data_type == :object
+      assert result.daodatumbyte == "W"
+      refute String.contains?(result.comment, "!W12!")
+      assert result.latitude > 49.0583
+      assert result.longitude < -72.02917
     end
 
-    test "parses object with space-A= altitude prefix" do
-      # Triggers parse_altitude_prefix(<<space, A, = ...>>) - line 147
+    test "ignores a space-A= string that is not an APRS altitude extension" do
       data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> "> A=00100 comment"
       result = Object.parse(data)
-      assert is_map(result)
-      assert result[:data_type] == :object
+
+      assert result[:altitude] == nil
+      assert result.comment == "A=00100 comment"
     end
 
-    test "parses object with negative altitude" do
-      # Triggers parse_altitude_value(<<?-, rest::binary>>, _acc) - line 157
-      data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">/A=-0100 comment"
+    test "parses a valid negative altitude as a float" do
+      data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">/A=-00100 comment"
       result = Object.parse(data)
-      assert is_map(result)
-      assert result[:data_type] == :object
-      assert result[:altitude] == -100
+
+      assert result.data_type == :object
+      assert result.altitude == -100.0
     end
 
-    test "parses altitude where parse_altitude_digits gets empty acc" do
-      # Triggers defp parse_altitude_digits(rest, _acc) when byte_size(acc) == 0 - line 176
-      # /A= followed immediately by a non-digit
+    test "leaves a malformed altitude extension in the comment" do
       data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">/A=X comment"
       result = Object.parse(data)
-      assert is_map(result)
-      assert result[:data_type] == :object
+
       assert result[:altitude] == nil
+      assert result.comment == "A=X comment"
     end
 
     test "handles invalid compressed latitude/longitude conversion" do
@@ -120,23 +142,29 @@ defmodule Aprs.ObjectTest do
       assert result[:longitude] == -180.0 or result[:longitude] == nil
     end
 
-    test "extracts altitude after RNG prefix (slash form)" do
-      # Comment contains RNG followed by altitude /A=
-      data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">RNG0050/A=00100rest"
+    test "captures RNG and extracts altitude after it" do
+      data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">RNG0050/A=000100rest"
       result = Object.parse(data)
-      assert result[:altitude] == 100
+
+      assert result.radiorange == 50
+      assert result.altitude == 100.0
+      assert result.comment == "rest"
     end
 
-    test "extracts altitude after RNG prefix (space form)" do
-      data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">RNG0050 A=00100rest"
+    test "finds altitude late in the comment" do
+      data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">Prefix/A=001234Test"
       result = Object.parse(data)
-      assert result[:altitude] == 100
+
+      assert result.altitude == 1234.0
+      assert result.comment == "PrefixTest"
     end
 
-    test "RNG present without altitude returns nil altitude" do
-      data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">RNG0050 misc"
+    test "leaves an out-of-range altitude in the comment" do
+      data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">/A=500001"
       result = Object.parse(data)
+
       assert result[:altitude] == nil
+      assert result.comment == "/A=500001"
     end
 
     test "extracts PHG from object comment" do
@@ -146,7 +174,6 @@ defmodule Aprs.ObjectTest do
     end
 
     test "strips leading slash delimiter from comment" do
-      # extract_rng returns {nil, comment}, parse_altitude not matched, comment retains leading /
       data = ";OBJECTNAM*1234567" <> "4903.50N/" <> "07201.75W" <> ">/leading-slash"
       result = Object.parse(data)
       assert result[:comment] == "leading-slash"
@@ -158,27 +185,34 @@ defmodule Aprs.ObjectTest do
       assert result[:comment] == "leading-space"
     end
 
-    test "object timestamp already elapsed this month stays in the current month" do
-      # Day 1 at 00:00 is never in the future relative to "now" within the same
-      # month, so the timestamp resolves against the current month rather than
-      # falling back to the previous one.
-      started_at = DateTime.utc_now()
-      result = Object.parse(";LEADER   *010000z4903.50N/07201.75W>Test")
-      finished_at = DateTime.utc_now()
+    test "parses HHMMSSh timestamps as today's UTC time" do
+      started_on = Date.utc_today()
+      result = Object.parse(";LEADER   *120000h4903.50N/07201.75W>Test")
+      finished_on = Date.utc_today()
 
       assert is_integer(result.timestamp)
-      {:ok, dt} = DateTime.from_unix(result.timestamp)
+      {:ok, timestamp} = DateTime.from_unix(result.timestamp)
 
-      assert dt.day == 1
-      assert dt.hour == 0
-      assert dt.minute == 0
-      assert dt.second == 0
-      refute DateTime.after?(dt, finished_at)
+      assert DateTime.to_date(timestamp) in [started_on, finished_on]
+      assert DateTime.to_time(timestamp) == ~T[12:00:00]
+    end
 
-      assert {dt.year, dt.month} in [
-               {started_at.year, started_at.month},
-               {finished_at.year, finished_at.month}
-             ]
+    test "parses weather for objects using the weather symbol" do
+      result = Object.parse(";WEATHER  *120000h4903.50N/07201.75W_220/005g010t050Tail")
+
+      assert result.weather.wind_direction == 220
+      assert result.weather.wind_speed == 5
+      assert result.weather.wind_gust == 10
+      assert result.weather.temperature == 50
+      assert result.comment == "Tail"
+    end
+
+    test "parses object course and speed with normalized units" do
+      result = Object.parse(";LEADER   *120000h4903.50N/07201.75W>088/036Test")
+
+      assert result.course == 88
+      assert result.speed == 36.0
+      assert result.comment == "Test"
     end
   end
 end
