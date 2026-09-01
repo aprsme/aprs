@@ -28,27 +28,18 @@ defmodule Aprs.PositionTest do
       result = Position.parse_aprs_position("12345678", "123456789")
       assert %{latitude: nil, longitude: nil} = result
     end
-  end
 
-  describe "calculate_position_ambiguity/2" do
-    test "returns correct ambiguity for no spaces" do
-      assert Position.calculate_position_ambiguity("4903.50N", "07201.75W") == 0
+    test "accepts positions at the poles and antimeridian" do
+      assert %{latitude: 90.0, longitude: -180.0} =
+               Position.parse_aprs_position("9000.00N", "18000.00W")
     end
 
-    test "returns correct ambiguity for one space in each string" do
-      assert Position.calculate_position_ambiguity("49 3.50N", "07201.7 W") == 1
-    end
+    test "rejects coordinates beyond the poles and antimeridian" do
+      assert %{latitude: nil, longitude: nil} =
+               Position.parse_aprs_position("9001.00N", "07201.75W")
 
-    test "returns correct ambiguity for two spaces in each string" do
-      assert Position.calculate_position_ambiguity("4  3.50N", "0720  .7W") == 2
-    end
-  end
-
-  describe "count_spaces/1" do
-    property "counts spaces correctly" do
-      check all s <- StreamData.string(:ascii, min_length: 0, max_length: 20) do
-        assert Position.count_spaces(s) == s |> String.graphemes() |> Enum.count(&(&1 == " "))
-      end
+      assert %{latitude: nil, longitude: nil} =
+               Position.parse_aprs_position("4903.50N", "18001.00W")
     end
   end
 
@@ -65,7 +56,7 @@ defmodule Aprs.PositionTest do
         data = parsed[:data_extended]
         # The packet should have location data but it's not being decoded
         # This test will help us understand what's happening
-        assert data[:data_type] == :mic_e_old
+        assert data[:data_type] == :mic_e
         # VE6LY-7 is in southern France, so longitude should be positive (east)
         # and in the correct range for France (roughly 0-10 degrees east)
         if data[:longitude] do
@@ -79,30 +70,6 @@ defmodule Aprs.PositionTest do
     end
   end
 
-  describe "from_aprs/2" do
-    test "delegates to parse_aprs_position" do
-      result = Position.from_aprs("4903.50N", "07201.75W")
-      assert result.latitude
-      assert result.longitude
-      assert_in_delta result.latitude, 49.058333, 0.000001
-      assert_in_delta result.longitude, -72.029167, 0.000001
-    end
-  end
-
-  describe "from_decimal/2" do
-    test "creates position from decimal values" do
-      result = Position.from_decimal(45.5, -73.6)
-      assert_in_delta result.latitude, 45.5, 0.000001
-      assert_in_delta result.longitude, -73.6, 0.000001
-    end
-
-    test "handles integer input" do
-      result = Position.from_decimal(45, -73)
-      assert_in_delta result.latitude, 45.0, 0.000001
-      assert_in_delta result.longitude, -73.0, 0.000001
-    end
-  end
-
   describe "parse_aprs_position/2 with invalid direction" do
     test "returns nil lat when lat fraction has invalid direction char" do
       # "1234.56X" has valid digit prefix but 'X' is not N/S - triggers line 80 _ -> :error
@@ -113,22 +80,6 @@ defmodule Aprs.PositionTest do
     test "returns nil lon when lon fraction has invalid direction char" do
       result = Position.parse_aprs_position("1234.56N", "09876.54X")
       assert result.longitude == nil
-    end
-  end
-
-  describe "calculate_position_ambiguity/2 edge cases" do
-    test "returns 0 for mismatched space counts" do
-      # Test the default case in @ambiguity_levels map
-      assert Position.calculate_position_ambiguity("49 3.50N", "07201.75W") == 0
-      assert Position.calculate_position_ambiguity("4903.50N", "07201.7 W") == 0
-    end
-
-    test "returns correct ambiguity for 3 spaces" do
-      assert Position.calculate_position_ambiguity("4   .50N", "072   .7W") == 3
-    end
-
-    test "returns correct ambiguity for 4 spaces" do
-      assert Position.calculate_position_ambiguity("    .50N", "072    .W") == 4
     end
   end
 
@@ -331,47 +282,6 @@ defmodule Aprs.PositionTest do
                 lon <- StreamData.string([?0..?9, ?\s, ?., ?E, ?W], max_length: 11) do
         result = Position.parse_aprs_position(lat, lon)
         assert is_nil(result.latitude) == is_nil(result.longitude)
-      end
-    end
-
-    property "from_aprs/2 delegates to parse_aprs_position/2" do
-      check all lat <- StreamData.string([?0..?9, ?\s, ?., ?N, ?S], max_length: 10),
-                lon <- StreamData.string([?0..?9, ?\s, ?., ?E, ?W], max_length: 11) do
-        assert Position.from_aprs(lat, lon) == Position.parse_aprs_position(lat, lon)
-      end
-    end
-  end
-
-  describe "calculate_position_ambiguity/2 properties" do
-    property "always returns a level between 0 and 4" do
-      check all lat <- StreamData.string([?0..?9, ?\s, ?., ?N, ?S], max_length: 12),
-                lon <- StreamData.string([?0..?9, ?\s, ?., ?E, ?W], max_length: 12) do
-        assert Position.calculate_position_ambiguity(lat, lon) in 0..4
-      end
-    end
-
-    property "returns the shared space count when both coordinates agree, else 0" do
-      check all spaces <- StreamData.integer(0..6),
-                other <- StreamData.integer(0..6) do
-        lat = String.duplicate(" ", spaces)
-        lon = String.duplicate(" ", other)
-
-        expected = if spaces == other and spaces <= 4, do: spaces, else: 0
-        assert Position.calculate_position_ambiguity(lat, lon) == expected
-      end
-    end
-  end
-
-  describe "from_decimal/2 properties" do
-    property "returns the given coordinates as floats" do
-      check all lat <- StreamData.one_of([StreamData.integer(-90..90), StreamData.float(min: -90.0, max: 90.0)]),
-                lon <- StreamData.one_of([StreamData.integer(-180..180), StreamData.float(min: -180.0, max: 180.0)]) do
-        result = Position.from_decimal(lat, lon)
-
-        assert is_float(result.latitude)
-        assert is_float(result.longitude)
-        assert result.latitude == lat / 1
-        assert result.longitude == lon / 1
       end
     end
   end

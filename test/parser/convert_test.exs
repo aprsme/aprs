@@ -57,54 +57,15 @@ defmodule Aprs.ConvertTest do
     end
   end
 
-  describe "speed/3" do
-    test "converts knots to mph" do
-      # Test conversion factor: 1.15077945, rounded to 2 decimal places
-      assert Convert.speed(10, :knots, :mph) == 11.51
-      assert Convert.speed(20, :knots, :mph) == 23.02
-      assert Convert.speed(0, :knots, :mph) == 0.0
-      assert Convert.speed(5, :knots, :mph) == 5.75
-    end
-
-    test "handles fractional knots" do
-      assert Convert.speed(10.5, :knots, :mph) == 12.08
-      assert Convert.speed(2.5, :knots, :mph) == 2.88
-    end
-
-    property "speed conversion is always rounded to 2 decimal places" do
-      check all speed <- StreamData.float(min: 0.0, max: 1000.0) do
-        result = Convert.speed(speed, :knots, :mph)
-
-        # Check that result is rounded to 2 decimal places
-        rounded_result = Float.round(result, 2)
-        assert result == rounded_result
-
-        # Check conversion factor
-        expected = Float.round(speed * 1.15077945, 2)
-        assert result == expected
-      end
-    end
-
-    property "speed conversion produces positive results for positive input" do
-      check all speed <- StreamData.float(min: 0.1, max: 1000.0) do
-        result = Convert.speed(speed, :knots, :mph)
-        assert result >= 0
-        assert is_float(result)
-      end
-    end
-  end
-
   describe "edge cases" do
     test "handles zero values" do
       assert Convert.wind(0, :ultimeter, :mph) == 0.0
       assert Convert.temp(0, :ultimeter, :f) == 0.0
-      assert Convert.speed(0, :knots, :mph) == 0.0
     end
 
     test "handles large values" do
       assert Convert.wind(10_000, :ultimeter, :mph) == 621.371192
       assert Convert.temp(10_000, :ultimeter, :f) == 1000.0
-      assert Convert.speed(1000, :knots, :mph) == 1150.78
     end
 
     test "wind conversion precision" do
@@ -117,13 +78,6 @@ defmodule Aprs.ConvertTest do
       # Test that the exact conversion factor is used
       result = Convert.temp(1, :ultimeter, :f)
       assert result == 0.1
-    end
-
-    test "speed conversion precision and rounding" do
-      # Test that the exact conversion factor is used and rounded
-      result = Convert.speed(1, :knots, :mph)
-      expected = Float.round(1.15077945, 2)
-      assert result == expected
     end
   end
 end

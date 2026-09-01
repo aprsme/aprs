@@ -14,6 +14,8 @@ defmodule Aprs.CompressedSymbolTableTest do
       assert data.compressed? == true
       assert data.symbol_table_id == "L"
       assert data.symbol_code == "&"
+      assert data.position_ambiguity == 0
+      assert data.compression_info == %{gps_fix: :old, nmea_source: :gll, origin: :software}
 
       # Verify coordinates are correct
       assert_in_delta data.latitude, 47.288, 0.001
@@ -29,6 +31,13 @@ defmodule Aprs.CompressedSymbolTableTest do
       {:ok, parsed1} = Aprs.parse(packet1)
       assert parsed1.data_extended.symbol_table_id == "/"
       assert parsed1.data_extended.compressed? == true
+      assert parsed1.data_extended.position_ambiguity == 0
+
+      assert parsed1.data_extended.compression_info == %{
+               gps_fix: :old,
+               nmea_source: :other,
+               origin: :compressed
+             }
 
       # Compressed with alternate symbol table
       packet2 = "TEST>APRS:!\\5L!!<*e7& sT comment"
@@ -36,6 +45,13 @@ defmodule Aprs.CompressedSymbolTableTest do
       assert parsed2.data_extended.symbol_table_id == "\\"
       assert parsed2.data_extended.symbol_code == "&"
       assert parsed2.data_extended.compressed? == true
+      assert parsed2.data_extended.position_ambiguity == 0
+
+      assert parsed2.data_extended.compression_info == %{
+               gps_fix: :current,
+               nmea_source: :gga,
+               origin: :tbd
+             }
     end
   end
 end

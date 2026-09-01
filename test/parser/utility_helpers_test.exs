@@ -2,42 +2,146 @@ defmodule Aprs.UtilityHelpersTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
-  describe "count_spaces/1" do
-    property "counts spaces correctly for any string" do
-      check all s <- StreamData.string(:printable, min_length: 0, max_length: 50) do
-        expected = s |> String.to_charlist() |> Enum.count(fn c -> c == ?\s end)
-        assert Aprs.UtilityHelpers.count_spaces(s) == expected
-      end
+  alias Aprs.UtilityHelpers
+
+  describe "parse_timestamp/2 day-hour-minute formats" do
+    test "parses a timestamp in the current month" do
+      now = ~U[2026-09-30 12:00:00Z]
+
+      assert UtilityHelpers.parse_timestamp("092345z", now) ==
+               DateTime.to_unix(~U[2026-09-09 23:45:00Z])
     end
 
-    test "returns 0 for empty string" do
-      assert Aprs.UtilityHelpers.count_spaces("") == 0
+    test "accepts the six-byte zulu form" do
+      now = ~U[2026-09-30 12:00:00Z]
+
+      assert UtilityHelpers.parse_timestamp("092345", now) ==
+               UtilityHelpers.parse_timestamp("092345z", now)
     end
 
-    test "returns 0 for string with no spaces" do
-      assert Aprs.UtilityHelpers.count_spaces("HelloWorld") == 0
+    test "treats local time with an unknown zone as UTC" do
+      now = ~U[2026-09-30 12:00:00Z]
+
+      assert UtilityHelpers.parse_timestamp("092345/", now) ==
+               UtilityHelpers.parse_timestamp("092345z", now)
     end
 
-    test "counts single space" do
-      assert Aprs.UtilityHelpers.count_spaces("Hello World") == 1
+    test "uses the previous month when the day is not in the current month" do
+      now = ~U[2026-09-01 00:00:00Z]
+
+      assert UtilityHelpers.parse_timestamp("312345z", now) ==
+               DateTime.to_unix(~U[2026-08-31 23:45:00Z])
     end
 
-    test "counts multiple spaces" do
-      assert Aprs.UtilityHelpers.count_spaces("Hello   World") == 3
+    test "uses the previous month when the current-month timestamp is in the future" do
+      now = ~U[2026-09-01 00:00:00Z]
+
+      assert UtilityHelpers.parse_timestamp("302345z", now) ==
+               DateTime.to_unix(~U[2026-08-30 23:45:00Z])
     end
 
-    test "counts leading and trailing spaces" do
-      assert Aprs.UtilityHelpers.count_spaces("  Hello World  ") == 5
+    test "rolls back to December from January" do
+      now = ~U[2026-01-01 00:00:00Z]
+
+      assert UtilityHelpers.parse_timestamp("312345z", now) ==
+               DateTime.to_unix(~U[2025-12-31 23:45:00Z])
     end
 
-    test "handles tabs and other whitespace" do
-      # Only counts spaces
-      assert Aprs.UtilityHelpers.count_spaces("Hello\tWorld\nTest") == 0
+    test "returns nil when the timestamp day is absent from both candidate months" do
+      assert UtilityHelpers.parse_timestamp("312345z", ~U[2026-05-01 00:00:00Z]) == nil
     end
 
-    test "returns 0 for non-binary input" do
-      assert Aprs.UtilityHelpers.count_spaces(nil) == 0
-      assert Aprs.UtilityHelpers.count_spaces(123) == 0
+    test "allows a timestamp up to one hour in the future for clock skew" do
+      now = ~U[2026-09-01 00:00:00Z]
+
+      assert UtilityHelpers.parse_timestamp("010030z", now) ==
+               DateTime.to_unix(~U[2026-09-01 00:30:00Z])
+    end
+  end
+
+  describe "parse_timestamp/2 hour-minute-second format" do
+    test "uses the previous day for a timestamp beyond the clock-skew allowance" do
+      now = ~U[2026-09-02 00:00:05Z]
+
+      assert UtilityHelpers.parse_timestamp("235950h", now) ==
+               DateTime.to_unix(~U[2026-09-01 23:59:50Z])
+    end
+
+    test "uses the current day for an earlier timestamp" do
+      now = ~U[2026-09-02 18:00:00Z]
+
+      assert UtilityHelpers.parse_timestamp("120000h", now) ==
+               DateTime.to_unix(~U[2026-09-02 12:00:00Z])
+    end
+
+    test "allows a timestamp up to one hour in the future for clock skew" do
+      now = ~U[2026-09-02 12:00:00Z]
+
+      assert UtilityHelpers.parse_timestamp("123000h", now) ==
+               DateTime.to_unix(~U[2026-09-02 12:30:00Z])
+    end
+  end
+
+  describe "parse_timestamp/2 validation" do
+    test "rejects out-of-range fields" do
+      now = ~U[2026-09-02 12:00:00Z]
+
+      assert UtilityHelpers.parse_timestamp("002345z", now) == nil
+      assert UtilityHelpers.parse_timestamp("012400z", now) == nil
+      assert UtilityHelpers.parse_timestamp("012360z", now) == nil
+      assert UtilityHelpers.parse_timestamp("240000h", now) == nil
+      assert UtilityHelpers.parse_timestamp("126000h", now) == nil
+      assert UtilityHelpers.parse_timestamp("125960h", now) == nil
+    end
+
+    test "rejects malformed timestamps" do
+      now = ~U[2026-09-02 12:00:00Z]
+
+      assert UtilityHelpers.parse_timestamp("0A2345z", now) == nil
+      assert UtilityHelpers.parse_timestamp("092345x", now) == nil
+      assert UtilityHelpers.parse_timestamp("09234z", now) == nil
+      assert UtilityHelpers.parse_timestamp("09234567", now) == nil
+      assert UtilityHelpers.parse_timestamp("", now) == nil
+      assert UtilityHelpers.parse_timestamp(nil, now) == nil
+    end
+  end
+
+  describe "validate_timestamp/1" do
+    test "keeps the existing clock-based entry point" do
+      assert is_integer(UtilityHelpers.validate_timestamp("120000h"))
+    end
+
+    test "returns nil for malformed input" do
+      assert UtilityHelpers.validate_timestamp("120000x") == nil
+      assert UtilityHelpers.validate_timestamp(nil) == nil
+    end
+  end
+
+  describe "position_resolution/1" do
+    test "returns metres for every supported ambiguity level" do
+      assert UtilityHelpers.position_resolution(0) == 18.52
+      assert UtilityHelpers.position_resolution(1) == 185.2
+      assert UtilityHelpers.position_resolution(2) == 1_852.0
+      assert UtilityHelpers.position_resolution(3) == 18_520.0
+      assert UtilityHelpers.position_resolution(4) == 185_200.0
+    end
+
+    test "uses unambiguous resolution for an unsupported ambiguity level" do
+      assert UtilityHelpers.position_resolution(5) == 18.52
+      assert UtilityHelpers.position_resolution(-1) == 18.52
+      assert UtilityHelpers.position_resolution(nil) == 18.52
+    end
+  end
+
+  describe "compressed_position_resolution/0" do
+    test "returns compressed-coordinate resolution in metres" do
+      assert UtilityHelpers.compressed_position_resolution() == 0.291
+    end
+  end
+
+  describe "nmea_position_resolution/0" do
+    test "returns NMEA coordinate resolution in metres" do
+      assert UtilityHelpers.nmea_position_resolution() == 0.1852
     end
   end
 
@@ -45,176 +149,35 @@ defmodule Aprs.UtilityHelpersTest do
     property "counts leading braces correctly" do
       check all count <- StreamData.integer(0..10),
                 rest <- StreamData.string(:printable, min_length: 0, max_length: 20) do
-        braces = String.duplicate("}", count)
-        input = braces <> rest
-        assert Aprs.UtilityHelpers.count_leading_braces(input) == count
+        input = String.duplicate("}", count) <> "x" <> rest
+        assert UtilityHelpers.count_leading_braces(input) == count
       end
     end
 
     test "returns 0 for empty string" do
-      assert Aprs.UtilityHelpers.count_leading_braces("") == 0
+      assert UtilityHelpers.count_leading_braces("") == 0
     end
 
     test "returns 0 for string without leading braces" do
-      assert Aprs.UtilityHelpers.count_leading_braces("Hello World") == 0
+      assert UtilityHelpers.count_leading_braces("Hello World") == 0
     end
 
     test "counts single leading brace" do
-      assert Aprs.UtilityHelpers.count_leading_braces("}Hello World") == 1
+      assert UtilityHelpers.count_leading_braces("}Hello World") == 1
     end
 
     test "counts multiple leading braces" do
-      assert Aprs.UtilityHelpers.count_leading_braces("}}}Hello World") == 3
+      assert UtilityHelpers.count_leading_braces("}}}Hello World") == 3
     end
 
-    test "ignores braces in middle of string" do
-      assert Aprs.UtilityHelpers.count_leading_braces("Hello}World") == 0
-    end
-
-    test "counts only leading braces" do
-      assert Aprs.UtilityHelpers.count_leading_braces("}}Hello}World}") == 2
+    test "ignores braces in the middle or at the end" do
+      assert UtilityHelpers.count_leading_braces("Hello}World}") == 0
+      assert UtilityHelpers.count_leading_braces("}}Hello}World}") == 2
     end
 
     test "returns 0 for non-binary input" do
-      assert Aprs.UtilityHelpers.count_leading_braces(nil) == 0
-      assert Aprs.UtilityHelpers.count_leading_braces(123) == 0
-    end
-  end
-
-  describe "calculate_position_ambiguity/2" do
-    test "delegates to Aprs.Position.calculate_position_ambiguity/2" do
-      assert Aprs.UtilityHelpers.calculate_position_ambiguity("1234.56N", "09876.54W") ==
-               Aprs.Position.calculate_position_ambiguity("1234.56N", "09876.54W")
-    end
-
-    test "returns 0 for no spaces" do
-      assert Aprs.UtilityHelpers.calculate_position_ambiguity("1234.56N", "09876.54W") == 0
-    end
-
-    test "returns ambiguity based on matching space counts" do
-      # Spaces in minute digits per APRS position ambiguity spec
-      assert Aprs.UtilityHelpers.calculate_position_ambiguity("1234.5 N", "09876.5 W") == 1
-      assert Aprs.UtilityHelpers.calculate_position_ambiguity("1234.  N", "09876.  W") == 2
-      assert Aprs.UtilityHelpers.calculate_position_ambiguity("123 .  N", "098 .  W") == 3
-      assert Aprs.UtilityHelpers.calculate_position_ambiguity("12  .  N", "09  .  W") == 4
-    end
-
-    test "returns 0 for mismatched space counts" do
-      assert Aprs.UtilityHelpers.calculate_position_ambiguity("1234.5 N", "09876.54W") == 0
-      assert Aprs.UtilityHelpers.calculate_position_ambiguity("1234.56N", "09876.5 W") == 0
-    end
-
-    test "returns 0 for more than 4 spaces" do
-      assert Aprs.UtilityHelpers.calculate_position_ambiguity("1    .  N", "0    .  W") == 0
-    end
-  end
-
-  describe "validate_timestamp/1" do
-    test "validates correct timestamp formats" do
-      # Test various valid timestamp formats
-      valid_timestamps = [
-        "123456z",
-        "123456h",
-        "123456/",
-        "123456z",
-        "000000z",
-        "235959h"
-      ]
-
-      for timestamp <- valid_timestamps do
-        result = Aprs.UtilityHelpers.validate_timestamp(timestamp)
-        assert is_integer(result) or is_nil(result)
-      end
-    end
-
-    test "handles invalid timestamp formats" do
-      invalid_timestamps = [
-        # Too short
-        "12345z",
-        # Too long
-        "1234567z",
-        # Missing suffix
-        "123456",
-        # Invalid character
-        "12345az",
-        # Invalid suffix
-        "123456x",
-        ""
-      ]
-
-      for timestamp <- invalid_timestamps do
-        result = Aprs.UtilityHelpers.validate_timestamp(timestamp)
-        assert is_nil(result)
-      end
-    end
-
-    test "validates time components" do
-      # Out-of-range time components return nil
-      assert is_nil(Aprs.UtilityHelpers.validate_timestamp("243456z"))
-      assert is_nil(Aprs.UtilityHelpers.validate_timestamp("253456z"))
-      assert is_nil(Aprs.UtilityHelpers.validate_timestamp("006059z"))
-      assert is_nil(Aprs.UtilityHelpers.validate_timestamp("006556z"))
-      assert is_nil(Aprs.UtilityHelpers.validate_timestamp("005960z"))
-      assert is_nil(Aprs.UtilityHelpers.validate_timestamp("005561z"))
-    end
-
-    test "returns nil for out-of-range HMS hour (hits parse_hms_format fallback)" do
-      # Hour 25 is invalid, so the HMS guard fails and the fallback returns nil
-      assert is_nil(Aprs.UtilityHelpers.validate_timestamp("250000h"))
-      assert is_nil(Aprs.UtilityHelpers.validate_timestamp("246060h"))
-    end
-
-    test "returns nil for non-digit characters in HMS timestamp (hits parse_hms_format _ clause)" do
-      # 'A' is not a digit, so the binary digit guard fails -> parse_hms_format(_) -> nil
-      assert is_nil(Aprs.UtilityHelpers.validate_timestamp("AB0000h"))
-    end
-
-    test "returns nil for non-binary input" do
-      assert is_nil(Aprs.UtilityHelpers.validate_timestamp(nil))
-      assert is_nil(Aprs.UtilityHelpers.validate_timestamp(123))
-    end
-
-    test "returns nil when day is invalid for the current month (Date.new error branch)" do
-      now = DateTime.utc_now()
-      days_in_month = Calendar.ISO.days_in_month(now.year, now.month)
-
-      # Find a day that's <= 31 (passes the guard) but > days_in_month
-      if days_in_month < 31 do
-        invalid_day = days_in_month + 1
-        ts = String.pad_leading(Integer.to_string(invalid_day), 2, "0") <> "1200z"
-        assert is_nil(Aprs.UtilityHelpers.validate_timestamp(ts))
-      else
-        # In a 31-day month, every day 1-31 is valid; verify that day 31 succeeds
-        # so we still exercise the surrounding code path.
-        assert is_integer(Aprs.UtilityHelpers.validate_timestamp("311200z"))
-      end
-    end
-  end
-
-  describe "position_resolution/1" do
-    test "returns correct resolution for ambiguity level 0" do
-      assert Aprs.UtilityHelpers.calculate_position_resolution(0) == 19
-    end
-
-    test "returns correct resolution for ambiguity level 1" do
-      assert Aprs.UtilityHelpers.calculate_position_resolution(1) == 185
-    end
-
-    test "returns correct resolution for ambiguity level 2" do
-      assert Aprs.UtilityHelpers.calculate_position_resolution(2) == 1852
-    end
-
-    test "returns correct resolution for ambiguity level 3" do
-      assert Aprs.UtilityHelpers.calculate_position_resolution(3) == 18_520
-    end
-
-    test "returns correct resolution for ambiguity level 4" do
-      assert Aprs.UtilityHelpers.calculate_position_resolution(4) == 185_200
-    end
-
-    test "returns 19 for out-of-range ambiguity (default clause)" do
-      assert Aprs.UtilityHelpers.calculate_position_resolution(5) == 19
-      assert Aprs.UtilityHelpers.calculate_position_resolution(-1) == 19
+      assert UtilityHelpers.count_leading_braces(nil) == 0
+      assert UtilityHelpers.count_leading_braces(123) == 0
     end
   end
 end

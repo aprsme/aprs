@@ -7,6 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Compressed positions**: course is decoded from the `c` byte rather than the speed
+  byte, and `c == "!"` is course 360; the radio-range form is signalled by `{`, not `Z`;
+  the compression type byte is decoded with the layout the spec defines (GPS fix, NMEA
+  source, origin) rather than the position-resolution and messaging layout used before;
+  `cs` bytes from a GGA source are decoded as altitude. Compressed positions are always
+  ambiguity 0 and take their messaging flag from the data type indicator.
+- **Mic-E**: speed is reported in knots, without the mph-to-knots factor that was being
+  applied to a value already in knots; course 360 (due north) is kept instead of being
+  reported as 0; the `!w..!` DAO extension and `|..|` comment telemetry are decoded
+  instead of discarded; the symbol table byte is no longer prepended to the comment as a
+  device type code.
+- **Messages**: message IDs are parsed as the spec defines them (`{` plus 1-5
+  alphanumerics, with no closing brace), including the APRS 1.1 reply-ack form `{MM}AA`;
+  `ack` and `rej` bodies are classified as `:message_ack` and `:message_rej`; telemetry
+  definition messages (`PARM.`, `UNIT.`, `EQNS.`, `BITS.`) are parsed into structured
+  fields; message text is preserved verbatim.
+- **Position format detection**: lower-case hemisphere letters are accepted; compressed
+  positions require a symbol table the spec allows (`/`, `\`, `A-Z`, `a-j`) and base-91
+  coordinate bytes (33..123); coordinates that decode out of range are rejected rather
+  than clamped; a position with no symbol code no longer reports the weather symbol.
+- **Trailing spaces** are no longer trimmed from the information field, so a compressed
+  packet whose `csT` bytes are spaces parses.
+- **Timestamps**: one implementation, with an injectable clock, shared by positions and
+  objects. `DDHHMM/` (local time) is accepted, `HHMMSSh` object timestamps are read as
+  hours/minutes/seconds, and a day or hour that would land in the future rolls back to
+  the previous month or day.
+- **Weather**: positionless reports use the eight-digit `MDHM` timestamp; `sNNN` after
+  `cNNN` is wind speed, not snowfall; lower-case `l` luminosity adds 1000.
+- **Objects and items**: compressed reports with an alternate or overlay symbol table
+  keep their position; `RNG` is reported as `radiorange`; altitude is found anywhere in
+  the comment and range checked; reports on the `_` symbol get weather parsing; items
+  report `alive` and `itemname` and share the position comment pipeline.
+- **Third-party traffic** keeps the data type indicator for tunnelled messages and items.
+- **DAO**: `daodatumbyte` is the upper-cased datum byte, and the extra digit of precision
+  is applied to the coordinates that are returned.
+- **Telemetry**: 1-5 analog channels and a missing bits field are accepted, non-numeric
+  (`MIC`) sequences parse, analog values are floats, and `EQNS.` no longer raises on an
+  incomplete coefficient group.
+- **NMEA**: any talker id is accepted (`$GNRMC`, `$GNGGA`, and so on) along with `GGA`,
+  `GLL`, `RMC`, `VTG` and `WPL`; `$ULTW` Peet Bros Ultimeter packets are decoded.
+- **Invalid UTF-8** is repaired one byte sequence at a time, falling back to Latin-1,
+  instead of replacing every non-ASCII byte in the packet.
+- The poles and the antimeridian (`9000.00N`, `18000.00W`) are valid coordinates.
+- Every digipeater at or before the last `*` is marked as used, and a path containing an
+  empty element is rejected.
+- Parse exceptions report the exception message rather than a bare `"Parse exception"`.
+
+### Added
+- `Aprs.DAO`: DAO extension parsing and coordinate precision.
+- `Aprs.PositionComment`: the comment pipeline shared by objects and items.
+- Data type indicators `[` (Maidenhead grid locator beacon, decoded to a position), `%`
+  (Agrelo DFJr), `0x1C` and `0x1D` (Mic-E rev 0), and the legacy "`!` within the first 40
+  bytes" position form. `` ` `` now gives `:mic_e` and `'` gives `:mic_e_old`.
+- Status reports decode a leading timestamp, a Maidenhead locator with its symbol, and a
+  trailing `^` beam heading and ERP.
+- Station capabilities are decoded into a map, and `DFS` and `CSE/SPD/BRG/NRQ` are parsed
+  as comment data extensions.
+
+### Changed
+- **Consistent units across every packet format**: `speed` is a float in knots,
+  `altitude` a float in feet, `course` an integer from 1 to 360 (360 is north, 0 is
+  unknown) and `posresolution` a float in metres (18.52 m at full precision, 0.291 m
+  compressed, 0.1852 m for NMEA). Telemetry analog values are floats, not strings.
+- Weather parsing is a single left-to-right scan that also returns the non-weather part
+  of the comment, replacing eleven per-field rescans and a fifteen-regex strip. A weather
+  packet now parses in about 3.2 µs instead of 38.5 µs, and an uncompressed position with
+  extensions in about 3.0 µs instead of 17.4 µs.
+- Packet IDs are a per-VM random prefix plus a counter, rather than a CSPRNG call for
+  every packet.
+- `Aprs.DeviceParser` identifies Mic-E radios from the comment prefix and suffix instead
+  of decoding the destination field, which holds the encoded latitude and is never a
+  TOCALL.
+
+### Removed
+- Dead or unreachable code: `Aprs.Types.MicE`, `Aprs.AX25.parse_path/1`,
+  `Aprs.Weather.parse_from_comment/1` and its helpers, `Aprs.Position.count_spaces/1`
+  and `calculate_position_ambiguity/2` (with the `Aprs.UtilityHelpers` delegates),
+  the unused `Aprs.TelemetryHelpers` value parsers, `Aprs.Convert.speed/3`,
+  `Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity/1`, and the public
+  `Aprs.decode_compressed_position/1`, `convert_to_base91/1`, `parse_status/1`,
+  `parse_station_capabilities/1`, `parse_query/1`, `parse_user_defined/1` and
+  `parse_position_with_datetime_and_weather/7` wrappers.
+- The `cs == "&!"` workaround and the `&!` DAO form, neither of which is in the spec.
+
 ## [0.1.6] - 2025-08-13
 
 ### Changed

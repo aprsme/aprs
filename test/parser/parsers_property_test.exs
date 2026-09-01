@@ -49,7 +49,7 @@ defmodule Aprs.ParsersPropertyTest do
       ";" => :object,
       ")" => :item,
       "_" => :weather,
-      "T" => :telemetry,
+      "T#" => :telemetry,
       "$" => :raw_gps_ultimeter,
       ":" => :message,
       ">" => :status,
@@ -107,16 +107,6 @@ defmodule Aprs.ParsersPropertyTest do
     end
   end
 
-  describe "Aprs.Convert helpers" do
-    property "knots → mph conversion produces a non-negative float for non-negative inputs" do
-      check all knots <- StreamData.integer(0..200) do
-        mph = Aprs.Convert.speed(knots, :knots, :mph)
-        assert is_number(mph)
-        assert mph >= 0
-      end
-    end
-  end
-
   describe "Aprs.KISSHelpers" do
     property "round-trips a TNC2 frame through tnc2 → kiss → tnc2" do
       check all body <- StreamData.string(:printable, max_length: 50) do
@@ -136,15 +126,6 @@ defmodule Aprs.ParsersPropertyTest do
   end
 
   describe "Aprs.UtilityHelpers numeric helpers" do
-    property "calculate_position_ambiguity counts spaces (capped to 4)" do
-      check all lat <- StreamData.string([?0..?9, ?\s, ?., ?N, ?S], min_length: 0, max_length: 10),
-                lon <- StreamData.string([?0..?9, ?\s, ?., ?E, ?W], min_length: 0, max_length: 10) do
-        result = Aprs.UtilityHelpers.calculate_position_ambiguity(lat, lon)
-        assert is_integer(result)
-        assert result >= 0 and result <= 4
-      end
-    end
-
     property "validate_timestamp returns either nil or an integer Unix timestamp" do
       check all input <- StreamData.string(:printable, max_length: 12) do
         result = Aprs.UtilityHelpers.validate_timestamp(input)
@@ -206,19 +187,27 @@ defmodule Aprs.ParsersPropertyTest do
   end
 
   describe "Aprs.CompressedPositionHelpers" do
-    property "convert_compressed_lat returns a float in [-90, 90] for any 4-byte base91 input" do
-      check all bytes <- StreamData.list_of(StreamData.integer(33..126), length: 4) do
+    property "convert_compressed_lat returns a float in [-90, 90] for in-range base91 input" do
+      check all bytes <- StreamData.list_of(StreamData.integer(33..122), length: 4) do
         binary = :binary.list_to_bin(bytes)
         assert {:ok, lat} = Aprs.CompressedPositionHelpers.convert_compressed_lat(binary)
         assert lat >= -90.0 and lat <= 90.0
       end
     end
 
-    property "convert_compressed_lon returns a float in [-180, 180] for any 4-byte base91 input" do
-      check all bytes <- StreamData.list_of(StreamData.integer(33..126), length: 4) do
+    property "convert_compressed_lon returns a float in [-180, 180] for in-range base91 input" do
+      check all bytes <- StreamData.list_of(StreamData.integer(33..122), length: 4) do
         binary = :binary.list_to_bin(bytes)
         assert {:ok, lon} = Aprs.CompressedPositionHelpers.convert_compressed_lon(binary)
         assert lon >= -180.0 and lon <= 180.0
+      end
+    end
+
+    property "bytes outside the base91 range are rejected" do
+      check all prefix <- StreamData.list_of(StreamData.integer(33..123), length: 3),
+                bad <- StreamData.member_of([32, 124, 126, 127, 200]) do
+        binary = :binary.list_to_bin(prefix ++ [bad])
+        assert {:error, _} = Aprs.CompressedPositionHelpers.convert_compressed_lat(binary)
       end
     end
 
@@ -236,14 +225,6 @@ defmodule Aprs.ParsersPropertyTest do
       check all dest <- StreamData.string(:printable, max_length: 30) do
         result = Aprs.DeviceParser.extract_device_identifier(%{destination: dest})
         assert is_binary(result) or is_nil(result)
-      end
-    end
-
-    property "decode_mic_e_tocall always returns at most the first 6 codepoints" do
-      check all input <- StreamData.string(:printable, max_length: 12) do
-        result = Aprs.DeviceParser.decode_mic_e_tocall(input)
-        assert is_binary(result)
-        assert String.length(result) <= 6
       end
     end
   end

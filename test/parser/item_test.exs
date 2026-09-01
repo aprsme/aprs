@@ -16,6 +16,10 @@ defmodule Aprs.ItemTest do
       assert result.symbol_code == ">"
       assert result.symbol_table_id == "/"
       assert result.comment == "Test item"
+      assert result.alive == 1
+      assert result.itemname == "GATE"
+      assert result.has_position
+      assert result.posresolution == 18.52
     end
 
     test "parses an item with compressed position" do
@@ -31,6 +35,19 @@ defmodule Aprs.ItemTest do
       assert result.comment == "ment"
       assert is_float(result.latitude)
       assert is_float(result.longitude)
+      assert result.alive == 0
+      assert result.itemname == "An_Item_"
+      assert result.has_position
+      assert result.posresolution == 0.291
+    end
+
+    test "decodes compressed GGA cs bytes as altitude" do
+      result = Item.parse(")GATE!/abcdabcd>!!1Test")
+
+      assert result.position_format == :compressed
+      assert result.altitude == 1.0
+      refute Map.has_key?(result, :course)
+      refute Map.has_key?(result, :speed)
     end
 
     test "parses an item with no position data" do
@@ -43,7 +60,16 @@ defmodule Aprs.ItemTest do
       assert result.comment == "No Position Data"
     end
 
-    test "handles item with no regex match on item_name_and_data" do
+    test "marks a killed item as not alive" do
+      result = Item.parse(")AID #2_4903.50N/07201.75WA")
+
+      assert result.item_name == "AID #2"
+      assert result.itemname == "AID #2"
+      assert result.live_killed == "_"
+      assert result.alive == 0
+    end
+
+    test "preserves raw item data without a live or killed indicator" do
       result = Item.parse(")This does not match the regex")
 
       assert result == %{
@@ -77,6 +103,34 @@ defmodule Aprs.ItemTest do
       result = Item.parse(")GATE!4903.50N/07201.75W>PHG5132 description")
       assert result.phg == "5132"
       assert result.comment == "description"
+    end
+
+    test "parses course, speed, and altitude from an item comment" do
+      result = Item.parse(")AID #2!4903.50N/07201.75WA088/036/A=001234Test")
+
+      assert result.course == 88
+      assert result.speed == 36.0
+      assert result.altitude == 1234.0
+      assert result.comment == "Test"
+    end
+
+    test "captures RNG and DAO precision from an item comment" do
+      result = Item.parse(")GATE!4903.50N/07201.75W>RNG0050!W12!Test")
+
+      assert result.radiorange == 50
+      assert result.daodatumbyte == "W"
+      assert result.latitude > 49.0583
+      assert result.longitude < -72.02917
+      assert result.comment == "Test"
+    end
+
+    test "parses weather from an item using the weather symbol" do
+      result = Item.parse(")WX!4903.50N/07201.75W_220/005g010t050Tail")
+
+      assert result.weather.wind_direction == 220
+      assert result.weather.wind_speed == 5
+      assert result.weather.temperature == 50
+      assert result.comment == "Tail"
     end
 
     test "uncompressed position parsing falls back to :unknown when too short" do

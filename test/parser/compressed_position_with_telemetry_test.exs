@@ -17,6 +17,14 @@ defmodule Aprs.CompressedPositionWithTelemetryTest do
       assert data.symbol_table_id == "L"
       assert data.symbol_code == "#"
       assert data.format == :compressed
+      assert data.position_ambiguity == 0
+
+      assert data.compression_info == %{
+               gps_fix: :current,
+               nmea_source: :other,
+               origin: :other_tracker
+             }
+
       assert_in_delta data.latitude, 43.4993463297333, 0.0001
       assert_in_delta data.longitude, -3.54185327333917, 0.0001
       # cs and compression type bytes consumed per APRS compressed spec
@@ -47,11 +55,11 @@ defmodule Aprs.CompressedPositionWithTelemetryTest do
       assert data.symbol_table_id == "/"
       assert data.symbol_code == "a"
       assert data.course == 72
-      assert data.speed == 31
-      assert data.altitude == 1847
+      assert data.speed == 31.0
+      assert data.altitude == 1847.0
       assert data.comment == "PU5PLR - Leonardo"
       assert data.position_ambiguity == 0
-      assert data.posresolution == 19
+      assert data.posresolution == 18.52
       assert data.aprs_messaging? == true
     end
 
@@ -69,7 +77,7 @@ defmodule Aprs.CompressedPositionWithTelemetryTest do
       assert data.data_type == :telemetry
       assert data.telemetry
       assert data.telemetry.seq == "191"
-      assert data.telemetry.vals == ["0.00", "0.20", "0.00", "0.00", "1.00"]
+      assert data.telemetry.vals == [0.0, 0.2, 0.0, 0.0, 1.0]
       assert data.telemetry.bits == "00000000"
     end
 

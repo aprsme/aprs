@@ -2,6 +2,7 @@ defmodule Aprs.MicE do
   @moduledoc """
   Parses Mic-E encoded APRS packets.
   """
+  @metres_to_feet 3.280839895
 
   @typep digit_info :: %{
            digit: non_neg_integer(),
@@ -52,16 +53,19 @@ defmodule Aprs.MicE do
            symbol_code: String.t(),
            symbol_table_id: String.t(),
            comment: String.t(),
-           altitude: integer() | nil
+           altitude: float() | nil,
+           dao: Aprs.DAO.t() | nil,
+           telemetry: map() | nil
          }
 
-  @spec parse(binary(), String.t() | nil, atom()) :: map()
+  @spec parse(binary(), String.t() | nil, :mic_e | :mic_e_old) :: map()
   def parse(data, destination, data_type \\ :mic_e)
 
   def parse(_data, nil, _data_type) do
     %{
       latitude: nil,
       longitude: nil,
+      has_position: false,
       error: "Destination is nil",
       data_type: :mic_e_error
     }
@@ -78,17 +82,18 @@ defmodule Aprs.MicE do
 
       lat = apply_lat_direction(lat, dest_info.lat_direction)
 
-      # Apply same ambiguity centering to longitude
       {lon_min, lon_hmin} = apply_lon_centering(info_info.lon_minutes, info_info.lon_hundredths, ambiguity)
 
       lon =
         info_info.lon_degrees + (lon_min + lon_hmin / 100) / 60
 
       lon = apply_lon_direction(lon, dest_info.lon_direction)
+      {lat, lon} = Aprs.DAO.apply_precision(lat, lon, info_info.dao, ambiguity)
 
       %{
         latitude: lat,
         longitude: lon,
+        has_position: is_number(lat) and is_number(lon),
         message_bits: dest_info.message_bits,
         message_type: dest_info.message_type,
         speed: info_info.speed,
@@ -99,18 +104,28 @@ defmodule Aprs.MicE do
         altitude: info_info.altitude,
         data_type: data_type,
         format: :mice,
-        position_ambiguity: ambiguity
+        messaging: 0,
+        position_ambiguity: ambiguity,
+        posresolution: Aprs.UtilityHelpers.position_resolution(ambiguity)
       }
+      |> put_optional(:dao, info_info.dao)
+      |> put_optional(:daodatumbyte, info_info.dao && info_info.dao.datum)
+      |> put_optional(:telemetry, info_info.telemetry)
     else
       _error ->
         %{
           latitude: nil,
           longitude: nil,
+          has_position: false,
           error: "Failed to parse Mic-E packet",
           data_type: :mic_e_error
         }
     end
   end
+
+  @spec put_optional(map(), atom(), term()) :: map()
+  defp put_optional(map, _key, nil), do: map
+  defp put_optional(map, key, value), do: Map.put(map, key, value)
 
   @spec parse_destination(binary()) :: {:ok, dest_info()} | {:error, atom()}
   defp parse_destination(destination) do
@@ -250,26 +265,21 @@ defmodule Aprs.MicE do
          <<lon_deg_c, lon_min_c, lon_hmin_c, sp_c, dc_c, se_c, symbol_code, symbol_table_id, comment::binary>>,
          lon_offset
        ) do
-    lon_deg = decode_lon_deg(lon_deg_c, lon_offset)
-    lon_min = decode_lon_min(lon_min_c)
-    lon_hmin = lon_hmin_c - 28
-    speed = decode_speed(sp_c, dc_c)
-    course = decode_course(dc_c, se_c)
-
-    # Parse altitude and clean up comment, preserving device type code
-    {altitude, cleaned_comment} = parse_altitude_and_clean_comment(comment, <<symbol_table_id>>)
+    comment_info = parse_comment(comment)
 
     {:ok,
      %{
-       lon_degrees: lon_deg,
-       lon_minutes: lon_min,
-       lon_hundredths: lon_hmin,
-       speed: speed,
-       course: course,
+       lon_degrees: decode_lon_deg(lon_deg_c, lon_offset),
+       lon_minutes: decode_lon_min(lon_min_c),
+       lon_hundredths: lon_hmin_c - 28,
+       speed: decode_speed(sp_c, dc_c),
+       course: decode_course(dc_c, se_c),
        symbol_code: <<symbol_code>>,
        symbol_table_id: <<symbol_table_id>>,
-       comment: cleaned_comment,
-       altitude: altitude
+       comment: comment_info.comment,
+       altitude: comment_info.altitude,
+       dao: comment_info.dao,
+       telemetry: comment_info.telemetry
      }}
   end
 
@@ -304,8 +314,8 @@ defmodule Aprs.MicE do
     sp = sp_c - 28
     dc = dc_c - 28
     speed = div(sp, 10) * 100 + rem(sp, 10) * 10 + div(dc, 10)
-    speed = normalize_speed(speed)
-    speed * 0.868976
+
+    normalize_speed(speed) * 1.0
   end
 
   @spec decode_course(byte(), byte()) :: non_neg_integer()
@@ -331,93 +341,60 @@ defmodule Aprs.MicE do
   @spec normalize_course(integer()) :: non_neg_integer()
   defp normalize_course(course) when course >= 400 do
     normalized = course - 400
-    # After subtracting 400, ensure result is still in valid range (0-359)
-    if normalized >= 0 and normalized <= 359, do: normalized, else: 0
+    if normalized >= 0 and normalized <= 360, do: normalized, else: 0
   end
 
-  # Valid course is 0-359 degrees, anything else is invalid
-  defp normalize_course(course) when course >= 0 and course <= 359, do: course
+  defp normalize_course(course) when course >= 0 and course <= 360, do: course
   defp normalize_course(_invalid_course), do: 0
 
-  # New device type codes (Kenwood etc.) - preserved as comment prefix
   @new_type_codes [?>, ?]]
-  # Old Mic-E type codes - stripped before altitude parsing, preserved in output
   @old_type_codes [?`, ?']
 
-  @doc false
-  # Parse altitude from Mic-E comment and clean up the comment.
-  # FAP order: extract new type code, then old type code, then altitude.
-  @spec parse_altitude_and_clean_comment(binary(), binary()) :: {integer() | nil, String.t()}
-  defp parse_altitude_and_clean_comment(comment, symbol_table_id) do
-    # 1. Extract new device type code (> or ]) from comment start or symbol table ID
-    {new_type, rest} = extract_new_type_code(comment, symbol_table_id)
-
-    # 2. Extract old Mic-E type code (` or ') - strip before altitude parsing
+  @spec parse_comment(binary()) :: %{
+          altitude: float() | nil,
+          comment: String.t(),
+          dao: Aprs.DAO.t() | nil,
+          telemetry: map() | nil
+        }
+  defp parse_comment(comment) do
+    {device_type, rest} = extract_new_type_code(comment)
     rest = strip_old_type_code(rest)
+    {altitude, rest} = extract_mic_e_altitude(rest)
+    {telemetry, rest} = Aprs.TelemetryFromComment.extract_telemetry_from_comment(rest)
+    {dao, rest} = Aprs.DAO.parse(rest)
 
-    # 3. Extract base-91 altitude encoding (3 chars + "}")
-    {altitude, after_altitude} = extract_mic_e_altitude(rest)
+    cleaned_comment = prepend_type_code(device_type, clean_trailing_markers(rest))
 
-    # 4. Strip Mic-E telemetry sequences |...|
-    after_telemetry = strip_mic_e_telemetry(after_altitude)
-
-    # 5. Strip Mic-E weather extension !w..!
-    after_weather = strip_mic_e_weather_extension(after_telemetry)
-
-    # 6. Clean trailing markers
-    cleaned = clean_trailing_markers(after_weather)
-
-    # 7. Prepend type code to produce final comment
-    final_comment = prepend_type_code(new_type, cleaned)
-
-    {altitude, final_comment}
+    %{
+      altitude: altitude,
+      comment: cleaned_comment,
+      dao: dao,
+      telemetry: telemetry
+    }
   end
 
-  # Extract new device type code (> or ]) from comment start
-  @spec extract_new_type_code(binary(), binary()) :: {String.t() | nil, binary()}
-  defp extract_new_type_code(<<code, rest::binary>>, _sym_table) when code in @new_type_codes do
+  @spec extract_new_type_code(binary()) :: {String.t() | nil, binary()}
+  defp extract_new_type_code(<<code, rest::binary>>) when code in @new_type_codes do
     {<<code>>, rest}
   end
 
-  # Check for old type code at start of comment - also treated as device type prefix
-  defp extract_new_type_code(<<code, rest::binary>>, _sym_table) when code in @old_type_codes do
+  defp extract_new_type_code(<<code, rest::binary>>) when code in @old_type_codes do
     {<<code>>, rest}
   end
 
-  @all_type_codes @new_type_codes ++ @old_type_codes
+  defp extract_new_type_code(comment), do: {nil, comment}
 
-  defp extract_new_type_code(comment, <<byte>>) when byte in @all_type_codes do
-    {<<byte>>, comment}
-  end
-
-  defp extract_new_type_code(comment, _sym_table), do: {nil, comment}
-
-  # Strip old type code (` or ') if it appears after the new type code
   @spec strip_old_type_code(binary()) :: binary()
   defp strip_old_type_code(<<code, rest::binary>>) when code in @old_type_codes, do: rest
   defp strip_old_type_code(rest), do: rest
 
-  # Extract base-91 altitude: 3 printable ASCII chars (33-124) followed by "}"
-  @spec extract_mic_e_altitude(binary()) :: {integer() | nil, binary()}
-  defp extract_mic_e_altitude(<<a1, a2, a3, ?}, rest::binary>>)
-       when a1 >= 33 and a1 <= 124 and a2 >= 33 and a2 <= 124 and a3 >= 33 and a3 <= 124 do
-    alt = (a1 - 33) * 91 * 91 + (a2 - 33) * 91 + (a3 - 33) - 10_000
-    {alt, rest}
+  @spec extract_mic_e_altitude(binary()) :: {float() | nil, binary()}
+  defp extract_mic_e_altitude(<<a1, a2, a3, ?}, rest::binary>>) when a1 in 33..123 and a2 in 33..123 and a3 in 33..123 do
+    altitude_metres = (a1 - 33) * 91 * 91 + (a2 - 33) * 91 + (a3 - 33) - 10_000
+    {altitude_metres * @metres_to_feet, rest}
   end
 
   defp extract_mic_e_altitude(rest), do: {nil, rest}
-
-  # Strip Mic-E telemetry sequences: |XX...XX| (2-14 chars between pipes)
-  @spec strip_mic_e_telemetry(String.t()) :: String.t()
-  defp strip_mic_e_telemetry(comment) do
-    String.replace(comment, ~r/\|[^|]{2,14}\|/, "")
-  end
-
-  # Strip Mic-E weather extension: !wXX! (2 chars after !w, then !)
-  @spec strip_mic_e_weather_extension(String.t()) :: String.t()
-  defp strip_mic_e_weather_extension(comment) do
-    String.replace(comment, ~r/!w..!/, "")
-  end
 
   # Prepend device type code to cleaned comment
   @spec prepend_type_code(String.t() | nil, String.t()) :: String.t()

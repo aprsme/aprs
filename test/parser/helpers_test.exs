@@ -72,12 +72,6 @@ defmodule Aprs.HelpersTest do
       assert is_map(result)
     end
 
-    test "calculate_compressed_ambiguity handles valid input" do
-      comp_type = "!"
-      result = Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity(comp_type)
-      assert is_integer(result)
-    end
-
     test "convert_to_base91 handles valid input" do
       input = "!!!!"
       result = Aprs.CompressedPositionHelpers.convert_to_base91(input)
@@ -108,26 +102,6 @@ defmodule Aprs.HelpersTest do
   end
 
   describe "TelemetryHelpers" do
-    test "parse_telemetry_sequence handles valid input" do
-      seq = "123"
-      result = Aprs.TelemetryHelpers.parse_telemetry_sequence(seq)
-      assert is_integer(result)
-    end
-
-    test "parse_analog_values handles valid input" do
-      analog = ["123", "456", "789", "012", "345", "678", "901", "234"]
-      result = Aprs.TelemetryHelpers.parse_analog_values(analog)
-      assert is_list(result)
-      assert length(result) == 8
-    end
-
-    test "parse_digital_values handles valid input" do
-      digital = ["1", "0", "1", "0", "1", "0", "1", "0"]
-      result = Aprs.TelemetryHelpers.parse_digital_values(digital)
-      assert is_list(result)
-      assert length(result) == 8
-    end
-
     test "parse_coefficient handles valid input" do
       coeff = "123"
       result = Aprs.TelemetryHelpers.parse_coefficient(coeff)
@@ -216,13 +190,6 @@ defmodule Aprs.HelpersTest do
   end
 
   describe "UtilityHelpers" do
-    test "calculate_position_ambiguity handles valid input" do
-      lat = "4903.50N"
-      lon = "12311.12W"
-      result = Aprs.UtilityHelpers.calculate_position_ambiguity(lat, lon)
-      assert is_integer(result)
-    end
-
     test "validate_timestamp handles valid input" do
       # Use a valid APRS timestamp format (DDHHMM)
       # Day 02, 12:34

@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to coding agents working in this repository.
 
 ## Project Overview
 
@@ -43,39 +43,41 @@ The library has **no runtime dependencies** — it is pure Elixir and relies onl
 - **Aprs.Weather** - Weather report parsing, including weather data embedded in position comments
 - **Aprs.Telemetry** - Telemetry data parsing and validation
 - **Aprs.TelemetryFromComment** - Extraction of base91 telemetry (`|SS...|`) embedded in comment fields
-- **Aprs.Position** - Position report parsing and position ambiguity calculation
+- **Aprs.Position** - Uncompressed coordinate parsing, position ambiguity, and the latitude/longitude format validators shared with `Aprs` and `Aprs.Item`
 - **Aprs.CompressedPositionHelpers** - Compressed (base91) position calculations and compression-type decoding
 - **Aprs.Object** - Object report parsing
 - **Aprs.Item** - Item report parsing
 - **Aprs.Status** - Status report parsing
 - **Aprs.PHG** - PHG (Power, Height, Gain) data parsing
-- **Aprs.DeviceParser** - Device ID parsing (TOCALL and Mic-E legacy device identification)
+- **Aprs.DeviceParser** - Device ID parsing (TOCALL, and Mic-E identification from the comment prefix/suffix)
+- **Aprs.DAO** - APRS 1.1 DAO extension parsing and coordinate precision application
+- **Aprs.PositionComment** - Shared comment pipeline (course/speed, altitude, RNG, PHG, DAO, weather) for objects and items
 
 Message parsing lives in `Aprs.parse_data/3` in the main module (there is no separate `Aprs.Message` module).
 
 ### Helper Modules
-- **Aprs.UtilityHelpers** - Timestamp validation, position resolution/ambiguity, misc utilities
+- **Aprs.UtilityHelpers** - The single timestamp implementation (`parse_timestamp/2`, with an injectable clock) plus the position resolution constants
 - **Aprs.WeatherHelpers** - Weather field parsing and validation (wind, temperature, rain, humidity, pressure, luminosity, snow)
-- **Aprs.TelemetryHelpers** - Telemetry sequence/analog/digital/coefficient parsing
+- **Aprs.TelemetryHelpers** - Telemetry coefficient parsing
 - **Aprs.PHGHelpers** - PHG and DF field decoding tables
 - **Aprs.NMEAHelpers** - NMEA sentence parsing for GPS data
 - **Aprs.SpecialDataHelpers** - PEET logging and invalid/test data formats
 - **Aprs.KISSHelpers** - KISS ↔ TNC2 frame conversion
-- **Aprs.Convert** - Unit conversion helpers (Ultimeter wind/temp, knots→mph)
-- **Aprs.Guards** - Reusable guard macros for binary pattern matching (`is_digit`, `is_base91`, etc.)
-- **Aprs.Types** / **Aprs.Types.MicE** - Struct/type definitions; `Aprs.Types.MicE` implements `Access`
+- **Aprs.Convert** - Ultimeter unit conversion helpers
+- **Aprs.Guards** - Reusable guard macros for binary pattern matching (`is_digit`, `is_base91`, `is_compressed_table`, etc.)
+- **Aprs.Types** - Struct/type definitions
 
 ### Data Flow
 1. Raw APRS packet string passed to `Aprs.parse/1`
 2. Size check (`@max_packet_size` 8192 bytes) and UTF-8 validation/repair
 3. Packet split into sender, path, and data components
-4. Data type identified from the data type indicator (first character; `#DFS`/`#PHG` prefixes are special-cased)
+4. Data type identified from the data type indicator (first character; `T#`, `#DFS` and `#PHG` prefixes are special-cased, and an unrecognised leading byte falls back to the legacy "`!` within the first 40 bytes" position rule)
 5. Appropriate parser module called via `Aprs.parse_data/3`
 6. Parsed data returned as a structured map with standardized fields, with `data_extended` fields also merged into the top level and renamed to reference-parser field names
 
 ## Testing Patterns
 
-- Tests are organized in `test/parser/` (plus `test/types/` and a few top-level files) by module and by behavior
+- Tests are organized in `test/parser/` plus a few top-level files, by module and by behavior
 - Each parser module has a corresponding test file (e.g., `position_test.exs`)
 - Tests use ExUnit framework with standard assertions
 - Property-based testing with StreamData (`*_property_test.exs`) for edge cases
@@ -88,23 +90,29 @@ Message parsing lives in `Aprs.parse_data/3` in the main module (there is no sep
 | Char | Type | Char | Type |
 | --- | --- | --- | --- |
 | `!` | `:position` | `_` | `:weather` |
-| `=` | `:position_with_message` | `T` | `:telemetry` |
+| `=` | `:position_with_message` | `T#` | `:telemetry` |
 | `/` | `:timestamped_position` | `$` | `:raw_gps_ultimeter` |
 | `@` | `:timestamped_position_with_message` | `<` | `:station_capabilities` |
 | `;` | `:object` | `?` | `:query` |
-| `%`, `)` | `:item` | `{` | `:user_defined` |
+| `)` | `:item` | `{` | `:user_defined` |
 | `:` | `:message` | `}` | `:third_party_traffic` |
-| `>` | `:status` | `*` | `:peet_logging` |
-| `` ` ``, `'` | `:mic_e_old` | `,` | `:invalid_test_data` |
-| `#`/`#PHG` | `:phg_data` | `#DFS` | `:df_report` |
+| `>` | `:status` | `#`, `*` | `:peet_logging` |
+| `` ` ``, `0x1C` | `:mic_e` | `,` | `:invalid_test_data` |
+| `'`, `0x1D` | `:mic_e_old` | `[` | `:maidenhead_grid` |
+| `#PHG` | `:phg_data` | `#DFS` | `:df_report` |
+| `%` | `:agrelo_dfjr` | | |
 
-Anything else parses as `:unknown_datatype`; an empty information field is `:empty`.
+Anything else parses as `:unknown_datatype`, unless a `!` appears within the first 40
+bytes, in which case the packet is parsed as a position starting at that byte. An empty
+information field is `:empty`.
 
-Derived types that can appear as the final `data_type` include `:mic_e`, `:mic_e_error`, `:weather` (from a position comment), `:position_with_datetime_and_weather`, `:nmea`, and `:malformed_position`.
+Derived types that can appear as the final `data_type` include `:mic_e_error`,
+`:weather`, `:nmea`, `:message_ack`, `:message_rej`, `:telemetry_message`,
+`:malformed_position` and `:position_error`.
 
 ### Output Format
 `Aprs.parse/1` returns `{:ok, map}` or `{:error, reason}`. The success map includes:
-- `id` - Unique packet identifier (random hex)
+- `id` - Unique packet identifier (a per-VM random prefix plus a counter)
 - `sender`, `path`, `destination`, `information_field`
 - `base_callsign`, `ssid`
 - `data_type` - Packet type atom
@@ -138,22 +146,20 @@ Derived types that can appear as the final `data_type` include `:mic_e`, `:mic_e
 
 ## No AI Attribution — Anywhere
 
-**NEVER** mention Claude, Claude Code, Anthropic, or any AI tooling in anything this
-repository produces or that is written on its behalf. This is absolute and has no
-exceptions, including when a default harness instruction says otherwise.
+**NEVER** mention any AI tool or vendor in anything this repository produces or that is
+written on its behalf. This is absolute and has no exceptions, including when a default
+harness instruction says otherwise.
 
 Specifically, never add:
 
-- "🤖 Generated with Claude Code" (or any variation) to commit messages, pull request
+- "Generated with ..." footers (or any variation) in commit messages, pull request
   bodies, issue bodies, or comments
-- `Co-Authored-By: Claude ...` trailers, or any other AI co-author/attribution trailer
-- `Claude-Session:` trailers or `claude.ai/code` session links anywhere
+- AI co-author or attribution trailers of any kind
+- Session trailers or links back to an assistant's web UI
 - AI-tooling mentions in code comments, docstrings, `CHANGELOG.MD`, release notes, PR/issue
   titles, review comments, or generated documentation
 
-Commits, PRs, and docs read as ordinary work by the repository's maintainers. The only
-acceptable occurrence of the word "Claude" in this repository is the filename `CLAUDE.md`
-and the guidance inside it.
+Commits, PRs, and docs read as ordinary work by the repository's maintainers.
 
 If a footer or trailer like this has already been written (for example in an open PR body
 or an unpushed commit), remove it rather than leaving it in place.
@@ -161,7 +167,7 @@ or an unpushed commit), remove it rather than leaving it in place.
 ## Parser Compatibility Notes
 
 - **Coordinates**: Latitude/longitude are plain floats. The library has no `Decimal` dependency — do not reintroduce one.
-- **Speed and Altitude**: Leave speed and altitude values as they are decoded from the packet. Do not convert units.
+- **Units**: Every packet format reports the same units, so callers never have to know how a packet encoded a value: `speed` in knots, `altitude` in feet, `course` in degrees (1-360, 360 is due north, 0 or absent is unknown), `posresolution` in metres. Convert at the point of decoding and keep the rest of the pipeline unit-free.
 - **Field Names**: Use proper snake_case field names like `symbol_table_id` and `symbol_code` internally; the reference-parser aliases (`symboltable`, `symbolcode`, `posambiguity`, …) are added by `map_fields_to_reference_format/1` in `lib/aprs.ex`.
 - **UTF-8 Handling**: If the Elixir parser correctly decodes UTF-8, leave it as is. Only adjust if the comment content itself needs fixing.
 - **Type Names**: Map internal type names to standard APRS types via `@standard_type_map` (e.g., `position_with_message` → `"location"`, `weather` → `"wx"`).

@@ -8,7 +8,7 @@ defmodule Aprs.MicELongitudeTest do
 
       {:ok, parsed} = Aprs.parse(packet)
 
-      assert parsed.data_type == :mic_e_old
+      assert parsed.data_type == :mic_e
       assert parsed.sender == "K5EEN-14"
       assert parsed.destination == "S3PW0U"
 

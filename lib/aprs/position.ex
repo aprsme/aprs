@@ -22,6 +22,33 @@ defmodule Aprs.Position do
     end
   end
 
+  @doc """
+  Returns true when an eight-byte field is a syntactically valid APRS latitude.
+
+  Spaces are accepted in the minute and fraction digits (position ambiguity)
+  and either case of hemisphere letter is allowed, matching reference parsers.
+  """
+  @spec valid_latitude_format?(binary()) :: boolean()
+  def valid_latitude_format?(<<d1::8, d2::8, m1::8, m2::8, ?., f1::8, f2::8, dir::8>>)
+      when is_digit(d1) and is_digit(d2) and is_minute_tens(m1) and is_digit_or_space(m2) and is_digit_or_space(f1) and
+             is_digit_or_space(f2) and dir in [?N, ?n, ?S, ?s] do
+    true
+  end
+
+  def valid_latitude_format?(_), do: false
+
+  @doc """
+  Returns true when a nine-byte field is a syntactically valid APRS longitude.
+  """
+  @spec valid_longitude_format?(binary()) :: boolean()
+  def valid_longitude_format?(<<d1::8, d2::8, d3::8, m1::8, m2::8, ?., f1::8, f2::8, dir::8>>)
+      when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_minute_tens(m1) and is_digit_or_space(m2) and
+             is_digit_or_space(f1) and is_digit_or_space(f2) and dir in [?E, ?e, ?W, ?w] do
+    true
+  end
+
+  def valid_longitude_format?(_), do: false
+
   # Parse latitude into {degree_int, minute_string, direction}
   # Accepts spaces in minute digits per APRS position ambiguity spec
   # FAP regex: (\d{2})([0-7 ][0-9 ]\.[0-9 ]{2})([NnSs])
@@ -30,10 +57,11 @@ defmodule Aprs.Position do
   defp parse_latitude_components(<<d1::8, d2::8, m1::8, m2::8, ?., f1::8, f2::8, dir::8>>)
        when is_digit(d1) and is_digit(d2) and is_minute_tens(m1) and is_digit_or_space(m2) and is_digit_or_space(f1) and
               is_digit_or_space(f2) and dir in [?N, ?n, ?S, ?s] do
+    minutes = <<m1, m2, ?., f1, f2>>
     deg = (d1 - ?0) * 10 + (d2 - ?0)
 
-    if deg <= 89 do
-      {:ok, deg, <<m1, m2, ?., f1, f2>>, dir_atom(dir)}
+    if deg + minute_value(minutes) / 60 <= 90 do
+      {:ok, deg, minutes, dir_atom(dir)}
     else
       :error
     end
@@ -48,10 +76,11 @@ defmodule Aprs.Position do
   defp parse_longitude_components(<<d1::8, d2::8, d3::8, m1::8, m2::8, ?., f1::8, f2::8, dir::8>>)
        when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_minute_tens(m1) and is_digit_or_space(m2) and
               is_digit_or_space(f1) and is_digit_or_space(f2) and dir in [?E, ?e, ?W, ?w] do
+    minutes = <<m1, m2, ?., f1, f2>>
     deg = (d1 - ?0) * 100 + (d2 - ?0) * 10 + (d3 - ?0)
 
-    if deg <= 179 do
-      {:ok, deg, <<m1, m2, ?., f1, f2>>, dir_atom(dir)}
+    if deg + minute_value(minutes) / 60 <= 180 do
+      {:ok, deg, minutes, dir_atom(dir)}
     else
       :error
     end
@@ -127,11 +156,11 @@ defmodule Aprs.Position do
     {lat_m, lon_m}
   end
 
-  defp adjusted_minutes(<<m1, m2, ?., f1, f2>>, <<lm1, lm2, ?., lf1, lf2>>, 0) do
-    # Full precision
-    lat_m = space_to_zero(m1) * 10 + space_to_zero(m2) + (space_to_zero(f1) * 10 + space_to_zero(f2)) / 100
-    lon_m = space_to_zero(lm1) * 10 + space_to_zero(lm2) + (space_to_zero(lf1) * 10 + space_to_zero(lf2)) / 100
-    {lat_m, lon_m}
+  defp adjusted_minutes(lat_min, lon_min, 0), do: {minute_value(lat_min), minute_value(lon_min)}
+
+  @spec minute_value(<<_::40>>) :: float()
+  defp minute_value(<<m1, m2, ?., f1, f2>>) do
+    space_to_zero(m1) * 10 + space_to_zero(m2) + (space_to_zero(f1) * 10 + space_to_zero(f2)) / 100
   end
 
   @spec space_to_zero(non_neg_integer()) :: non_neg_integer()
@@ -142,38 +171,4 @@ defmodule Aprs.Position do
   defp apply_direction(val, :south), do: -val
   defp apply_direction(val, :west), do: -val
   defp apply_direction(val, _), do: val
-
-  @ambiguity_levels %{
-    {0, 0} => 0,
-    {1, 1} => 1,
-    {2, 2} => 2,
-    {3, 3} => 3,
-    {4, 4} => 4
-  }
-
-  @doc false
-  @spec calculate_position_ambiguity(String.t(), String.t()) :: non_neg_integer()
-  def calculate_position_ambiguity(latitude, longitude) do
-    lat_spaces = count_spaces(latitude)
-    lon_spaces = count_spaces(longitude)
-    Map.get(@ambiguity_levels, {lat_spaces, lon_spaces}, 0)
-  end
-
-  @doc false
-  @spec count_spaces(String.t()) :: non_neg_integer()
-  def count_spaces(str) do
-    str |> String.graphemes() |> Enum.count(&(&1 == " "))
-  end
-
-  @spec from_aprs(String.t(), String.t()) :: %{
-          latitude: float() | nil,
-          longitude: float() | nil,
-          ambiguity: non_neg_integer()
-        }
-  def from_aprs(lat_str, lon_str), do: parse_aprs_position(lat_str, lon_str)
-
-  @spec from_decimal(number(), number()) :: %{latitude: float(), longitude: float()}
-  def from_decimal(lat, lon) do
-    %{latitude: lat / 1, longitude: lon / 1}
-  end
 end
