@@ -243,6 +243,11 @@ defmodule Aprs.CompressedPositionHelpersTest do
                Aprs.CompressedPositionHelpers.convert_compressed_cs("7P", " ")
     end
 
+    test "an empty compression type is not a GGA type, so cs stays course and speed" do
+      assert Aprs.CompressedPositionHelpers.convert_compressed_cs("7P", "") ==
+               Aprs.CompressedPositionHelpers.convert_compressed_cs("7P", " ")
+    end
+
     test "returns an empty map when cs is absent or invalid" do
       assert Aprs.CompressedPositionHelpers.convert_compressed_cs("  ", " ") == %{}
       assert Aprs.CompressedPositionHelpers.convert_compressed_cs(<<32, 33>>, " ") == %{}

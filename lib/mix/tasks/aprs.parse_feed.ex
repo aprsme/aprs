@@ -186,20 +186,11 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
   end
 
   defp open_session(address, config) do
-    case :gen_tcp.connect(address, config.port, [:binary, active: false, packet: :raw], @connect_timeout) do
-      {:ok, socket} -> send_login(socket, config)
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp send_login(socket, config) do
-    case :gen_tcp.send(socket, login_string(config)) do
-      :ok ->
-        {:ok, socket}
-
-      {:error, reason} ->
-        :gen_tcp.close(socket)
-        {:error, reason}
+    with {:ok, socket} <- :gen_tcp.connect(address, config.port, [:binary, active: false, packet: :raw], @connect_timeout) do
+      # A socket that dies before the login lands fails the first receive, and
+      # the loop reports that, so there is nothing extra to do with a send error.
+      _ = :gen_tcp.send(socket, login_string(config))
+      {:ok, socket}
     end
   end
 
@@ -364,23 +355,12 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
   defp stop_label(:connection_closed), do: "connection closed by server"
   defp stop_label({:socket_error, reason}), do: "socket error: #{inspect(reason)}"
 
+  # A signal that cannot be trapped is one this run will not be stopped by.
   defp trap_stop_signals do
     pid = self()
-    handler = fn -> notify_stop(pid) end
+    handler = fn -> send(pid, :parse_feed_stop) end
 
-    Enum.flat_map(@stop_signals, &trap_stop_signal(&1, handler))
-  end
-
-  defp trap_stop_signal(signal, handler) do
-    case System.trap_signal(signal, handler) do
-      {:ok, id} -> [{signal, id}]
-      {:error, _reason} -> []
-    end
-  end
-
-  defp notify_stop(pid) do
-    send(pid, :parse_feed_stop)
-    :ok
+    for signal <- @stop_signals, {:ok, id} <- [System.trap_signal(signal, handler)], do: {signal, id}
   end
 
   defp untrap_stop_signals(signal_ids) do

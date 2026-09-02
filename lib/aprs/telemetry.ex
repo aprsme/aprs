@@ -125,15 +125,12 @@ defmodule Aprs.Telemetry do
     end
   end
 
+  # The caller always has at least one value here, so the list is never empty.
   @spec split_optional_bits([String.t()]) :: {[String.t()], String.t() | nil}
   defp split_optional_bits(values) do
-    case List.pop_at(values, -1) do
-      {last_value, analog_values} when is_binary(last_value) ->
-        if digital_bits?(last_value), do: {analog_values, last_value}, else: {values, nil}
+    {last_value, analog_values} = List.pop_at(values, -1)
 
-      {nil, []} ->
-        {[], nil}
-    end
+    if digital_bits?(last_value), do: {analog_values, last_value}, else: {values, nil}
   end
 
   @spec valid_bits_or_nil(String.t()) :: String.t() | nil
