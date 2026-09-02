@@ -69,21 +69,21 @@ defmodule Aprs.DeviceParser do
 
   @spec match_mic_e_device(:mic_e | :mic_e_old, binary()) :: String.t() | nil
   for %{prefix: prefix, suffix: suffix, tocall: tocall} <- @current_mic_e_devices do
-    suffix_size = byte_size(suffix)
+    size = byte_size(suffix)
 
     defp match_mic_e_device(:mic_e, <<unquote(prefix), _::binary>> = comment)
-         when byte_size(comment) >= unquote(suffix_size) and
-                binary_part(comment, byte_size(comment) - unquote(suffix_size), unquote(suffix_size)) == unquote(suffix) do
+         when byte_size(comment) >= unquote(size) and
+                binary_part(comment, byte_size(comment) - unquote(size), unquote(size)) == unquote(suffix) do
       unquote(tocall)
     end
   end
 
   for %{prefix: prefix, suffix: suffix, tocall: tocall} <- @kenwood_mic_e_devices do
-    suffix_size = byte_size(suffix)
+    size = byte_size(suffix)
 
     defp match_mic_e_device(:mic_e_old, <<unquote(prefix), _::binary>> = comment)
-         when byte_size(comment) >= unquote(suffix_size) and
-                binary_part(comment, byte_size(comment) - unquote(suffix_size), unquote(suffix_size)) == unquote(suffix) do
+         when byte_size(comment) >= unquote(size) and
+                binary_part(comment, byte_size(comment) - unquote(size), unquote(size)) == unquote(suffix) do
       unquote(tocall)
     end
   end
