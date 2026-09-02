@@ -34,6 +34,11 @@ The library has **no runtime dependencies** — it is pure Elixir and relies onl
 - `mix credo` - Static code analysis and style checking (config in `.credo.exs`; max line length 120)
 - `mix dialyzer` - Static type analysis (must run and fix errors/warnings; not run in CI)
 
+### Auditing the parser against real traffic
+- `mix aprs.parse_feed` - connect to APRS-IS (`noam.aprs2.net:10152`, receive-only login), parse the live global feed, and append every packet that fails to parse to `tmp/aprs_parse_failures.jsonl` as one JSON object per line (`{"seq","received_at","error","raw"}`). Packets that parse cleanly are ignored. `--duration`/`--limit`/`--max-failures` bound a run, `--hard-errors-only` restricts logging to `{:error, _}` returns, `--output` moves the file. `tmp/` is gitignored.
+- `mix aprs.parse_file <path>` - the same, over a file of captured frames.
+- A failure is either a hard `{:error, _}` return or a payload failure: `{:ok, packet}` where `data_extended` carries an `:error`/`:error_code`, or is `nil`. `Aprs.FeedAudit.Verdict` owns that decision and `Aprs.FeedAudit.Failure` owns the record and its JSON rendering (hand-rolled, because the library has no runtime dependencies).
+
 ## Architecture
 
 ### Core Module Structure

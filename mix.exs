@@ -15,6 +15,8 @@ defmodule Aprs.MixProject do
       description: "APRS packet parser for Elixir (aprs)",
       package: package(),
       docs: docs(),
+      # The mix tasks in lib/mix reference Mix, which is not in the default PLT.
+      dialyzer: [plt_add_apps: [:mix]],
       source_url: @source_url
     ]
   end

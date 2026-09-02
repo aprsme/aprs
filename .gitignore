@@ -42,6 +42,9 @@ npm-debug.log
 /.lexical
 /badpackets.txt
 
+# Parse failure logs written by `mix aprs.parse_feed` / `mix aprs.parse_file`.
+/tmp/
+
 # Ignore Kubernetes secrets file
 k8s/secrets.yaml
 
