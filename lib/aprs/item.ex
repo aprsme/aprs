@@ -30,7 +30,7 @@ defmodule Aprs.Item do
             item_name: item_name,
             itemname: item_name,
             live_killed: live_killed,
-            alive: if(live_killed == "!", do: 1, else: 0),
+            alive: alive_flag(live_killed),
             data_type: :item
           },
           parsed_position
@@ -48,67 +48,174 @@ defmodule Aprs.Item do
   def parse(data) do
     base = %{raw_data: data, data_type: :item}
 
-    case Regex.run(~r/(\d{4,5}\.\d+[NS]).*([\/]?)(\d{5,6}\.\d+[EW])/, data) do
-      [_, latitude, _, longitude] ->
+    case scan_coordinates(data) do
+      {:ok, latitude, longitude} ->
         %{latitude: parsed_latitude, longitude: parsed_longitude} =
           Aprs.Position.parse_aprs_position(latitude, longitude)
 
         Map.merge(base, %{latitude: parsed_latitude, longitude: parsed_longitude})
 
-      _ ->
+      :error ->
         base
     end
   end
 
+  # `!` is a live item, `_` a killed one.
+  @spec alive_flag(String.t()) :: 0 | 1
+  defp alive_flag("!"), do: 1
+  defp alive_flag(_live_killed), do: 0
+
+  # Greedy separator semantics choose the last longitude on the same line
+  # after the first latitude that has any following longitude.
+  @spec scan_coordinates(binary()) :: {:ok, binary(), binary()} | :error
+  defp scan_coordinates(data), do: scan_latitude(data)
+
+  @spec scan_latitude(binary()) :: {:ok, binary(), binary()} | :error
+  defp scan_latitude(<<_byte, rest::binary>> = data) do
+    case latitude_at(data) do
+      {:ok, latitude, after_latitude} ->
+        coordinates_after_latitude(latitude, last_longitude(after_latitude, nil), rest)
+
+      :error ->
+        scan_latitude(rest)
+    end
+  end
+
+  defp scan_latitude(<<>>), do: :error
+
+  @spec coordinates_after_latitude(binary(), binary() | nil, binary()) ::
+          {:ok, binary(), binary()} | :error
+  defp coordinates_after_latitude(latitude, longitude, _rest) when is_binary(longitude) do
+    {:ok, latitude, longitude}
+  end
+
+  defp coordinates_after_latitude(_latitude, nil, rest), do: scan_latitude(rest)
+
+  @spec latitude_at(binary()) :: {:ok, binary(), binary()} | :error
+  defp latitude_at(<<d1, d2, d3, d4, d5, ?., fraction, rest::binary>> = data)
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(d4) and is_digit(d5) and is_digit(fraction) do
+    finish_latitude(rest, data, 7)
+  end
+
+  defp latitude_at(<<d1, d2, d3, d4, ?., fraction, rest::binary>> = data)
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(d4) and is_digit(fraction) do
+    finish_latitude(rest, data, 6)
+  end
+
+  defp latitude_at(_data), do: :error
+
+  @spec finish_latitude(binary(), binary(), pos_integer()) :: {:ok, binary(), binary()} | :error
+  defp finish_latitude(<<digit, rest::binary>>, data, length) when is_digit(digit) do
+    finish_latitude(rest, data, length + 1)
+  end
+
+  defp finish_latitude(<<direction, rest::binary>>, data, length) when direction in [?N, ?S] do
+    {:ok, binary_part(data, 0, length + 1), rest}
+  end
+
+  defp finish_latitude(_rest, _data, _length), do: :error
+
+  @spec last_longitude(binary(), binary() | nil) :: binary() | nil
+  defp last_longitude(<<?\n, _::binary>>, candidate), do: candidate
+
+  defp last_longitude(<<_byte, rest::binary>> = data, candidate) do
+    case longitude_at(data) do
+      {:ok, longitude} -> last_longitude(rest, longitude)
+      :error -> last_longitude(rest, candidate)
+    end
+  end
+
+  defp last_longitude(<<>>, candidate), do: candidate
+
+  @spec longitude_at(binary()) :: {:ok, binary()} | :error
+  defp longitude_at(<<d1, d2, d3, d4, d5, d6, ?., fraction, rest::binary>> = data)
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(d4) and is_digit(d5) and is_digit(d6) and
+              is_digit(fraction) do
+    finish_longitude(rest, data, 8)
+  end
+
+  defp longitude_at(<<d1, d2, d3, d4, d5, ?., fraction, rest::binary>> = data)
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(d4) and is_digit(d5) and is_digit(fraction) do
+    finish_longitude(rest, data, 7)
+  end
+
+  defp longitude_at(_data), do: :error
+
+  @spec finish_longitude(binary(), binary(), pos_integer()) :: {:ok, binary()} | :error
+  defp finish_longitude(<<digit, rest::binary>>, data, length) when is_digit(digit) do
+    finish_longitude(rest, data, length + 1)
+  end
+
+  defp finish_longitude(<<direction, _rest::binary>>, data, length) when direction in [?E, ?W] do
+    {:ok, binary_part(data, 0, length + 1)}
+  end
+
+  defp finish_longitude(_rest, _data, _length), do: :error
+
   @spec split_item(String.t()) :: {:ok, String.t(), String.t(), String.t()} | :error
-  defp split_item(data), do: find_status(data, 0, nil)
+  defp split_item(data), do: find_status(data, data, 0, nil)
 
   @spec find_status(
           String.t(),
+          binary(),
           non_neg_integer(),
-          {non_neg_integer(), non_neg_integer(), byte()} | nil
+          {0..3, non_neg_integer(), byte()} | nil
         ) :: {:ok, String.t(), String.t(), String.t()} | :error
-  defp find_status(data, index, candidate) when index < byte_size(data) and index <= 9 do
-    byte = :binary.at(data, index)
-
-    candidate =
-      if byte in [?!, ?_] do
-        rank = position_rank(data, index + 1)
-
-        case candidate do
-          {best_rank, _, _} when best_rank >= rank -> candidate
-          _ -> {rank, index, byte}
-        end
-      else
-        candidate
-      end
-
-    find_status(data, index + 1, candidate)
+  defp find_status(data, <<?!, rest::binary>>, index, candidate) when index <= 9 do
+    candidate = consider_status(data, index, ?!, candidate)
+    find_status(data, rest, index + 1, candidate)
   end
 
-  defp find_status(data, _index, {_rank, status_index, status}) do
+  defp find_status(data, <<?_, rest::binary>>, index, candidate) when index <= 9 do
+    candidate = consider_status(data, index, ?_, candidate)
+    find_status(data, rest, index + 1, candidate)
+  end
+
+  defp find_status(data, <<_byte, rest::binary>>, index, candidate) when index <= 9 do
+    find_status(data, rest, index + 1, candidate)
+  end
+
+  defp find_status(data, _remaining, _index, {_rank, status_index, status}) do
     item_name = binary_part(data, 0, status_index)
     position_start = status_index + 1
     position_data = binary_part(data, position_start, byte_size(data) - position_start)
     {:ok, item_name, <<status>>, position_data}
   end
 
-  defp find_status(_data, _index, nil), do: :error
+  defp find_status(_data, _remaining, _index, nil), do: :error
+
+  @spec consider_status(
+          String.t(),
+          non_neg_integer(),
+          byte(),
+          {0..3, non_neg_integer(), byte()} | nil
+        ) :: {0..3, non_neg_integer(), byte()}
+  defp consider_status(data, index, status, candidate) do
+    rank = position_rank(data, index + 1)
+
+    case candidate do
+      {best_rank, _, _} when best_rank >= rank -> candidate
+      _ -> {rank, index, status}
+    end
+  end
 
   # Item names may not contain `!` or `_`, but a compressed position can, so the
   # split is chosen by what actually follows the candidate status byte.
   @spec position_rank(String.t(), non_neg_integer()) :: 0..3
   defp position_rank(data, position_start) when position_start < byte_size(data) do
     position = binary_part(data, position_start, byte_size(data) - position_start)
-
-    cond do
-      uncompressed_position_prefix?(position) -> 3
-      compressed_position_prefix?(position) -> 2
-      true -> 0
-    end
+    rank_position(uncompressed_position_prefix?(position), position)
   end
 
   defp position_rank(_data, _position_start), do: 0
+
+  @spec rank_position(boolean(), binary()) :: 0..3
+  defp rank_position(true, _position), do: 3
+  defp rank_position(false, position), do: compressed_position_rank(compressed_position_prefix?(position))
+
+  @spec compressed_position_rank(boolean()) :: 0..2
+  defp compressed_position_rank(true), do: 2
+  defp compressed_position_rank(false), do: 0
 
   @spec uncompressed_position_prefix?(String.t()) :: boolean()
   defp uncompressed_position_prefix?(<<latitude::binary-size(8), _table, longitude::binary-size(9), _::binary>>) do

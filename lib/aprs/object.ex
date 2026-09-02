@@ -38,13 +38,18 @@ defmodule Aprs.Object do
       %{
         object_name: String.trim(object_name),
         live_killed: live_killed,
-        alive: if(live_killed == "*", do: 1, else: 0),
+        alive: alive_flag(live_killed),
         timestamp: Aprs.UtilityHelpers.parse_timestamp(timestamp),
         data_type: :object
       },
       position_data
     )
   end
+
+  # `*` is a live object, `_` a killed one.
+  @spec alive_flag(String.t()) :: 0 | 1
+  defp alive_flag("*"), do: 1
+  defp alive_flag(_live_killed), do: 0
 
   @spec parse_object_position(String.t()) :: map()
   defp parse_object_position(<<first_byte, _::binary>> = position_data) when first_byte >= ?0 and first_byte <= ?9 do

@@ -22,22 +22,27 @@ defmodule Aprs.PositionComment do
   applied to `:latitude` and `:longitude`.
   """
   @spec parse(map()) :: map()
+  def parse(%{comment: comment, symbol_code: symbol_code} = position) when is_binary(comment) do
+    run(position, comment, symbol_code)
+  end
+
   def parse(%{comment: comment} = position) when is_binary(comment) do
+    run(position, comment, nil)
+  end
+
+  def parse(position), do: position
+
+  # The position map is read through its head above, so the pipeline never has
+  # to look a key up again.
+  @spec run(map(), String.t(), String.t() | nil) :: map()
+  defp run(position, comment, symbol_code) do
     {course, speed, comment} = extract_course_speed(position, comment)
     {altitude, comment, preserve_leading_delimiter?} = extract_altitude(comment)
     {radiorange, comment} = extract_rng(comment)
     {phg, comment} = extract_phg(comment)
     {dao, comment} = Aprs.DAO.parse(comment)
-
-    {latitude, longitude} =
-      Aprs.DAO.apply_precision(
-        Map.get(position, :latitude),
-        Map.get(position, :longitude),
-        dao,
-        Map.get(position, :posambiguity, 0)
-      )
-
-    {weather, comment} = extract_weather(Map.get(position, :symbol_code), comment)
+    {latitude, longitude} = apply_dao_precision(position, dao)
+    {weather, comment} = extract_weather(symbol_code, comment)
 
     position
     |> Map.put(:latitude, latitude)
@@ -53,7 +58,12 @@ defmodule Aprs.PositionComment do
     |> maybe_put(:weather, weather)
   end
 
-  def parse(position), do: position
+  @spec apply_dao_precision(map(), Aprs.DAO.t() | nil) :: {float() | nil, float() | nil}
+  defp apply_dao_precision(%{latitude: latitude, longitude: longitude} = position, dao) do
+    Aprs.DAO.apply_precision(latitude, longitude, dao, Map.get(position, :posambiguity, 0))
+  end
+
+  defp apply_dao_precision(_position, _dao), do: {nil, nil}
 
   @spec extract_course_speed(map(), String.t()) :: {integer() | nil, float() | nil, String.t()}
   defp extract_course_speed(%{position_format: :uncompressed, symbol_code: symbol_code}, comment)
@@ -194,16 +204,14 @@ defmodule Aprs.PositionComment do
   @spec clean_comment(String.t(), boolean()) :: String.t()
   defp clean_comment(comment, true), do: String.trim(comment)
 
+  # A leading `/` is the delimiter in front of the comment text, so it is cut
+  # and what is left is trimmed again. Anything else only needs one trim.
   defp clean_comment(comment, false) do
-    comment
-    |> String.trim()
-    |> strip_leading_delimiter()
-    |> String.trim()
+    case String.trim(comment) do
+      <<"/", rest::binary>> -> String.trim(rest)
+      trimmed -> trimmed
+    end
   end
-
-  @spec strip_leading_delimiter(String.t()) :: String.t()
-  defp strip_leading_delimiter(<<"/", rest::binary>>), do: rest
-  defp strip_leading_delimiter(comment), do: comment
 
   @spec maybe_put(map(), atom(), term()) :: map()
   defp maybe_put(map, _key, nil), do: map

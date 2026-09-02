@@ -2,35 +2,16 @@ defmodule Aprs.MicE do
   @moduledoc """
   Parses Mic-E encoded APRS packets.
   """
+
+  import Aprs.Guards, only: [is_base91: 1, is_digit: 1]
+
   @metres_to_feet 3.280839895
 
-  @typep digit_info :: %{
-           digit: non_neg_integer(),
-           msg_bit: 0 | 1,
-           msg_type: nil | :custom | :standard,
-           ambiguous: boolean()
-         }
+  @typep digit_info ::
+           {non_neg_integer(), 0 | 1, nil | :custom | :standard, 0 | 1}
 
   @typep lat_direction :: :north | :south | :unknown
   @typep lon_direction :: :east | :west | :unknown
-
-  @typep lat_info :: %{
-           lat_degrees: non_neg_integer(),
-           lat_minutes: non_neg_integer(),
-           lat_hundredths: non_neg_integer(),
-           lat_direction: lat_direction(),
-           position_ambiguity: non_neg_integer()
-         }
-
-  @typep lon_info :: %{
-           lon_direction: lon_direction(),
-           longitude_offset: 0 | 100
-         }
-
-  @typep message_info :: %{
-           message_bits: {0 | 1, 0 | 1, 0 | 1},
-           message_type: nil | :custom | :standard
-         }
 
   @typep dest_info :: %{
            lat_degrees: non_neg_integer(),
@@ -141,55 +122,39 @@ defmodule Aprs.MicE do
     parse_destination_by_size(destination, byte_size(destination))
   end
 
-  @spec parse_destination_by_size(binary(), integer()) :: {:ok, map()} | {:error, atom()}
+  @spec parse_destination_by_size(binary(), integer()) :: {:ok, dest_info()} | {:error, atom()}
   defp parse_destination_by_size(<<c1, c2, c3, c4, c5, c6>>, 6) do
-    digits = decode_destination_digits([c1, c2, c3, c4, c5, c6])
-    lat_info = calculate_latitude_info(digits, c4)
-    lon_info = calculate_longitude_info(c5, c6)
-    message_info = extract_message_info(digits)
+    with {d1, bit1, type1, ambiguous1} <- decode_digit(c1),
+         {d2, bit2, type2, ambiguous2} <- decode_digit(c2),
+         {d3, bit3, type3, ambiguous3} <- decode_digit(c3),
+         {d4, _, _, ambiguous4} <- decode_digit(c4),
+         {d5, _, _, ambiguous5} <- decode_digit(c5),
+         {d6, _, _, ambiguous6} <- decode_digit(c6) do
+      lat_minutes = d3 * 10 + d4
+      lat_hundredths = d5 * 10 + d6
+      ambiguity = ambiguous1 + ambiguous2 + ambiguous3 + ambiguous4 + ambiguous5 + ambiguous6
 
-    {:ok, Map.merge(lat_info, Map.merge(lon_info, message_info))}
-  rescue
-    _ -> {:error, :invalid_character_in_destination}
+      {lat_minutes, lat_hundredths} =
+        apply_lat_centering(lat_minutes, lat_hundredths, d3, d5, ambiguity)
+
+      {:ok,
+       %{
+         lat_degrees: d1 * 10 + d2,
+         lat_minutes: lat_minutes,
+         lat_hundredths: lat_hundredths,
+         lat_direction: determine_lat_direction(c4),
+         position_ambiguity: ambiguity,
+         lon_direction: determine_lon_direction(c6),
+         longitude_offset: determine_longitude_offset(c5),
+         message_bits: {bit1, bit2, bit3},
+         message_type: determine_message_type(type1, type2, type3)
+       }}
+    else
+      :error -> {:error, :invalid_character_in_destination}
+    end
   end
 
   defp parse_destination_by_size(_, _), do: {:error, :invalid_destination_length}
-
-  @spec decode_destination_digits([byte()]) :: [digit_info()]
-  defp decode_destination_digits([c1, c2, c3, d4, d5, d6]) do
-    [
-      decode_digit(c1),
-      decode_digit(c2),
-      decode_digit(c3),
-      decode_digit(d4),
-      decode_digit(d5),
-      decode_digit(d6)
-    ]
-  end
-
-  @spec calculate_latitude_info([digit_info()], byte()) :: lat_info()
-  defp calculate_latitude_info([d1, d2, d3, d4, d5, d6], c4) do
-    lat_degrees = d1.digit * 10 + d2.digit
-    lat_minutes = d3.digit * 10 + d4.digit
-    lat_hundredths = d5.digit * 10 + d6.digit
-    lat_direction = determine_lat_direction(c4)
-    ambiguity = count_ambiguity([d1, d2, d3, d4, d5, d6])
-
-    {lat_minutes, lat_hundredths} = apply_lat_centering(lat_minutes, lat_hundredths, d3.digit, d5.digit, ambiguity)
-
-    %{
-      lat_degrees: lat_degrees,
-      lat_minutes: lat_minutes,
-      lat_hundredths: lat_hundredths,
-      lat_direction: lat_direction,
-      position_ambiguity: ambiguity
-    }
-  end
-
-  @spec count_ambiguity([digit_info()]) :: non_neg_integer()
-  defp count_ambiguity(digits) do
-    Enum.count(digits, & &1.ambiguous)
-  end
 
   # FAP centering: adjust latitude minutes/hundredths based on ambiguity level
   @spec apply_lat_centering(
@@ -215,55 +180,38 @@ defmodule Aprs.MicE do
   defp apply_lon_centering(_minutes, _hundredths, _), do: {30, 0}
 
   @spec determine_lat_direction(byte()) :: lat_direction()
-  defp determine_lat_direction(c) when c in ?0..?9, do: :south
+  defp determine_lat_direction(c) when is_digit(c), do: :south
   defp determine_lat_direction(?L), do: :south
   defp determine_lat_direction(c) when c in ?P..?Z, do: :north
   defp determine_lat_direction(_), do: :unknown
-
-  @spec calculate_longitude_info(byte(), byte()) :: lon_info()
-  defp calculate_longitude_info(c5, c6) do
-    longitude_offset = determine_longitude_offset(c5)
-    lon_direction = determine_lon_direction(c6)
-
-    %{
-      lon_direction: lon_direction,
-      longitude_offset: longitude_offset
-    }
-  end
 
   @spec determine_longitude_offset(byte()) :: 0 | 100
   defp determine_longitude_offset(c) when c in ?P..?Z, do: 100
   defp determine_longitude_offset(_), do: 0
 
   @spec determine_lon_direction(byte()) :: lon_direction()
-  defp determine_lon_direction(c) when c in ?0..?9, do: :east
+  defp determine_lon_direction(c) when is_digit(c), do: :east
   defp determine_lon_direction(?L), do: :east
   defp determine_lon_direction(c) when c in ?P..?Z, do: :west
   defp determine_lon_direction(_), do: :unknown
 
-  @spec extract_message_info([digit_info()]) :: message_info()
-  defp extract_message_info([d1, d2, d3, _d4, _d5, _d6]) do
-    message_bits = {d1.msg_bit, d2.msg_bit, d3.msg_bit}
-    message_type = determine_message_type([d1, d2, d3])
+  @spec determine_message_type(
+          nil | :custom | :standard,
+          nil | :custom | :standard,
+          nil | :custom | :standard
+        ) :: nil | :custom | :standard
+  defp determine_message_type(nil, nil, type3), do: type3
+  defp determine_message_type(nil, type2, _type3), do: type2
+  defp determine_message_type(type1, _type2, _type3), do: type1
 
-    %{
-      message_bits: message_bits,
-      message_type: message_type
-    }
-  end
-
-  @spec determine_message_type([digit_info()]) :: nil | :custom | :standard
-  defp determine_message_type([d1, d2, d3]) do
-    Enum.find_value([d1, d2, d3], fn d -> d.msg_type end)
-  end
-
-  @spec decode_digit(byte()) :: digit_info()
-  defp decode_digit(c) when c in ?0..?9, do: %{digit: c - ?0, msg_bit: 0, msg_type: nil, ambiguous: false}
-  defp decode_digit(c) when c in ?A..?J, do: %{digit: c - ?A, msg_bit: 1, msg_type: :custom, ambiguous: false}
-  defp decode_digit(?K), do: %{digit: 0, msg_bit: 1, msg_type: :custom, ambiguous: true}
-  defp decode_digit(?L), do: %{digit: 0, msg_bit: 0, msg_type: nil, ambiguous: true}
-  defp decode_digit(c) when c in ?P..?Y, do: %{digit: c - ?P, msg_bit: 1, msg_type: :standard, ambiguous: false}
-  defp decode_digit(?Z), do: %{digit: 0, msg_bit: 1, msg_type: :standard, ambiguous: true}
+  @spec decode_digit(byte()) :: digit_info() | :error
+  defp decode_digit(c) when is_digit(c), do: {c - ?0, 0, nil, 0}
+  defp decode_digit(c) when c in ?A..?J, do: {c - ?A, 1, :custom, 0}
+  defp decode_digit(?K), do: {0, 1, :custom, 1}
+  defp decode_digit(?L), do: {0, 0, nil, 1}
+  defp decode_digit(c) when c in ?P..?Y, do: {c - ?P, 1, :standard, 0}
+  defp decode_digit(?Z), do: {0, 1, :standard, 1}
+  defp decode_digit(_), do: :error
 
   @spec parse_information(binary(), non_neg_integer()) :: {:ok, info_field()} | {:error, atom()}
   defp parse_information(data, _lon_offset) when byte_size(data) < 8 do
@@ -348,10 +296,7 @@ defmodule Aprs.MicE do
   defp normalize_speed(speed), do: speed
 
   @spec normalize_course(integer()) :: non_neg_integer()
-  defp normalize_course(course) when course >= 400 do
-    normalized = course - 400
-    if normalized >= 0 and normalized <= 360, do: normalized, else: 0
-  end
+  defp normalize_course(course) when course >= 400 and course <= 760, do: course - 400
 
   defp normalize_course(course) when course >= 0 and course <= 360, do: course
   defp normalize_course(_invalid_course), do: 0
@@ -398,7 +343,7 @@ defmodule Aprs.MicE do
   defp strip_old_type_code(rest), do: rest
 
   @spec extract_mic_e_altitude(binary()) :: {float() | nil, binary()}
-  defp extract_mic_e_altitude(<<a1, a2, a3, ?}, rest::binary>>) when a1 in 33..123 and a2 in 33..123 and a3 in 33..123 do
+  defp extract_mic_e_altitude(<<a1, a2, a3, ?}, rest::binary>>) when is_base91(a1) and is_base91(a2) and is_base91(a3) do
     altitude_metres = (a1 - 33) * 91 * 91 + (a2 - 33) * 91 + (a3 - 33) - 10_000
     {altitude_metres * @metres_to_feet, rest}
   end
@@ -414,7 +359,45 @@ defmodule Aprs.MicE do
   @spec clean_trailing_markers(String.t()) :: String.t()
   defp clean_trailing_markers(str) do
     str
-    |> String.replace(~r/\^ --$/u, "")
-    |> String.replace(~r/ --$/u, "")
+    |> strip_suffix("^ --")
+    |> strip_suffix(" --")
+  end
+
+  # The part of `str` in front of `suffix`, or nil when `str` does not end with
+  # it.
+  @spec suffix_prefix(binary(), binary()) :: binary() | nil
+  defp suffix_prefix(str, suffix) when byte_size(str) >= byte_size(suffix) do
+    prefix_size = byte_size(str) - byte_size(suffix)
+
+    case str do
+      <<prefix::binary-size(^prefix_size), ^suffix::binary>> -> prefix
+      _other -> nil
+    end
+  end
+
+  defp suffix_prefix(_str, _suffix), do: nil
+
+  @spec strip_suffix(binary(), binary()) :: binary()
+  defp strip_suffix(str, suffix) do
+    case suffix_prefix(str, suffix) do
+      nil -> strip_suffix_before_newline(str, suffix)
+      prefix -> prefix
+    end
+  end
+
+  # `$` in the reference parser's regex also matches in front of a single
+  # trailing line feed, so `"foo --\n"` loses the marker and keeps the feed.
+  @spec strip_suffix_before_newline(binary(), binary()) :: binary()
+  defp strip_suffix_before_newline(<<>>, _suffix), do: <<>>
+
+  defp strip_suffix_before_newline(str, suffix) do
+    body_size = byte_size(str) - 1
+
+    with <<body::binary-size(^body_size), ?\n>> <- str,
+         prefix when is_binary(prefix) <- suffix_prefix(body, suffix) do
+      prefix <> "\n"
+    else
+      _other -> str
+    end
   end
 end

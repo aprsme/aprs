@@ -62,6 +62,7 @@ Message parsing lives in `Aprs.parse_data/3` in the main module (there is no sep
 
 ### Helper Modules
 - **Aprs.UtilityHelpers** - The single timestamp implementation (`parse_timestamp/2`, with an injectable clock) plus the position resolution constants
+- **Aprs.Clock** - The wall clock read for `received_at` and for timestamp resolution, with the calendar part cached per second
 - **Aprs.WeatherHelpers** - Weather field parsing and validation (wind, temperature, rain, humidity, pressure, luminosity, snow)
 - **Aprs.TelemetryHelpers** - Telemetry coefficient parsing
 - **Aprs.PHGHelpers** - PHG and DF field decoding tables

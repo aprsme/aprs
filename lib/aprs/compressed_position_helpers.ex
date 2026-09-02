@@ -26,18 +26,13 @@ defmodule Aprs.CompressedPositionHelpers do
   Decodes a four-byte base-91 compressed latitude.
   """
   @spec convert_compressed_lat(binary()) :: {:ok, float()} | {:error, String.t()}
-  def convert_compressed_lat(lat) when is_binary(lat) and byte_size(lat) == 4 do
-    case safe_to_charlist(lat) do
-      {:ok, [l1, l2, l3, l4]}
-      when is_base91(l1) and is_base91(l2) and is_base91(l3) and is_base91(l4) ->
-        validate_latitude(90 - calculate_base91_value([l1, l2, l3, l4]) / @lat_divisor)
+  def convert_compressed_lat(<<l1, l2, l3, l4>>)
+      when is_base91(l1) and is_base91(l2) and is_base91(l3) and is_base91(l4) do
+    validate_latitude(90 - calculate_base91_value(l1, l2, l3, l4) / @lat_divisor)
+  end
 
-      {:ok, _} ->
-        {:error, "Invalid compressed latitude - contains non-ASCII characters"}
-
-      {:error, _} ->
-        {:error, "Invalid compressed latitude - invalid encoding"}
-    end
+  def convert_compressed_lat(<<_l1, _l2, _l3, _l4>> = lat) do
+    invalid_compressed_latitude(String.valid?(lat))
   end
 
   def convert_compressed_lat(_), do: {:error, "Invalid compressed latitude"}
@@ -46,18 +41,13 @@ defmodule Aprs.CompressedPositionHelpers do
   Decodes a four-byte base-91 compressed longitude.
   """
   @spec convert_compressed_lon(binary()) :: {:ok, float()} | {:error, String.t()}
-  def convert_compressed_lon(lon) when is_binary(lon) and byte_size(lon) == 4 do
-    case safe_to_charlist(lon) do
-      {:ok, [l1, l2, l3, l4]}
-      when is_base91(l1) and is_base91(l2) and is_base91(l3) and is_base91(l4) ->
-        validate_longitude(-180 + calculate_base91_value([l1, l2, l3, l4]) / @lon_divisor)
+  def convert_compressed_lon(<<l1, l2, l3, l4>>)
+      when is_base91(l1) and is_base91(l2) and is_base91(l3) and is_base91(l4) do
+    validate_longitude(-180 + calculate_base91_value(l1, l2, l3, l4) / @lon_divisor)
+  end
 
-      {:ok, _} ->
-        {:error, "Invalid compressed longitude - contains non-ASCII characters"}
-
-      {:error, _} ->
-        {:error, "Invalid compressed longitude - invalid encoding"}
-    end
+  def convert_compressed_lon(<<_l1, _l2, _l3, _l4>> = lon) do
+    invalid_compressed_longitude(String.valid?(lon))
   end
 
   def convert_compressed_lon(_), do: {:error, "Invalid compressed longitude"}
@@ -70,15 +60,18 @@ defmodule Aprs.CompressedPositionHelpers do
   defp validate_longitude(longitude) when longitude >= -180 and longitude <= 180, do: {:ok, longitude}
   defp validate_longitude(_longitude), do: {:error, "Invalid compressed longitude - out of range"}
 
-  @spec safe_to_charlist(binary()) :: {:ok, charlist()} | {:error, :invalid_utf8}
-  defp safe_to_charlist(binary) do
-    {:ok, to_charlist(binary)}
-  rescue
-    UnicodeConversionError -> {:error, :invalid_utf8}
-  end
+  @spec invalid_compressed_latitude(boolean()) :: {:error, String.t()}
+  defp invalid_compressed_latitude(true), do: {:error, "Invalid compressed latitude - contains non-ASCII characters"}
 
-  @spec calculate_base91_value([non_neg_integer()]) :: non_neg_integer()
-  defp calculate_base91_value([c1, c2, c3, c4]) do
+  defp invalid_compressed_latitude(false), do: {:error, "Invalid compressed latitude - invalid encoding"}
+
+  @spec invalid_compressed_longitude(boolean()) :: {:error, String.t()}
+  defp invalid_compressed_longitude(true), do: {:error, "Invalid compressed longitude - contains non-ASCII characters"}
+
+  defp invalid_compressed_longitude(false), do: {:error, "Invalid compressed longitude - invalid encoding"}
+
+  @spec calculate_base91_value(byte(), byte(), byte(), byte()) :: integer()
+  defp calculate_base91_value(c1, c2, c3, c4) do
     (c1 - 33) * 91 * 91 * 91 +
       (c2 - 33) * 91 * 91 +
       (c3 - 33) * 91 +
@@ -118,11 +111,15 @@ defmodule Aprs.CompressedPositionHelpers do
   @spec decode_compression_type(non_neg_integer()) :: map()
   defp decode_compression_type(type_value) do
     %{
-      gps_fix: if((type_value &&& 0x20) == 0, do: :old, else: :current),
+      gps_fix: decode_gps_fix(type_value &&& 0x20),
       nmea_source: elem(@nmea_sources, type_value >>> 3 &&& 0x03),
       origin: elem(@origins, type_value &&& 0x07)
     }
   end
+
+  @spec decode_gps_fix(0 | 0x20) :: :old | :current
+  defp decode_gps_fix(0), do: :old
+  defp decode_gps_fix(0x20), do: :current
 
   @spec gga_compression_type?(binary()) :: boolean()
   defp gga_compression_type?(<<char, _rest::binary>>) do
@@ -134,9 +131,8 @@ defmodule Aprs.CompressedPositionHelpers do
 
   @doc false
   @spec convert_to_base91(binary()) :: non_neg_integer()
-  def convert_to_base91(<<value::binary-size(4)>>) do
-    [v1, v2, v3, v4] = to_charlist(value)
-    calculate_base91_value([v1, v2, v3, v4])
+  def convert_to_base91(<<c1, c2, c3, c4>>) do
+    calculate_base91_value(c1, c2, c3, c4)
   end
 
   @doc """
@@ -159,22 +155,34 @@ defmodule Aprs.CompressedPositionHelpers do
         }
   def convert_compressed_cs(<<c, s>>, compression_type)
       when is_binary(compression_type) and is_base91(c) and is_base91(s) do
-    gga? = gga_compression_type?(compression_type)
-    c_value = c - 33
-    s_value = s - 33
-
-    cond do
-      gga? ->
-        %{altitude: 1.002 ** (c_value * 91 + s_value)}
-
-      c == ?{ ->
-        %{range: 2 * 1.08 ** s_value}
-
-      true ->
-        course = if c_value == 0, do: 360, else: c_value * 4
-        %{course: course, speed: 1.08 ** s_value - 1}
-    end
+    convert_compressed_cs(gga_compression_type?(compression_type), c, s)
   end
 
   def convert_compressed_cs(_, _), do: %{}
+
+  @spec convert_compressed_cs(boolean(), byte(), byte()) :: %{
+          optional(:course) => pos_integer(),
+          optional(:speed) => float(),
+          optional(:range) => float(),
+          optional(:altitude) => float()
+        }
+  defp convert_compressed_cs(true, c, s) do
+    %{altitude: 1.002 ** ((c - 33) * 91 + (s - 33))}
+  end
+
+  defp convert_compressed_cs(false, ?{, s) do
+    %{range: 2 * 1.08 ** (s - 33)}
+  end
+
+  defp convert_compressed_cs(false, c, s) do
+    convert_compressed_course_speed(c - 33, s - 33)
+  end
+
+  @spec convert_compressed_course_speed(non_neg_integer(), non_neg_integer()) :: %{
+          course: pos_integer(),
+          speed: float()
+        }
+  defp convert_compressed_course_speed(0, speed), do: %{course: 360, speed: 1.08 ** speed - 1}
+
+  defp convert_compressed_course_speed(course, speed), do: %{course: course * 4, speed: 1.08 ** speed - 1}
 end

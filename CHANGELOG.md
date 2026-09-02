@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2026-09-02
+
+### Changed
+- Parsing is roughly twice as fast, with no change to what any packet parses to.
+  The parser now validates UTF-8 with `:unicode.characters_to_binary/1` instead of
+  walking the packet in Elixir, finds header delimiters and comment markers
+  (`/A=`, `PHG`, `!DAO!`) with `:binary.match/3` instead of rebuilding the packet
+  a byte at a time, splits and validates the digipeater path in one pass, builds
+  APRS timestamps with integer unix-second arithmetic rather than `Date`/`Time`/
+  `DateTime` structs, and derives the reference-parser field aliases from
+  `data_extended` instead of re-reading the merged packet.
+- The last regular expressions left in the parsing paths (Mic-E comment cleanup,
+  the loose timestamped-position fallback, and the item coordinate fallback) are
+  replaced by binary pattern matching, and the remaining `cond`/`if` dispatch and
+  exception-based control flow in Mic-E destination decoding, compressed
+  coordinate decoding and item status detection are now function clauses.
+
+### Added
+- `Aprs.Clock`, the single wall-clock read used for `received_at` and for
+  resolving APRS timestamps, which caches the calendar date per second.
+
 ## [2.0.1] - 2026-09-02
 
 ### Fixed

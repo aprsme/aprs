@@ -3,6 +3,8 @@ defmodule Aprs.DeviceParser do
   Extracts device identifiers from APRS packet destinations and Mic-E comments.
   """
 
+  # Entries become function clauses in this order, so suffix-specific
+  # signatures must precede prefix-only fallbacks.
   @kenwood_mic_e_devices [
     %{prefix: ">", suffix: "^", tocall: "APK004"},
     %{prefix: ">", suffix: "=", tocall: "APK003"},
@@ -18,6 +20,7 @@ defmodule Aprs.DeviceParser do
     %{prefix: "", suffix: "_%", tocall: "APY400"},
     %{prefix: "", suffix: "_(", tocall: "APY02D"}
   ]
+  # Backtick suffixes must win before the broad Kenwood prefix matches.
   @current_mic_e_devices @backtick_mic_e_devices ++ @kenwood_mic_e_devices
 
   @doc """
@@ -26,29 +29,30 @@ defmodule Aprs.DeviceParser do
   Standard packets use the first six destination characters. Mic-E packets
   identify their device from the DTI and the comment prefix or suffix.
   """
-  @spec extract_device_identifier(map() | String.t()) :: String.t() | nil
+  @spec extract_device_identifier(term()) :: String.t() | nil
   def extract_device_identifier(%{data_type: data_type, data_extended: %{comment: comment}})
       when data_type in [:mic_e, :mic_e_old] and is_binary(comment) do
-    identify_mic_e_device(data_type, comment)
+    match_mic_e_device(data_type, comment)
   end
 
   def extract_device_identifier(%{data_type: data_type, comment: comment})
       when data_type in [:mic_e, :mic_e_old] and is_binary(comment) do
-    identify_mic_e_device(data_type, comment)
+    match_mic_e_device(data_type, comment)
   end
 
   def extract_device_identifier(%{data_type: data_type}) when data_type in [:mic_e, :mic_e_old], do: nil
 
   def extract_device_identifier(%{destination: destination}) when is_binary(destination) do
-    String.slice(destination, 0, 6)
+    destination_identifier(destination)
   end
 
   def extract_device_identifier(packet) when is_binary(packet) do
     with [_source, header] <- :binary.split(packet, ">"),
          {delimiter_index, 1} <- :binary.match(header, [",", ":"]) do
-      header
-      |> binary_part(0, delimiter_index)
-      |> String.slice(0, 6)
+      destination =
+        binary_part(header, 0, delimiter_index)
+
+      destination_identifier(destination)
     else
       _ -> nil
     end
@@ -56,19 +60,33 @@ defmodule Aprs.DeviceParser do
 
   def extract_device_identifier(_packet), do: nil
 
-  @spec identify_mic_e_device(:mic_e | :mic_e_old, String.t()) :: String.t() | nil
-  defp identify_mic_e_device(:mic_e, comment) do
-    match_mic_e_device(comment, @current_mic_e_devices)
+  @spec destination_identifier(binary()) :: binary()
+  defp destination_identifier(destination) when byte_size(destination) >= 6 do
+    binary_part(destination, 0, 6)
   end
 
-  defp identify_mic_e_device(:mic_e_old, comment) do
-    match_mic_e_device(comment, @kenwood_mic_e_devices)
+  defp destination_identifier(destination), do: destination
+
+  @spec match_mic_e_device(:mic_e | :mic_e_old, binary()) :: String.t() | nil
+  for %{prefix: prefix, suffix: suffix, tocall: tocall} <- @current_mic_e_devices do
+    suffix_size = byte_size(suffix)
+
+    defp match_mic_e_device(:mic_e, <<unquote(prefix), _::binary>> = comment)
+         when byte_size(comment) >= unquote(suffix_size) and
+                binary_part(comment, byte_size(comment) - unquote(suffix_size), unquote(suffix_size)) == unquote(suffix) do
+      unquote(tocall)
+    end
   end
 
-  @spec match_mic_e_device(String.t(), [map()]) :: String.t() | nil
-  defp match_mic_e_device(comment, devices) do
-    Enum.find_value(devices, fn %{prefix: prefix, suffix: suffix, tocall: tocall} ->
-      if String.starts_with?(comment, prefix) and String.ends_with?(comment, suffix), do: tocall
-    end)
+  for %{prefix: prefix, suffix: suffix, tocall: tocall} <- @kenwood_mic_e_devices do
+    suffix_size = byte_size(suffix)
+
+    defp match_mic_e_device(:mic_e_old, <<unquote(prefix), _::binary>> = comment)
+         when byte_size(comment) >= unquote(suffix_size) and
+                binary_part(comment, byte_size(comment) - unquote(suffix_size), unquote(suffix_size)) == unquote(suffix) do
+      unquote(tocall)
+    end
   end
+
+  defp match_mic_e_device(_data_type, _comment), do: nil
 end
