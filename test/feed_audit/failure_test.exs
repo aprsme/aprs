@@ -1,5 +1,6 @@
 defmodule Aprs.FeedAudit.FailureTest do
   use ExUnit.Case, async: true
+  use ExUnitProperties
 
   alias Aprs.FeedAudit.Failure
 
@@ -25,6 +26,11 @@ defmodule Aprs.FeedAudit.FailureTest do
 
       assert Failure.build("x", {:unparsed_payload, :unknown_datatype}).error ==
                "unparsed payload (unknown_datatype)"
+    end
+
+    test "formats any other reason with inspect" do
+      assert Failure.build("x", {:weird, 42}).error == "{:weird, 42}"
+      assert Failure.build("x", 42).error == "42"
     end
 
     test "escapes control bytes, invalid utf8 and backslashes" do
@@ -59,6 +65,27 @@ defmodule Aprs.FeedAudit.FailureTest do
 
       assert json =~ ~s("error":"payload: bad \\"value\\"")
       assert json =~ ~s("raw":"N0CALL>APRS:>say \\"hi\\" \\\\\\\\ bye")
+    end
+
+    test "escapes control bytes in the reason so the line stays valid JSON" do
+      json =
+        "frame"
+        |> Failure.build({:payload_error, <<"bad", 0x01, "value">>})
+        |> Failure.to_json()
+
+      assert json =~ ~s("error":"payload: bad\\u0001value")
+      refute String.contains?(json, <<0x01>>)
+    end
+
+    property "a rendered failure is one line with no raw control bytes" do
+      check all raw <- StreamData.binary() do
+        json = raw |> Failure.build(:invalid_packet) |> Failure.to_json()
+
+        assert String.starts_with?(json, "{")
+        assert String.ends_with?(json, "}")
+        assert json =~ ~s("raw":")
+        refute Enum.any?(:binary.bin_to_list(json), &(&1 < 0x20))
+      end
     end
   end
 end

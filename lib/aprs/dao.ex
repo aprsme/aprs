@@ -99,5 +99,4 @@ defmodule Aprs.DAO do
   defp shift(nil, _offset), do: nil
   defp shift(value, offset) when is_number(value) and value < 0, do: value - offset
   defp shift(value, offset) when is_number(value), do: value + offset
-  defp shift(value, _offset), do: value
 end

@@ -73,13 +73,11 @@ defmodule Aprs.UtilityHelpers do
   defp build_dhm_timestamp(year, month, now_unix, day, hour, minute)
        when day >= 1 and day <= 31 and hour >= 0 and hour <= 23 and minute >= 0 and minute <= 59 do
     case build_unix_timestamp(year, month, day, hour, minute, 0) do
-      timestamp when timestamp > now_unix + @future_tolerance_seconds ->
-        build_previous_month_timestamp(year, month, day, hour, minute)
-
-      timestamp when is_integer(timestamp) ->
+      timestamp when is_integer(timestamp) and timestamp <= now_unix + @future_tolerance_seconds ->
         timestamp
 
-      nil ->
+      # A day this month does not have, or one still to come, is last month's.
+      _future_or_invalid ->
         build_previous_month_timestamp(year, month, day, hour, minute)
     end
   end

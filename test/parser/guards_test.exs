@@ -24,6 +24,9 @@ defmodule Aprs.GuardsTest do
 
     def alphanumeric?(b) when is_alphanumeric(b), do: true
     def alphanumeric?(_), do: false
+
+    def compressed_table?(b) when is_compressed_table(b), do: true
+    def compressed_table?(_), do: false
   end
 
   describe "is_digit/1" do
@@ -105,6 +108,28 @@ defmodule Aprs.GuardsTest do
           (b >= ?a and b <= ?z) or (b >= ?A and b <= ?Z) or (b >= ?0 and b <= ?9)
 
         assert Helper.alphanumeric?(b) == expected
+      end
+    end
+  end
+
+  describe "is_compressed_table/1" do
+    test "accepts the primary and alternate tables and overlay characters" do
+      assert Helper.compressed_table?(?/)
+      assert Helper.compressed_table?(?\\)
+      for b <- ?A..?Z, do: assert(Helper.compressed_table?(b))
+      for b <- ?a..?j, do: assert(Helper.compressed_table?(b))
+    end
+
+    test "rejects digits and lower case letters past j" do
+      for b <- ?0..?9, do: refute(Helper.compressed_table?(b))
+      for b <- ?k..?z, do: refute(Helper.compressed_table?(b))
+    end
+
+    property "matches the tables APRS101 allows in a compressed position" do
+      check all(b <- StreamData.integer(0..255)) do
+        expected = b in [?/, ?\\] or (b >= ?A and b <= ?Z) or (b >= ?a and b <= ?j)
+
+        assert Helper.compressed_table?(b) == expected
       end
     end
   end

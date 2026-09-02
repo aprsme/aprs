@@ -55,4 +55,9 @@ defmodule Mix.Tasks.Aprs.ParseFileTest do
   test "exits when the input file is missing", %{input: input, output: output} do
     assert catch_exit(ParseFile.run([input, "--output", output])) == {:shutdown, 1}
   end
+
+  test "exits when no input file is given", %{output: output} do
+    assert catch_exit(ParseFile.run(["--output", output])) == {:shutdown, 1}
+    assert_receive {:mix_shell, :error, ["Error: input file not found: (none given)"]}
+  end
 end

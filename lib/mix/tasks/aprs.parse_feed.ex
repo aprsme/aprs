@@ -186,22 +186,28 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
   end
 
   defp open_session(address, config) do
-    case :gen_tcp.connect(address, config.port, [:binary, active: false, packet: :raw], @connect_timeout) do
+    case transport().connect(address, config.port, [:binary, active: false, packet: :raw], @connect_timeout) do
       {:ok, socket} -> send_login(socket, config)
       {:error, reason} -> {:error, reason}
     end
   end
 
+  # An address whose login cannot be sent is an address this run cannot use, so
+  # the socket goes and the pool walk moves on to the next one.
   defp send_login(socket, config) do
-    case :gen_tcp.send(socket, login_string(config)) do
+    case transport().send(socket, login_string(config)) do
       :ok ->
         {:ok, socket}
 
       {:error, reason} ->
-        :gen_tcp.close(socket)
+        transport().close(socket)
         {:error, reason}
     end
   end
+
+  # The session transport is swapped in tests to fail a send on a socket that
+  # has only just connected, which no timing on a real socket can guarantee.
+  defp transport, do: Application.get_env(:aprs, :feed_transport, :gen_tcp)
 
   defp format_address(address), do: address |> :inet.ntoa() |> List.to_string()
 
@@ -364,23 +370,12 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
   defp stop_label(:connection_closed), do: "connection closed by server"
   defp stop_label({:socket_error, reason}), do: "socket error: #{inspect(reason)}"
 
+  # A signal that cannot be trapped is one this run will not be stopped by.
   defp trap_stop_signals do
     pid = self()
-    handler = fn -> notify_stop(pid) end
+    handler = fn -> send(pid, :parse_feed_stop) end
 
-    Enum.flat_map(@stop_signals, &trap_stop_signal(&1, handler))
-  end
-
-  defp trap_stop_signal(signal, handler) do
-    case System.trap_signal(signal, handler) do
-      {:ok, id} -> [{signal, id}]
-      {:error, _reason} -> []
-    end
-  end
-
-  defp notify_stop(pid) do
-    send(pid, :parse_feed_stop)
-    :ok
+    for signal <- @stop_signals, {:ok, id} <- [System.trap_signal(signal, handler)], do: {signal, id}
   end
 
   defp untrap_stop_signals(signal_ids) do

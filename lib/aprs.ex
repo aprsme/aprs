@@ -142,7 +142,6 @@ defmodule Aprs do
   # `invalid` always starts on the offending byte: promote it from Latin-1 and
   # hand the remainder back to the validator.
   @spec scrub(binary(), binary()) :: String.t()
-  defp scrub(<<>>, acc), do: acc
   defp scrub(<<b, rest::binary>>, acc), do: scrub_valid(rest, <<acc::binary, b::utf8>>)
 
   @spec scrub_valid(binary(), binary()) :: String.t()
@@ -176,17 +175,11 @@ defmodule Aprs do
         )
 
       {:ok, packet_data}
-    else
-      {:error, reason} -> {:error, format_error_message(reason)}
     end
   rescue
     exception ->
       {:error, "Parse exception: " <> Exception.message(exception)}
   end
-
-  @spec format_error_message(term()) :: term()
-  defp format_error_message(:invalid_packet), do: :invalid_packet
-  defp format_error_message(reason), do: reason
 
   @spec validate_packet_parts(String.t(), String.t(), atom()) :: :ok | {:error, :invalid_packet}
   defp validate_packet_parts("", _, :empty), do: {:error, :invalid_packet}
@@ -356,7 +349,6 @@ defmodule Aprs do
   end
 
   @spec used_marker?(String.t()) :: boolean()
-  defp used_marker?(<<>>), do: false
   defp used_marker?(digi), do: :binary.last(digi) == ?*
 
   @spec parse_single_digipeater(String.t(), boolean()) :: map()
@@ -447,13 +439,12 @@ defmodule Aprs do
   defp map_format_field(packet, %{format: format}), do: Map.put(packet, :format, format)
   defp map_format_field(packet, _data_extended), do: packet
 
+  # Every parser that reports a symbol reports both halves of it.
   @spec map_symbol_fields(map(), map()) :: map()
   defp map_symbol_fields(packet, %{symbol_code: code, symbol_table_id: table}) do
     packet |> maybe_put(:symbolcode, code) |> maybe_put(:symboltable, table)
   end
 
-  defp map_symbol_fields(packet, %{symbol_code: code}), do: maybe_put(packet, :symbolcode, code)
-  defp map_symbol_fields(packet, %{symbol_table_id: table}), do: maybe_put(packet, :symboltable, table)
   defp map_symbol_fields(packet, _data_extended), do: packet
 
   @doc """
@@ -1092,6 +1083,8 @@ defmodule Aprs do
     }
   end
 
+  # The base-91 range runs slightly past the poles: the largest four-byte group
+  # decodes to 90.02 degrees south, so an out-of-range group is a real packet.
   @spec parse_position_compressed(String.t(), binary(), binary(), String.t(), binary(), binary(), String.t()) :: map()
   defp parse_position_compressed(
          sym_table_id,
