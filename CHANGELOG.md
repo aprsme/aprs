@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replaced by binary pattern matching, and the remaining `cond`/`if` dispatch and
   exception-based control flow in Mic-E destination decoding, compressed
   coordinate decoding and item status detection are now function clauses.
+- The feed audit tasks (`mix aprs.parse_feed`, `mix aprs.parse_file`) share their
+  byte-safe line-ending handling in `Aprs.FeedAudit.Frame` instead of carrying a
+  copy each, and their remaining `if` dispatch is function clauses.
 
 ### Added
 - `Aprs.Clock`, the single wall-clock read used for `received_at` and for

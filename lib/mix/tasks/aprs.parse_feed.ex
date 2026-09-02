@@ -59,6 +59,7 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
   use Mix.Task
 
   alias Aprs.FeedAudit.Failure
+  alias Aprs.FeedAudit.Frame
   alias Aprs.FeedAudit.Verdict
 
   @default_server "noam.aprs2.net"
@@ -130,10 +131,14 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
       limit: Keyword.get(opts, :limit),
       max_failures: Keyword.get(opts, :max_failures),
       progress: Keyword.get(opts, :progress, @default_progress),
-      mode: if(Keyword.get(opts, :hard_errors_only, false), do: :hard, else: :all),
+      mode: mode(Keyword.get(opts, :hard_errors_only, false)),
       output: Keyword.get(opts, :output, @default_output)
     }
   end
+
+  @spec mode(boolean()) :: Verdict.mode()
+  defp mode(true), do: :hard
+  defp mode(false), do: :all
 
   defp deadline(duration) when is_integer(duration) and duration > 0 do
     System.monotonic_time(:millisecond) + duration * 1_000
@@ -201,9 +206,11 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
   defp format_address(address), do: address |> :inet.ntoa() |> List.to_string()
 
   defp login_string(config) do
-    filter = if config.filter, do: " filter #{config.filter}", else: ""
-    "user #{config.login} pass #{config.passcode} vers aprs-parse-feed #{Aprs.version()}#{filter}\r\n"
+    "user #{config.login} pass #{config.passcode} vers aprs-parse-feed #{Aprs.version()}#{filter_clause(config.filter)}\r\n"
   end
+
+  defp filter_clause(nil), do: ""
+  defp filter_clause(filter), do: " filter #{filter}"
 
   defp stream(socket, config, io) do
     signal_ids = trap_stop_signals()
@@ -288,10 +295,14 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
     |> report_progress()
   end
 
+  # The trailing element is whatever follows the last newline, which is the
+  # start of the next frame rather than a complete line.
   defp split_lines(buffer) do
-    {lines, [rest]} = buffer |> :binary.split("\n", [:global]) |> Enum.split(-1)
-    {lines, rest}
+    buffer |> :binary.split("\n", [:global]) |> take_complete_lines([])
   end
+
+  defp take_complete_lines([rest], lines), do: {Enum.reverse(lines), rest}
+  defp take_complete_lines([line | tail], lines), do: take_complete_lines(tail, [line | lines])
 
   # An unterminated frame past the APRS-IS frame limit is itself a malformed
   # packet: log it, then resync on the next newline.
@@ -301,15 +312,17 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
 
   defp flush_overlong_buffer(state), do: state
 
-  defp handle_line(line, state) do
-    line |> strip_suffix("\n") |> strip_suffix("\r") |> classify_line(state)
-  end
+  defp handle_line(line, state), do: line |> Frame.strip_eol() |> classify_line(state)
 
   defp classify_line("", state), do: state
 
-  defp classify_line("#" <> _comment = line, state) do
-    if state.server_messages < 2, do: Mix.shell().info("APRS-IS: #{line}")
-    %{state | server_messages: state.server_messages + 1}
+  defp classify_line("#" <> _comment = line, %{server_messages: seen} = state) when seen < 2 do
+    Mix.shell().info("APRS-IS: #{line}")
+    %{state | server_messages: seen + 1}
+  end
+
+  defp classify_line("#" <> _comment, %{server_messages: seen} = state) do
+    %{state | server_messages: seen + 1}
   end
 
   defp classify_line(line, state) do
@@ -328,14 +341,12 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
 
   defp report_progress(%{next_progress: next} = state) when next <= 0, do: state
 
-  defp report_progress(%{next_progress: next} = state) do
-    if state.received >= next do
-      Mix.shell().info("  #{state.received} packets, #{state.failed} failures")
-      %{state | next_progress: next + state.config.progress}
-    else
-      state
-    end
+  defp report_progress(%{received: received, next_progress: next} = state) when received >= next do
+    Mix.shell().info("  #{received} packets, #{state.failed} failures")
+    %{state | next_progress: next + state.config.progress}
   end
+
+  defp report_progress(state), do: state
 
   defp print_summary(counts, config) do
     Mix.shell().info("""
@@ -352,16 +363,6 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
   defp stop_label(:signal_stop), do: "stop signal received"
   defp stop_label(:connection_closed), do: "connection closed by server"
   defp stop_label({:socket_error, reason}), do: "socket error: #{inspect(reason)}"
-
-  defp strip_suffix(binary, suffix) do
-    size = byte_size(binary) - byte_size(suffix)
-
-    if size >= 0 and binary_part(binary, size, byte_size(suffix)) == suffix do
-      binary_part(binary, 0, size)
-    else
-      binary
-    end
-  end
 
   defp trap_stop_signals do
     pid = self()
