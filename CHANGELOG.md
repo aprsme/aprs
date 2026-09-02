@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0] - 2026-09-02
 
 ### Fixed
 - **Compressed positions**: course is decoded from the `c` byte rather than the speed
@@ -82,14 +82,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   TOCALL.
 
 ### Removed
-- Dead or unreachable code: `Aprs.Types.MicE`, `Aprs.AX25.parse_path/1`,
-  `Aprs.Weather.parse_from_comment/1` and its helpers, `Aprs.Position.count_spaces/1`
-  and `calculate_position_ambiguity/2` (with the `Aprs.UtilityHelpers` delegates),
-  the unused `Aprs.TelemetryHelpers` value parsers, `Aprs.Convert.speed/3`,
-  `Aprs.CompressedPositionHelpers.calculate_compressed_ambiguity/1`, and the public
-  `Aprs.decode_compressed_position/1`, `convert_to_base91/1`, `parse_status/1`,
+- Dead or unreachable code: the `Aprs.Types.MicE` struct, `parse_path/1` from
+  `Aprs.AX25`, `parse_from_comment/1` and its helpers from `Aprs.Weather`,
+  `count_spaces/1` and `calculate_position_ambiguity/2` from `Aprs.Position` (with the
+  `Aprs.UtilityHelpers` delegates), the unused value parsers from
+  `Aprs.TelemetryHelpers`, `speed/3` from `Aprs.Convert`,
+  `calculate_compressed_ambiguity/1` from `Aprs.CompressedPositionHelpers`, and the
+  public `decode_compressed_position/1`, `convert_to_base91/1`, `parse_status/1`,
   `parse_station_capabilities/1`, `parse_query/1`, `parse_user_defined/1` and
-  `parse_position_with_datetime_and_weather/7` wrappers.
+  `parse_position_with_datetime_and_weather/7` wrappers from `Aprs`.
 - The `cs == "&!"` workaround and the `&!` DAO form, neither of which is in the spec.
 
 ## [0.1.6] - 2025-08-13
