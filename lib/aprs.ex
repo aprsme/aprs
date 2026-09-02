@@ -18,6 +18,7 @@ defmodule Aprs do
 
   import Aprs.Guards
 
+  alias Aprs.Clock
   alias Aprs.CompressedPositionHelpers
   alias Aprs.DAO
   alias Aprs.Item
@@ -117,35 +118,48 @@ defmodule Aprs do
       {:error, :invalid_packet}
   """
   @spec parse(term()) :: parse_result()
-  def parse(message) when is_binary(message) do
-    if byte_size(message) > @max_packet_size do
-      {:error, :packet_too_large}
-    else
-      message |> scrub_encoding() |> do_parse()
-    end
+  def parse(message) when is_binary(message) and byte_size(message) <= @max_packet_size do
+    message |> scrub_encoding() |> do_parse()
   end
 
+  def parse(message) when is_binary(message), do: {:error, :packet_too_large}
   def parse(_), do: {:error, :invalid_packet}
 
   # A packet is normally valid UTF-8. When it is not, the bad bytes are nearly
   # always Latin-1 from a radio, so decode them as Latin-1 rather than replacing
-  # every non-ASCII byte in the packet.
+  # every non-ASCII byte in the packet. `:unicode.characters_to_binary/1`
+  # validates in C and hands back the offset of the first bad byte, so a well
+  # formed packet is never walked byte by byte.
   @spec scrub_encoding(binary()) :: String.t()
   defp scrub_encoding(message) do
-    if String.valid?(message), do: message, else: scrub(message, <<>>)
+    case :unicode.characters_to_binary(message) do
+      valid when is_binary(valid) -> valid
+      {:error, valid, invalid} -> scrub(invalid, valid)
+      {:incomplete, valid, invalid} -> scrub(invalid, valid)
+    end
   end
 
+  # `invalid` always starts on the offending byte: promote it from Latin-1 and
+  # hand the remainder back to the validator.
   @spec scrub(binary(), binary()) :: String.t()
   defp scrub(<<>>, acc), do: acc
-  defp scrub(<<c::utf8, rest::binary>>, acc), do: scrub(rest, <<acc::binary, c::utf8>>)
-  defp scrub(<<b, rest::binary>>, acc), do: scrub(rest, <<acc::binary, b::utf8>>)
+  defp scrub(<<b, rest::binary>>, acc), do: scrub_valid(rest, <<acc::binary, b::utf8>>)
+
+  @spec scrub_valid(binary(), binary()) :: String.t()
+  defp scrub_valid(rest, acc) do
+    case :unicode.characters_to_binary(rest) do
+      valid when is_binary(valid) -> <<acc::binary, valid::binary>>
+      {:error, valid, invalid} -> scrub(invalid, <<acc::binary, valid::binary>>)
+      {:incomplete, valid, invalid} -> scrub(invalid, <<acc::binary, valid::binary>>)
+    end
+  end
 
   @spec do_parse(String.t()) :: parse_result()
   defp do_parse(message) do
     with {:ok, [sender, path, data]} <- split_packet(message),
          {:ok, callsign_parts} <- parse_callsign(sender),
          {:ok, [destination, digi_path]} <- split_path(path),
-         :ok <- validate_digi_path(digi_path),
+         {:ok, digipeaters} <- parse_digi_path(digi_path),
          data_trimmed = strip_trailing_control(data),
          {data_type, data_for_parsing} = resolve_datatype(data_trimmed),
          :ok <- validate_packet_parts(destination, sender, data_type) do
@@ -157,10 +171,11 @@ defmodule Aprs do
           data_trimmed,
           data_type,
           data_for_parsing,
-          callsign_parts
+          callsign_parts,
+          digipeaters
         )
 
-      {:ok, Map.merge(packet_data, %{resultcode: "success", resultmsg: "OK"})}
+      {:ok, packet_data}
     else
       {:error, reason} -> {:error, format_error_message(reason)}
     end
@@ -177,24 +192,20 @@ defmodule Aprs do
   defp validate_packet_parts("", _, :empty), do: {:error, :invalid_packet}
   defp validate_packet_parts(_, _, _), do: :ok
 
-  # An empty digipeater element (`APRS,,WIDE1-1`) is not a legal AX.25 path.
-  @spec validate_digi_path(String.t()) :: :ok | {:error, :invalid_packet}
-  defp validate_digi_path(""), do: :ok
-
-  defp validate_digi_path(path) do
-    if path |> String.split(",") |> Enum.any?(&(&1 == "")) do
-      {:error, :invalid_packet}
-    else
-      :ok
-    end
-  end
-
-  @spec build_packet_data(String.t(), String.t(), String.t(), String.t(), atom(), String.t(), [String.t()]) :: packet()
-  defp build_packet_data(sender, path, destination, data, data_type, data_for_parsing, callsign_parts) do
+  @spec build_packet_data(
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          atom(),
+          String.t(),
+          [String.t()],
+          [map()]
+        ) :: packet()
+  defp build_packet_data(sender, path, destination, data, data_type, data_for_parsing, callsign_parts, digipeaters) do
     data_extended = parse_data(data_type, destination, prepare_data_for_parsing(data_type, data_for_parsing))
-    digipeaters = parse_digipeaters(path)
     final_data_type = determine_final_data_type(data_extended, data_type)
-    header = sender <> ">" <> destination <> if(path == "", do: "", else: "," <> path)
+    header = build_header(sender, destination, path)
 
     base_packet = %{
       id: generate_packet_id(),
@@ -206,12 +217,12 @@ defmodule Aprs do
       base_callsign: List.first(callsign_parts),
       ssid: extract_ssid(callsign_parts),
       data_extended: data_extended,
-      received_at: timestamp_now(),
+      received_at: Clock.utc_now(),
       # Standard APRS parser fields
       srccallsign: sender,
       dstcallsign: destination,
       body: data,
-      origpacket: header <> ":" <> data,
+      origpacket: <<header::binary, ?:, data::binary>>,
       header: header,
       alive: 1,
       type: atom_to_standard_type(final_data_type),
@@ -226,12 +237,24 @@ defmodule Aprs do
       phg: nil,
       wx: nil,
       radiorange: nil,
-      itemname: nil
+      itemname: nil,
+      symbolcode: nil,
+      symboltable: nil,
+      resultcode: "success",
+      resultmsg: "OK"
     }
 
     base_packet
     |> merge_data_extended(data_extended)
-    |> map_fields_to_reference_format()
+    |> map_fields_to_reference_format(data_extended)
+  end
+
+  # Built as one bitstring so the header is copied once, not once per `<>`.
+  @spec build_header(String.t(), String.t(), String.t()) :: String.t()
+  defp build_header(sender, destination, ""), do: <<sender::binary, ?>, destination::binary>>
+
+  defp build_header(sender, destination, path) do
+    <<sender::binary, ?>, destination::binary, ?,, path::binary>>
   end
 
   # A random prefix, drawn once per VM, followed by a counter. Ids are unique
@@ -302,27 +325,39 @@ defmodule Aprs do
   end
 
   # Every digipeater at or before the last `*` has repeated the packet:
-  # `WIDE1-1,WIDE2*` means WIDE1-1 was used too.
-  @spec parse_digipeaters(String.t()) :: [map()]
-  defp parse_digipeaters(""), do: []
+  # `WIDE1-1,WIDE2*` means WIDE1-1 was used too. The list is built on the way
+  # back out of the recursion, so the "was a `*` seen later?" answer is already
+  # known when each element is built and the path is walked once.
+  # An empty digipeater element (`APRS,,WIDE1-1`) is not a legal AX.25 path, so
+  # the path is validated while it is split rather than in a separate scan.
+  @spec parse_digi_path(String.t()) :: {:ok, [map()]} | {:error, :invalid_packet}
+  defp parse_digi_path(""), do: {:ok, []}
 
-  defp parse_digipeaters(path) do
-    segments = String.split(path, ",")
-    last_used = last_used_index(segments)
-
-    segments
-    |> Enum.with_index()
-    |> Enum.map(fn {digi, index} -> parse_single_digipeater(digi, index <= last_used) end)
+  defp parse_digi_path(path) do
+    case path |> :binary.split(",", [:global]) |> mark_digipeaters() do
+      {digipeaters, _used} -> {:ok, digipeaters}
+      :error -> {:error, :invalid_packet}
+    end
   end
 
-  @spec last_used_index([String.t()]) :: integer()
-  defp last_used_index(segments) do
-    segments
-    |> Enum.with_index()
-    |> Enum.reduce(-1, fn {digi, index}, acc ->
-      if String.ends_with?(digi, "*"), do: index, else: acc
-    end)
+  @spec mark_digipeaters([String.t()]) :: {[map()], boolean()} | :error
+  defp mark_digipeaters([]), do: {[], false}
+  defp mark_digipeaters([<<>> | _rest]), do: :error
+
+  defp mark_digipeaters([digi | rest]) do
+    case mark_digipeaters(rest) do
+      {parsed, used_later} ->
+        used = used_later or used_marker?(digi)
+        {[parse_single_digipeater(digi, used) | parsed], used}
+
+      :error ->
+        :error
+    end
   end
+
+  @spec used_marker?(String.t()) :: boolean()
+  defp used_marker?(<<>>), do: false
+  defp used_marker?(digi), do: :binary.last(digi) == ?*
 
   @spec parse_single_digipeater(String.t(), boolean()) :: map()
   defp parse_single_digipeater(<<"q", _::binary-size(2)>> = digi, _used) do
@@ -330,78 +365,96 @@ defmodule Aprs do
   end
 
   defp parse_single_digipeater(digi, true) do
-    %{call: String.trim_trailing(digi, "*"), wasdigied: 1}
+    %{call: strip_used_markers(digi), wasdigied: 1}
   end
 
   defp parse_single_digipeater(digi, false) do
     %{call: digi, wasdigied: 0}
   end
 
-  # Map internal field names to reference parser format
-  @spec map_fields_to_reference_format(map()) :: map()
-  defp map_fields_to_reference_format(packet) do
-    packet
-    |> map_position_ambiguity()
-    |> map_dao_data()
-    |> map_weather_data()
-    |> map_telemetry_data()
-    |> map_format_field()
-    |> map_symbol_fields()
-    |> map_messaging()
+  @spec strip_used_markers(String.t()) :: String.t()
+  defp strip_used_markers(<<>>), do: <<>>
+
+  defp strip_used_markers(digi) do
+    head_size = byte_size(digi) - 1
+
+    case digi do
+      <<head::binary-size(^head_size), ?*>> -> strip_used_markers(head)
+      _ -> digi
+    end
   end
 
-  @spec map_messaging(map()) :: map()
-  defp map_messaging(%{aprs_messaging?: true} = packet), do: Map.put(packet, :messaging, 1)
-  defp map_messaging(packet), do: packet
+  # Map internal field names to reference parser format. Every alias is derived
+  # from `data_extended` alone, so the aliases are read off the small map rather
+  # than the merged packet.
+  @spec map_fields_to_reference_format(map(), map() | nil) :: map()
+  defp map_fields_to_reference_format(packet, nil), do: packet
+
+  defp map_fields_to_reference_format(packet, data_extended) do
+    packet
+    |> map_position_ambiguity(data_extended)
+    |> map_dao_data(data_extended)
+    |> map_weather_data(data_extended)
+    |> map_telemetry_data(data_extended)
+    |> map_format_field(data_extended)
+    |> map_symbol_fields(data_extended)
+    |> map_messaging(data_extended)
+  end
+
+  @spec map_messaging(map(), map()) :: map()
+  defp map_messaging(packet, %{aprs_messaging?: true}), do: Map.put(packet, :messaging, 1)
+  defp map_messaging(packet, _data_extended), do: packet
 
   @spec merge_data_extended(map(), map() | nil) :: map()
   defp merge_data_extended(base_packet, data_extended) when is_map(data_extended) do
-    Map.merge(base_packet, data_extended)
+    merge_extension(base_packet, data_extended)
   end
 
   defp merge_data_extended(base_packet, _), do: base_packet
 
-  @spec map_position_ambiguity(map()) :: map()
-  defp map_position_ambiguity(%{position_ambiguity: ambiguity} = packet) do
+  # An APRS data extension is absent from most comments, and merging an empty
+  # map is pure overhead.
+  @spec merge_extension(map(), map()) :: map()
+  defp merge_extension(map, extension) when map_size(extension) == 0, do: map
+  defp merge_extension(map, extension), do: Map.merge(map, extension)
+
+  @spec map_position_ambiguity(map(), map()) :: map()
+  defp map_position_ambiguity(packet, %{position_ambiguity: ambiguity}) do
     Map.put(packet, :posambiguity, ambiguity)
   end
 
-  defp map_position_ambiguity(packet), do: packet
+  defp map_position_ambiguity(packet, _data_extended), do: packet
 
-  @spec map_dao_data(map()) :: map()
-  defp map_dao_data(%{dao: %{datum: datum}} = packet) do
-    Map.put(packet, :daodatumbyte, datum)
-  end
+  @spec map_dao_data(map(), map()) :: map()
+  defp map_dao_data(packet, %{dao: %{datum: datum}}), do: Map.put(packet, :daodatumbyte, datum)
+  defp map_dao_data(packet, _data_extended), do: packet
 
-  defp map_dao_data(packet), do: packet
-
-  @spec map_weather_data(map()) :: map()
-  defp map_weather_data(%{weather: weather_data} = packet) when is_map(weather_data) do
+  @spec map_weather_data(map(), map()) :: map()
+  defp map_weather_data(packet, %{weather: weather_data}) when is_map(weather_data) do
     Map.put(packet, :wx, weather_data)
   end
 
-  defp map_weather_data(packet), do: packet
+  defp map_weather_data(packet, _data_extended), do: packet
 
-  @spec map_telemetry_data(map()) :: map()
-  defp map_telemetry_data(%{telemetry: telemetry_data} = packet) when is_map(telemetry_data) do
+  @spec map_telemetry_data(map(), map()) :: map()
+  defp map_telemetry_data(packet, %{telemetry: telemetry_data}) when is_map(telemetry_data) do
     Map.put(packet, :mbits, telemetry_data[:bits])
   end
 
-  defp map_telemetry_data(packet), do: packet
+  defp map_telemetry_data(packet, _data_extended), do: packet
 
-  @spec map_format_field(map()) :: map()
-  defp map_format_field(%{data_extended: %{format: format}} = packet) do
-    Map.put(packet, :format, format)
+  @spec map_format_field(map(), map()) :: map()
+  defp map_format_field(packet, %{format: format}), do: Map.put(packet, :format, format)
+  defp map_format_field(packet, _data_extended), do: packet
+
+  @spec map_symbol_fields(map(), map()) :: map()
+  defp map_symbol_fields(packet, %{symbol_code: code, symbol_table_id: table}) do
+    packet |> maybe_put(:symbolcode, code) |> maybe_put(:symboltable, table)
   end
 
-  defp map_format_field(packet), do: packet
-
-  @spec map_symbol_fields(map()) :: map()
-  defp map_symbol_fields(packet) do
-    packet
-    |> Map.put(:symbolcode, Map.get(packet, :symbol_code))
-    |> Map.put(:symboltable, Map.get(packet, :symbol_table_id))
-  end
+  defp map_symbol_fields(packet, %{symbol_code: code}), do: maybe_put(packet, :symbolcode, code)
+  defp map_symbol_fields(packet, %{symbol_table_id: table}), do: maybe_put(packet, :symboltable, table)
+  defp map_symbol_fields(packet, _data_extended), do: packet
 
   @doc """
   Split a packet into `[sender, path, information_field]`.
@@ -418,30 +471,26 @@ defmodule Aprs do
   """
   @spec split_packet(String.t()) :: {:ok, [String.t()]} | {:error, :invalid_packet}
   def split_packet(message) do
-    with {:ok, sender, rest} <- find_delimiter(message, ?>),
-         {:ok, path, data} <- find_delimiter(rest, ?:) do
+    with {:ok, sender, rest} <- find_delimiter(message, ">"),
+         {:ok, path, data} <- find_delimiter(rest, ":") do
       {:ok, [sender, path, data]}
     else
       :error -> {:error, :invalid_packet}
     end
   end
 
-  @spec find_delimiter(binary(), byte()) :: {:ok, binary(), binary()} | :error
+  # `:binary.match/2` scans in C, which beats walking the header a byte at a
+  # time from Elixir.
+  @spec find_delimiter(binary(), binary()) :: {:ok, binary(), binary()} | :error
   defp find_delimiter(binary, delimiter) do
-    find_delimiter(binary, delimiter, 0, binary)
-  end
+    case :binary.match(binary, delimiter) do
+      {position, 1} ->
+        rest_start = position + 1
+        {:ok, binary_part(binary, 0, position), binary_part(binary, rest_start, byte_size(binary) - rest_start)}
 
-  @spec find_delimiter(binary(), byte(), non_neg_integer(), binary()) :: {:ok, binary(), binary()} | :error
-  defp find_delimiter(<<delimiter, rest::binary>>, delimiter, pos, original) do
-    {:ok, binary_part(original, 0, pos), rest}
-  end
-
-  defp find_delimiter(<<_byte, rest::binary>>, delimiter, pos, original) do
-    find_delimiter(rest, delimiter, pos + 1, original)
-  end
-
-  defp find_delimiter(<<>>, _delimiter, _pos, _original) do
-    :error
+      :nomatch ->
+        :error
+    end
   end
 
   # Only line endings and NULs are stripped. A trailing space is significant:
@@ -474,12 +523,16 @@ defmodule Aprs do
   """
   @spec split_path(String.t()) :: {:ok, [String.t()]}
   def split_path(path) when is_binary(path) do
-    path |> String.split(",", parts: 2) |> split_path_parts()
-  end
+    case :binary.match(path, ",") do
+      {position, 1} ->
+        digi_start = position + 1
 
-  @spec split_path_parts([String.t()]) :: {:ok, [String.t()]}
-  defp split_path_parts([destination, digi_path]), do: {:ok, [destination, digi_path]}
-  defp split_path_parts([destination]), do: {:ok, [destination, ""]}
+        {:ok, [binary_part(path, 0, position), binary_part(path, digi_start, byte_size(path) - digi_start)]}
+
+      :nomatch ->
+        {:ok, [path, ""]}
+    end
+  end
 
   @doc """
   `parse_datatype/1` wrapped in an `:ok` tuple, for use in a `with` chain.
@@ -513,7 +566,9 @@ defmodule Aprs do
     end
   end
 
-  # Map of data type indicators to their corresponding atom types
+  # Map of data type indicators to their corresponding atom types. The table is
+  # unrolled into `datatype_for/1` clauses below, so the lookup compiles to a
+  # jump table on the indicator byte instead of a map lookup.
   @datatype_map %{
     ":" => :message,
     ">" => :status,
@@ -539,6 +594,13 @@ defmodule Aprs do
     "*" => :peet_logging,
     "," => :invalid_test_data
   }
+
+  @spec datatype_for(byte()) :: atom() | nil
+  for {<<indicator>>, data_type} <- @datatype_map do
+    defp datatype_for(unquote(indicator)), do: unquote(data_type)
+  end
+
+  defp datatype_for(_indicator), do: nil
 
   @doc """
   Determine the data type of an information field.
@@ -575,10 +637,10 @@ defmodule Aprs do
   defp resolve_datatype(<<"#DFS", _::binary>> = data), do: {:df_report, data}
   defp resolve_datatype(<<"#PHG", _::binary>> = data), do: {:phg_data, data}
 
-  defp resolve_datatype(<<first::binary-size(1), _::binary>> = data) do
-    case Map.fetch(@datatype_map, first) do
-      {:ok, data_type} -> {data_type, data}
-      :error -> legacy_position_datatype(data)
+  defp resolve_datatype(<<indicator, _::binary>> = data) do
+    case datatype_for(indicator) do
+      nil -> legacy_position_datatype(data)
+      data_type -> {data_type, data}
     end
   end
 
@@ -744,12 +806,7 @@ defmodule Aprs do
   @spec split_addressee(String.t()) :: {:ok, String.t(), String.t()} | :error
   defp split_addressee(<<addressee::binary-size(9), ":", body::binary>>), do: {:ok, addressee, body}
 
-  defp split_addressee(rest) do
-    case find_delimiter(rest, ?:) do
-      {:ok, addressee, body} -> {:ok, addressee, body}
-      :error -> :error
-    end
-  end
+  defp split_addressee(rest), do: find_delimiter(rest, ":")
 
   @spec build_message(String.t(), String.t()) :: map()
   defp build_message(addressee, body) do
@@ -1004,7 +1061,7 @@ defmodule Aprs do
       messaging: 0,
       wx: nil
     }
-    |> Map.merge(extension)
+    |> merge_extension(extension)
     |> maybe_put(:telemetry, telemetry)
     |> maybe_put(:weather, weather)
     |> maybe_put(:wx, weather)
@@ -1099,7 +1156,7 @@ defmodule Aprs do
       altitude: altitude,
       phg: phg
     }
-    |> Map.merge(compressed_cs)
+    |> merge_extension(compressed_cs)
     |> maybe_put(:telemetry, telemetry)
     |> maybe_put(:weather, weather)
     |> maybe_put(:wx, weather)
@@ -1119,10 +1176,16 @@ defmodule Aprs do
     {altitude, after_altitude} = extract_altitude(after_extension)
     {telemetry, after_telemetry} = TelemetryFromComment.extract_telemetry_from_comment(after_altitude)
     {dao, after_dao} = DAO.parse(after_telemetry)
-    cleaned = if weather, do: after_weather, else: after_dao
+    cleaned = cleaned_comment(weather, after_weather, after_dao)
 
-    {weather, extension, altitude, telemetry, dao, cleaned |> strip_leading_delimiter() |> String.trim()}
+    {weather, extension, altitude, telemetry, dao, clean_comment_text(cleaned)}
   end
+
+  # A weather report keeps the weather scanner's remainder, not the remainder
+  # left by the extensions that were pulled out of it afterwards.
+  @spec cleaned_comment(map() | nil, String.t(), String.t()) :: String.t()
+  defp cleaned_comment(nil, _after_weather, after_dao), do: after_dao
+  defp cleaned_comment(_weather, after_weather, _after_dao), do: after_weather
 
   # For the weather symbol the leading `NNN/NNN` field is wind, not course and
   # speed, and the weather scanner has already consumed it.
@@ -1155,7 +1218,7 @@ defmodule Aprs do
 
   defp extract_data_extension(<<"RNG", d1, d2, d3, d4, rest::binary>>)
        when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(d4) do
-    {%{radiorange: digits_to_integer([d1, d2, d3, d4])}, rest}
+    {%{radiorange: four_digits(d1, d2, d3, d4)}, rest}
   end
 
   defp extract_data_extension(<<"DFS", s, h, g, d, rest::binary>>)
@@ -1195,7 +1258,7 @@ defmodule Aprs do
        when is_digit(b1) and is_digit(b2) and is_digit(b3) and is_digit(n) and is_digit(r) and is_digit(q) do
     df =
       Map.merge(extension, %{
-        bearing: digits_to_integer([b1, b2, b3]),
+        bearing: three_digits(b1, b2, b3),
         nrq: <<n, r, q>>,
         df_hits: n - ?0,
         df_range: 2 ** (r - ?0) * 1.0,
@@ -1209,7 +1272,7 @@ defmodule Aprs do
 
   @spec course_value(byte(), byte(), byte()) :: non_neg_integer()
   defp course_value(c1, c2, c3) when is_digit(c1) and is_digit(c2) and is_digit(c3) do
-    clamp_course(digits_to_integer([c1, c2, c3]))
+    clamp_course(three_digits(c1, c2, c3))
   end
 
   defp course_value(_, _, _), do: 0
@@ -1220,38 +1283,52 @@ defmodule Aprs do
 
   @spec speed_value(byte(), byte(), byte()) :: float() | nil
   defp speed_value(s1, s2, s3) when is_digit(s1) and is_digit(s2) and is_digit(s3) do
-    digits_to_integer([s1, s2, s3]) * 1.0
+    three_digits(s1, s2, s3) * 1.0
   end
 
   defp speed_value(_, _, _), do: nil
 
-  @spec digits_to_integer([byte()]) :: non_neg_integer()
-  defp digits_to_integer(digits) do
-    Enum.reduce(digits, 0, fn digit, acc -> acc * 10 + (digit - ?0) end)
-  end
+  @spec three_digits(byte(), byte(), byte()) :: non_neg_integer()
+  defp three_digits(d1, d2, d3), do: (d1 - ?0) * 100 + (d2 - ?0) * 10 + d3 - ?0
+
+  @spec four_digits(byte(), byte(), byte(), byte()) :: non_neg_integer()
+  defp four_digits(d1, d2, d3, d4), do: (d1 - ?0) * 1000 + (d2 - ?0) * 100 + (d3 - ?0) * 10 + d4 - ?0
 
   ## Comment sub-fields
 
   # `/A=nnnnnn` anywhere in the comment. Uppercase `A` removes the field;
   # lowercase `a` leaves `a=nnnnnn` behind, matching reference parsers.
+  # `:binary.match/3` finds the marker in C, so a comment without one is never
+  # copied byte by byte.
   @spec extract_altitude(String.t()) :: {float() | nil, String.t()}
-  defp extract_altitude(comment), do: scan_altitude(comment, <<>>)
+  defp extract_altitude(comment), do: scan_altitude(comment, 0)
 
-  @spec scan_altitude(binary(), binary()) :: {float() | nil, String.t()}
-  defp scan_altitude(<<>>, acc), do: {nil, acc}
-
-  defp scan_altitude(<<?/, a, ?=, rest::binary>>, acc) when a in [?A, ?a] do
-    case take_altitude_digits(rest) do
-      {:ok, digits, tail} -> {validate_altitude(digits), altitude_remainder(a, digits, acc, tail)}
-      :error -> scan_altitude(<<a, ?=, rest::binary>>, <<acc::binary, ?/>>)
+  @spec scan_altitude(binary(), non_neg_integer()) :: {float() | nil, String.t()}
+  defp scan_altitude(comment, offset) when offset <= byte_size(comment) - 3 do
+    case :binary.match(comment, ["/A=", "/a="], scope: {offset, byte_size(comment) - offset}) do
+      {index, 3} -> altitude_at(comment, index)
+      :nomatch -> {nil, comment}
     end
   end
 
-  defp scan_altitude(<<c, rest::binary>>, acc), do: scan_altitude(rest, <<acc::binary, c>>)
+  defp scan_altitude(comment, _offset), do: {nil, comment}
+
+  @spec altitude_at(binary(), non_neg_integer()) :: {float() | nil, String.t()}
+  defp altitude_at(comment, index) do
+    <<?/, marker, ?=, value::binary>> = binary_part(comment, index, byte_size(comment) - index)
+
+    case take_altitude_digits(value) do
+      {:ok, digits, tail} ->
+        {validate_altitude(digits), altitude_remainder(marker, digits, binary_part(comment, 0, index), tail)}
+
+      :error ->
+        scan_altitude(comment, index + 1)
+    end
+  end
 
   @spec altitude_remainder(byte(), String.t(), binary(), binary()) :: String.t()
-  defp altitude_remainder(?a, digits, acc, tail), do: acc <> "a=" <> digits <> tail
-  defp altitude_remainder(_uppercase, _digits, acc, tail), do: acc <> tail
+  defp altitude_remainder(?a, digits, prefix, tail), do: prefix <> "a=" <> digits <> tail
+  defp altitude_remainder(_uppercase, _digits, prefix, tail), do: prefix <> tail
 
   @spec take_altitude_digits(binary()) :: {:ok, String.t(), binary()} | :error
   defp take_altitude_digits(<<?-, rest::binary>>), do: take_altitude_digits(rest, <<?->>)
@@ -1276,26 +1353,39 @@ defmodule Aprs do
   # Valid altitude range: -10,000 ft (Dead Sea) to 500,000 ft (high-altitude
   # balloons / low satellites). Anything outside is treated as garbage.
   @spec validate_altitude(String.t()) :: float() | nil
-  defp validate_altitude(digits) do
-    altitude = String.to_integer(digits) * 1.0
+  defp validate_altitude(digits), do: digits |> String.to_integer() |> altitude_in_range()
 
-    if altitude < -10_000.0 or altitude > 500_000.0, do: nil, else: altitude
-  end
+  @spec altitude_in_range(integer()) :: float() | nil
+  defp altitude_in_range(altitude) when altitude >= -10_000 and altitude <= 500_000, do: altitude * 1.0
+  defp altitude_in_range(_altitude), do: nil
 
   # PHG anywhere in a comment, used by the compressed path where the data
   # extension cannot be anchored to the comment start.
   @spec extract_phg(String.t()) :: {String.t() | nil, String.t()}
-  defp extract_phg(comment), do: scan_phg(comment, <<>>)
+  defp extract_phg(comment), do: scan_phg(comment, 0)
 
-  @spec scan_phg(binary(), binary()) :: {String.t() | nil, String.t()}
-  defp scan_phg(<<>>, acc), do: {nil, acc}
-
-  defp scan_phg(<<"PHG", p, h, g, d, rest::binary>>, acc)
-       when is_digit(p) and is_digit(h) and is_digit(g) and is_digit(d) do
-    {<<p, h, g, d>>, String.trim(acc <> strip_phg_rate(rest))}
+  @spec scan_phg(binary(), non_neg_integer()) :: {String.t() | nil, String.t()}
+  defp scan_phg(comment, offset) when offset <= byte_size(comment) - 7 do
+    case :binary.match(comment, "PHG", scope: {offset, byte_size(comment) - offset}) do
+      {index, 3} -> phg_at(comment, index)
+      :nomatch -> {nil, comment}
+    end
   end
 
-  defp scan_phg(<<c, rest::binary>>, acc), do: scan_phg(rest, <<acc::binary, c>>)
+  defp scan_phg(comment, _offset), do: {nil, comment}
+
+  @spec phg_at(binary(), non_neg_integer()) :: {String.t() | nil, String.t()}
+  defp phg_at(comment, index) do
+    value_start = index + 3
+
+    case binary_part(comment, value_start, byte_size(comment) - value_start) do
+      <<p, h, g, d, rest::binary>> when is_digit(p) and is_digit(h) and is_digit(g) and is_digit(d) ->
+        {<<p, h, g, d>>, String.trim(binary_part(comment, 0, index) <> strip_phg_rate(rest))}
+
+      _value ->
+        scan_phg(comment, index + 1)
+    end
+  end
 
   @spec strip_phg_rate(binary()) :: binary()
   defp strip_phg_rate(<<r, ?/, rest::binary>>) when is_digit(r) or r in ?A..?Z, do: rest
@@ -1316,7 +1406,19 @@ defmodule Aprs do
   defp drop_ssid(callsign, pos) do
     tail = binary_part(callsign, pos + 1, byte_size(callsign) - pos - 1)
 
-    if tail != "" and digits_only?(tail), do: binary_part(callsign, 0, pos), else: callsign
+    drop_ssid_suffix(callsign, pos, tail)
+  end
+
+  # Only an all-digit tail is an SSID; `N0CALL-XYZ` keeps its suffix.
+  @spec drop_ssid_suffix(String.t(), non_neg_integer(), binary()) :: String.t()
+  defp drop_ssid_suffix(callsign, _pos, <<>>), do: callsign
+
+  defp drop_ssid_suffix(callsign, pos, tail) do
+    if digits_only?(tail) do
+      binary_part(callsign, 0, pos)
+    else
+      callsign
+    end
   end
 
   @spec digits_only?(binary()) :: boolean()
@@ -1324,11 +1426,11 @@ defmodule Aprs do
   defp digits_only?(<<d, rest::binary>>) when is_digit(d), do: digits_only?(rest)
   defp digits_only?(_), do: false
 
-  # Strip leading / or space from comment (FAP.pm line 1211)
-  @spec strip_leading_delimiter(String.t()) :: String.t()
-  defp strip_leading_delimiter(<<"/", rest::binary>>), do: rest
-  defp strip_leading_delimiter(<<" ", rest::binary>>), do: rest
-  defp strip_leading_delimiter(comment), do: comment
+  # Strip the leading delimiter in front of the comment text (FAP.pm line 1211).
+  # A leading space is trimmed anyway, so only `/` needs cutting first.
+  @spec clean_comment_text(String.t()) :: String.t()
+  defp clean_comment_text(<<"/", rest::binary>>), do: String.trim(rest)
+  defp clean_comment_text(comment), do: String.trim(comment)
 
   ## Timestamped positions
 
@@ -1393,7 +1495,7 @@ defmodule Aprs do
 
     case try_compressed_timestamped(position_data, aprs_messaging?, time, data_type) do
       {:ok, result} -> result
-      :error -> try_regex_position_fallback(aprs_messaging?, time, position_data, data_type)
+      :error -> try_loose_position_fallback(aprs_messaging?, time, position_data, data_type)
     end
   end
 
@@ -1409,23 +1511,20 @@ defmodule Aprs do
          |> Map.put(:time, unix_timestamp)
          |> Map.put(:aprs_messaging?, aprs_messaging?)
          |> Map.put(:data_type, data_type)
-         |> Map.put(:messaging, if(aprs_messaging?, do: 1, else: 0))}
+         |> Map.put(:messaging, messaging_flag(aprs_messaging?))}
 
       _ ->
         :error
     end
   end
 
-  @spec try_regex_position_fallback(boolean(), String.t(), String.t(), atom()) :: map()
-  defp try_regex_position_fallback(aprs_messaging?, time, raw_data, data_type) do
-    regex =
-      ~r/^(?<lat>\d{4,5}\.\d+[NS])(?<sym_table>.)(?<lon>\d{5,6}\.\d+[EW])(?<sym_code>.)(?<comment>.*)$/
-
-    case Regex.named_captures(regex, raw_data) do
-      %{"lat" => lat, "lon" => lon, "sym_table" => sym_table, "sym_code" => sym_code, "comment" => comment} ->
+  @spec try_loose_position_fallback(boolean(), String.t(), String.t(), atom()) :: map()
+  defp try_loose_position_fallback(aprs_messaging?, time, raw_data, data_type) do
+    case loose_position(raw_data) do
+      {:ok, lat, sym_table, lon, sym_code, comment} ->
         build_fallback_position_result(aprs_messaging?, lat, lon, time, sym_table, sym_code, comment, data_type)
 
-      _ ->
+      :error ->
         %{
           data_type: :timestamped_position_error,
           error: "Invalid timestamped position format",
@@ -1433,6 +1532,66 @@ defmodule Aprs do
         }
     end
   end
+
+  # A position whose degree or minute fields are not the spec widths, anchored
+  # at the start of the field: `\d{4,5}\.\d+[NS].\d{5,6}\.\d+[EW].` followed by
+  # the comment. A comment holding a line feed is rejected, as it is by the
+  # reference parser's anchored regex.
+  @spec loose_position(binary()) :: {:ok, binary(), binary(), binary(), binary(), binary()} | :error
+  defp loose_position(data) do
+    with {:ok, lat, <<sym_table, after_table::binary>>} when sym_table != ?\n <- take_loose_latitude(data),
+         {:ok, lon, <<sym_code, comment::binary>>} when sym_code != ?\n <- take_loose_longitude(after_table),
+         :nomatch <- :binary.match(comment, "\n") do
+      {:ok, lat, <<sym_table>>, lon, <<sym_code>>, comment}
+    else
+      _ -> :error
+    end
+  end
+
+  @spec take_loose_latitude(binary()) :: {:ok, binary(), binary()} | :error
+  defp take_loose_latitude(<<d1, d2, d3, d4, d5, ?., rest::binary>>)
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(d4) and is_digit(d5) do
+    take_loose_minutes(<<d1, d2, d3, d4, d5, ?.>>, rest, ?N, ?S)
+  end
+
+  defp take_loose_latitude(<<d1, d2, d3, d4, ?., rest::binary>>)
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(d4) do
+    take_loose_minutes(<<d1, d2, d3, d4, ?.>>, rest, ?N, ?S)
+  end
+
+  defp take_loose_latitude(_data), do: :error
+
+  @spec take_loose_longitude(binary()) :: {:ok, binary(), binary()} | :error
+  defp take_loose_longitude(<<d1, d2, d3, d4, d5, d6, ?., rest::binary>>)
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(d4) and is_digit(d5) and is_digit(d6) do
+    take_loose_minutes(<<d1, d2, d3, d4, d5, d6, ?.>>, rest, ?E, ?W)
+  end
+
+  defp take_loose_longitude(<<d1, d2, d3, d4, d5, ?., rest::binary>>)
+       when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(d4) and is_digit(d5) do
+    take_loose_minutes(<<d1, d2, d3, d4, d5, ?.>>, rest, ?E, ?W)
+  end
+
+  defp take_loose_longitude(_data), do: :error
+
+  # At least one fraction digit, then the hemisphere byte.
+  @spec take_loose_minutes(binary(), binary(), byte(), byte()) :: {:ok, binary(), binary()} | :error
+  defp take_loose_minutes(acc, <<d, rest::binary>>, h1, h2) when is_digit(d) do
+    take_loose_hemisphere(<<acc::binary, d>>, rest, h1, h2)
+  end
+
+  defp take_loose_minutes(_acc, _data, _h1, _h2), do: :error
+
+  @spec take_loose_hemisphere(binary(), binary(), byte(), byte()) :: {:ok, binary(), binary()} | :error
+  defp take_loose_hemisphere(acc, <<d, rest::binary>>, h1, h2) when is_digit(d) do
+    take_loose_hemisphere(<<acc::binary, d>>, rest, h1, h2)
+  end
+
+  defp take_loose_hemisphere(acc, <<h, rest::binary>>, h1, h2) when h == h1 or h == h2 do
+    {:ok, <<acc::binary, h>>, rest}
+  end
+
+  defp take_loose_hemisphere(_acc, _data, _h1, _h2), do: :error
 
   @spec build_fallback_position_result(
           boolean(),
@@ -1488,16 +1647,20 @@ defmodule Aprs do
       data_type: data_type,
       format: :uncompressed,
       has_position: is_number(latitude) and is_number(longitude),
-      messaging: if(aprs_messaging?, do: 1, else: 0),
+      messaging: messaging_flag(aprs_messaging?),
       position_ambiguity: ambiguity,
       posambiguity: ambiguity,
       posresolution: UtilityHelpers.position_resolution(ambiguity)
     }
-    |> Map.merge(extension)
+    |> merge_extension(extension)
     |> maybe_put(:telemetry, telemetry)
     |> maybe_put(:weather, weather)
     |> maybe_put(:wx, weather)
   end
+
+  @spec messaging_flag(boolean()) :: 0 | 1
+  defp messaging_flag(true), do: 1
+  defp messaging_flag(false), do: 0
 
   ## Status, capabilities, queries and user defined data
 
@@ -1507,7 +1670,7 @@ defmodule Aprs do
   defp parse_station_capabilities(data) do
     capabilities =
       data
-      |> String.split(",", trim: true)
+      |> :binary.split(",", [:global, :trim_all])
       |> Map.new(&split_capability/1)
 
     %{capabilities: capabilities, raw_data: data, data_type: :station_capabilities}
@@ -1515,7 +1678,7 @@ defmodule Aprs do
 
   @spec split_capability(String.t()) :: {String.t(), String.t() | nil}
   defp split_capability(token) do
-    case String.split(token, "=", parts: 2) do
+    case :binary.split(token, "=") do
       [key, value] -> {String.trim(key), value}
       [key] -> {String.trim(key), nil}
     end
@@ -1629,7 +1792,7 @@ defmodule Aprs do
 
   @spec parse_tunneled_packet(String.t()) :: {:ok, map()} | {:error, String.t()}
   defp parse_tunneled_packet(packet) do
-    case String.split(packet, ":", parts: 2) do
+    case :binary.split(packet, ":") do
       [header, information] -> parse_tunneled_packet_with_header(header, information)
       _ -> {:error, "Invalid tunneled packet format"}
     end
@@ -1658,7 +1821,7 @@ defmodule Aprs do
 
   @spec parse_tunneled_header(String.t()) :: {:ok, map()} | {:error, String.t()}
   defp parse_tunneled_header(header) do
-    case String.split(header, ">", parts: 2) do
+    case :binary.split(header, ">") do
       [sender, path] -> parse_sender_and_path(sender, path)
       _ -> {:error, "Invalid header format"}
     end
@@ -1685,9 +1848,7 @@ defmodule Aprs do
   end
 
   @spec parse_network_tunnel(String.t()) :: {:ok, map()} | {:error, String.t()}
-  defp parse_network_tunnel(packet) do
-    tunneled_packet = String.slice(packet, 1..-1//1)
-
+  defp parse_network_tunnel(<<?}, tunneled_packet::binary>> = packet) do
     case parse_tunneled_packet(tunneled_packet) do
       {:ok, parsed_packet} -> {:ok, Map.merge(parsed_packet, %{tunnel_type: :network, raw_data: packet})}
       {:error, reason} -> {:error, "Invalid tunneled packet: #{reason}"}
@@ -1695,21 +1856,18 @@ defmodule Aprs do
   end
 
   @spec parse_nested_tunnel(String.t(), non_neg_integer()) :: {:ok, map()} | {:error, String.t()}
-  defp parse_nested_tunnel(packet, depth \\ 0) do
-    cond do
-      depth > 3 ->
-        {:error, "Maximum tunnel depth exceeded"}
+  defp parse_nested_tunnel(packet, depth \\ 0)
 
-      String.starts_with?(packet, "}") ->
-        case parse_network_tunnel(packet) do
-          {:ok, parsed_packet} -> handle_parsed_network_tunnel(parsed_packet, depth)
-          {:error, reason} -> {:error, reason}
-        end
+  defp parse_nested_tunnel(_packet, depth) when depth > 3, do: {:error, "Maximum tunnel depth exceeded"}
 
-      true ->
-        {:error, "Not a tunneled packet"}
+  defp parse_nested_tunnel(<<?}, _::binary>> = packet, depth) do
+    case parse_network_tunnel(packet) do
+      {:ok, parsed_packet} -> handle_parsed_network_tunnel(parsed_packet, depth)
+      {:error, reason} -> {:error, reason}
     end
   end
+
+  defp parse_nested_tunnel(_packet, _depth), do: {:error, "Not a tunneled packet"}
 
   @spec handle_parsed_network_tunnel(map(), non_neg_integer()) :: {:ok, map()}
   defp handle_parsed_network_tunnel(parsed_packet, depth) do
@@ -1724,7 +1882,4 @@ defmodule Aprs do
         {:ok, parsed_packet}
     end
   end
-
-  @spec timestamp_now() :: DateTime.t()
-  defp timestamp_now, do: DateTime.truncate(DateTime.utc_now(), :microsecond)
 end

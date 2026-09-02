@@ -14,13 +14,21 @@ defmodule Aprs.AX25 do
   def parse_callsign(""), do: {:error, :invalid_packet}
 
   def parse_callsign(callsign) when is_binary(callsign) do
-    callsign |> String.split("-") |> format_callsign_result(callsign)
+    split_ssid(callsign, :binary.split(callsign, "-"))
   end
 
   def parse_callsign(_), do: {:error, "Invalid callsign format"}
 
-  @spec format_callsign_result([String.t()], String.t()) :: {:ok, {String.t(), String.t()}}
-  defp format_callsign_result([base, ssid], _), do: {:ok, {base, ssid}}
-  defp format_callsign_result([base], _), do: {:ok, {base, "0"}}
-  defp format_callsign_result(_, original), do: {:ok, {original, "0"}}
+  # A single hyphen separates the base callsign from the SSID; a callsign with
+  # more than one hyphen is not an AX.25 address, so it is kept verbatim.
+  @spec split_ssid(String.t(), [String.t()]) :: {:ok, {String.t(), String.t()}}
+  defp split_ssid(callsign, [base, ssid]) when byte_size(ssid) > 0 do
+    case :binary.match(ssid, "-") do
+      :nomatch -> {:ok, {base, ssid}}
+      _match -> {:ok, {callsign, "0"}}
+    end
+  end
+
+  defp split_ssid(_callsign, [base, ssid]), do: {:ok, {base, ssid}}
+  defp split_ssid(_callsign, [base]), do: {:ok, {base, "0"}}
 end

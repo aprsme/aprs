@@ -27,6 +27,7 @@ defmodule Mix.Tasks.Aprs.ParseFile do
   use Mix.Task
 
   alias Aprs.FeedAudit.Failure
+  alias Aprs.FeedAudit.Frame
   alias Aprs.FeedAudit.Verdict
 
   @default_output "tmp/aprs_parse_failures.jsonl"
@@ -41,12 +42,12 @@ defmodule Mix.Tasks.Aprs.ParseFile do
 
     input = List.first(positional)
     output = Keyword.get(opts, :output, @default_output)
-    mode = if Keyword.get(opts, :hard_errors_only, false), do: :hard, else: :all
+    mode = mode(Keyword.get(opts, :hard_errors_only, false))
 
     _ = Mix.Task.run("compile")
 
-    if !(input && File.exists?(input)) do
-      Mix.shell().error("Error: input file not found: #{input || "(none given)"}")
+    with {:error, message} <- validate_input(input) do
+      Mix.shell().error(message)
       exit({:shutdown, 1})
     end
 
@@ -65,7 +66,7 @@ defmodule Mix.Tasks.Aprs.ParseFile do
     try do
       input
       |> File.stream!()
-      |> Stream.map(&strip_eol/1)
+      |> Stream.map(&Frame.strip_eol/1)
       |> Stream.reject(&skip_line?/1)
       |> Enum.reduce({0, 0}, fn line, acc -> classify(line, acc, io, mode) end)
     after
@@ -85,19 +86,17 @@ defmodule Mix.Tasks.Aprs.ParseFile do
     end
   end
 
-  # Byte-safe: a malformed line is not necessarily valid UTF-8, so the string
-  # functions that assume it cannot be used here.
-  defp strip_eol(line) do
-    line |> strip_suffix("\n") |> strip_suffix("\r")
-  end
+  @spec mode(boolean()) :: Verdict.mode()
+  defp mode(true), do: :hard
+  defp mode(false), do: :all
 
-  defp strip_suffix(binary, suffix) do
-    size = byte_size(binary) - byte_size(suffix)
+  defp validate_input(nil), do: {:error, "Error: input file not found: (none given)"}
 
-    if size >= 0 and binary_part(binary, size, byte_size(suffix)) == suffix do
-      binary_part(binary, 0, size)
+  defp validate_input(path) do
+    if File.exists?(path) do
+      :ok
     else
-      binary
+      {:error, "Error: input file not found: #{path}"}
     end
   end
 

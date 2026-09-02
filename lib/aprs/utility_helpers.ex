@@ -6,6 +6,8 @@ defmodule Aprs.UtilityHelpers do
   import Aprs.Guards
 
   @future_tolerance_seconds 60 * 60
+  @seconds_per_day 86_400
+  @unix_epoch_gregorian_seconds 62_167_219_200
   @position_resolutions {18.52, 185.2, 1_852.0, 18_520.0, 185_200.0}
 
   @doc """
@@ -16,18 +18,19 @@ defmodule Aprs.UtilityHelpers do
   against the previous day.
   """
   @spec parse_timestamp(String.t(), DateTime.t()) :: integer() | nil
-  def parse_timestamp(time, now \\ DateTime.utc_now())
+  def parse_timestamp(time, now \\ Aprs.Clock.utc_now())
 
-  def parse_timestamp(<<dhm::binary-size(6)>>, %DateTime{} = now) do
-    parse_dhm(dhm, now)
+  def parse_timestamp(<<dhm::binary-size(6)>>, %DateTime{year: year, month: month} = now) do
+    parse_dhm(dhm, year, month, DateTime.to_unix(now))
   end
 
-  def parse_timestamp(<<dhm::binary-size(6), suffix>>, %DateTime{} = now) when suffix in [?z, ?/] do
-    parse_dhm(dhm, now)
+  def parse_timestamp(<<dhm::binary-size(6), suffix>>, %DateTime{year: year, month: month} = now)
+      when suffix in [?z, ?/] do
+    parse_dhm(dhm, year, month, DateTime.to_unix(now))
   end
 
-  def parse_timestamp(<<hms::binary-size(6), ?h>>, %DateTime{} = now) do
-    parse_hms(hms, now)
+  def parse_timestamp(<<hms::binary-size(6), ?h>>, %DateTime{year: year, month: month, day: day} = now) do
+    parse_hms(hms, year, month, day, DateTime.to_unix(now))
   end
 
   def parse_timestamp(_, _), do: nil
@@ -38,108 +41,120 @@ defmodule Aprs.UtilityHelpers do
   @spec validate_timestamp(String.t()) :: integer() | nil
   def validate_timestamp(time), do: parse_timestamp(time)
 
-  @spec parse_dhm(binary(), DateTime.t()) :: integer() | nil
-  defp parse_dhm(<<d1, d2, h1, h2, m1, m2>>, now)
+  @spec parse_dhm(binary(), integer(), 1..12, integer()) :: integer() | nil
+  defp parse_dhm(<<d1, d2, h1, h2, m1, m2>>, year, month, now_unix)
        when is_digit(d1) and is_digit(d2) and is_digit(h1) and is_digit(h2) and is_digit(m1) and is_digit(m2) do
     day = decimal_pair(d1, d2)
     hour = decimal_pair(h1, h2)
     minute = decimal_pair(m1, m2)
 
-    build_dhm_timestamp(now, day, hour, minute)
+    build_dhm_timestamp(year, month, now_unix, day, hour, minute)
   end
 
-  defp parse_dhm(_, _), do: nil
+  defp parse_dhm(_, _, _, _), do: nil
 
-  @spec parse_hms(binary(), DateTime.t()) :: integer() | nil
-  defp parse_hms(<<h1, h2, m1, m2, s1, s2>>, now)
+  @spec parse_hms(binary(), integer(), 1..12, 1..31, integer()) :: integer() | nil
+  defp parse_hms(<<h1, h2, m1, m2, s1, s2>>, year, month, day, now_unix)
        when is_digit(h1) and is_digit(h2) and is_digit(m1) and is_digit(m2) and is_digit(s1) and is_digit(s2) do
     hour = decimal_pair(h1, h2)
     minute = decimal_pair(m1, m2)
     second = decimal_pair(s1, s2)
 
-    build_hms_timestamp(now, hour, minute, second)
+    build_hms_timestamp(year, month, day, now_unix, hour, minute, second)
   end
 
-  defp parse_hms(_, _), do: nil
+  defp parse_hms(_, _, _, _, _), do: nil
 
   @spec decimal_pair(byte(), byte()) :: non_neg_integer()
   defp decimal_pair(tens, ones), do: (tens - ?0) * 10 + ones - ?0
 
-  @spec build_dhm_timestamp(DateTime.t(), integer(), integer(), integer()) :: integer() | nil
-  defp build_dhm_timestamp(now, day, hour, minute)
+  @spec build_dhm_timestamp(integer(), 1..12, integer(), integer(), integer(), integer()) ::
+          integer() | nil
+  defp build_dhm_timestamp(year, month, now_unix, day, hour, minute)
        when day >= 1 and day <= 31 and hour >= 0 and hour <= 23 and minute >= 0 and minute <= 59 do
-    case build_datetime(now.year, now.month, day, hour, minute, 0) do
-      %DateTime{} = datetime ->
-        if beyond_future_tolerance?(datetime, now) do
-          build_previous_month_timestamp(now, day, hour, minute)
-        else
-          DateTime.to_unix(datetime)
-        end
+    case build_unix_timestamp(year, month, day, hour, minute, 0) do
+      timestamp when timestamp > now_unix + @future_tolerance_seconds ->
+        build_previous_month_timestamp(year, month, day, hour, minute)
+
+      timestamp when is_integer(timestamp) ->
+        timestamp
 
       nil ->
-        build_previous_month_timestamp(now, day, hour, minute)
+        build_previous_month_timestamp(year, month, day, hour, minute)
     end
   end
 
-  defp build_dhm_timestamp(_, _, _, _), do: nil
+  defp build_dhm_timestamp(_, _, _, _, _, _), do: nil
 
   @spec build_previous_month_timestamp(
-          DateTime.t(),
+          integer(),
+          1..12,
           pos_integer(),
           non_neg_integer(),
           non_neg_integer()
         ) :: integer() | nil
-  defp build_previous_month_timestamp(now, day, hour, minute) do
-    {year, month} = previous_month(now.year, now.month)
-
-    case build_datetime(year, month, day, hour, minute, 0) do
-      %DateTime{} = datetime -> DateTime.to_unix(datetime)
-      nil -> nil
-    end
+  defp build_previous_month_timestamp(year, month, day, hour, minute) do
+    {previous_year, previous_month} = previous_month(year, month)
+    build_unix_timestamp(previous_year, previous_month, day, hour, minute, 0)
   end
 
   @spec previous_month(integer(), 1..12) :: {integer(), 1..12}
   defp previous_month(year, 1), do: {year - 1, 12}
   defp previous_month(year, month), do: {year, month - 1}
 
-  @spec build_hms_timestamp(DateTime.t(), integer(), integer(), integer()) :: integer() | nil
-  defp build_hms_timestamp(now, hour, minute, second)
+  @spec build_hms_timestamp(integer(), 1..12, 1..31, integer(), integer(), integer(), integer()) ::
+          integer() | nil
+  defp build_hms_timestamp(year, month, day, now_unix, hour, minute, second)
        when hour >= 0 and hour <= 23 and minute >= 0 and minute <= 59 and second >= 0 and second <= 59 do
-    datetime = build_datetime(now.year, now.month, now.day, hour, minute, second)
-
-    if beyond_future_tolerance?(datetime, now) do
-      datetime
-      |> DateTime.shift(day: -1)
-      |> DateTime.to_unix()
-    else
-      DateTime.to_unix(datetime)
-    end
+    year
+    |> build_unix_timestamp(month, day, hour, minute, second)
+    |> resolve_hms_timestamp(now_unix)
   end
 
-  defp build_hms_timestamp(_, _, _, _), do: nil
+  defp build_hms_timestamp(_, _, _, _, _, _, _), do: nil
 
-  @spec build_datetime(
+  @spec resolve_hms_timestamp(integer(), integer()) :: integer()
+  defp resolve_hms_timestamp(timestamp, now_unix) when timestamp > now_unix + @future_tolerance_seconds do
+    timestamp - @seconds_per_day
+  end
+
+  defp resolve_hms_timestamp(timestamp, _now_unix), do: timestamp
+
+  @spec build_unix_timestamp(
           integer(),
           1..12,
           pos_integer(),
           non_neg_integer(),
           non_neg_integer(),
           non_neg_integer()
-        ) :: DateTime.t() | nil
-  defp build_datetime(year, month, day, hour, minute, second) do
-    with {:ok, date} <- Date.new(year, month, day),
-         {:ok, time} <- Time.new(hour, minute, second),
-         {:ok, datetime} <- DateTime.new(date, time) do
-      datetime
-    else
-      _ -> nil
-    end
+        ) :: integer() | nil
+  defp build_unix_timestamp(year, month, day, hour, minute, second) do
+    build_unix_timestamp(
+      year,
+      month,
+      day,
+      hour,
+      minute,
+      second,
+      :calendar.valid_date(year, month, day)
+    )
   end
 
-  @spec beyond_future_tolerance?(DateTime.t(), DateTime.t()) :: boolean()
-  defp beyond_future_tolerance?(datetime, now) do
-    DateTime.after?(datetime, DateTime.shift(now, second: @future_tolerance_seconds))
+  @spec build_unix_timestamp(
+          integer(),
+          1..12,
+          pos_integer(),
+          non_neg_integer(),
+          non_neg_integer(),
+          non_neg_integer(),
+          boolean()
+        ) :: integer() | nil
+  defp build_unix_timestamp(year, month, day, hour, minute, second, true) do
+    :calendar.datetime_to_gregorian_seconds({{year, month, day}, {hour, minute, second}}) -
+      @unix_epoch_gregorian_seconds
   end
+
+  defp build_unix_timestamp(_, _, _, _, _, _, false), do: nil
 
   @doc """
   Returns the latitude-derived resolution in metres for an APRS ambiguity level.

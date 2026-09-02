@@ -25,27 +25,39 @@ defmodule Aprs.DAO do
   Returns `{dao, comment_without_dao}`, or `{nil, comment}` when the comment
   holds no DAO extension.
   """
-  @spec parse(String.t()) :: {t() | nil, String.t()}
-  def parse(comment) when is_binary(comment), do: scan(comment, <<>>)
+  @spec parse(term()) :: {t() | nil, term()}
+  def parse(comment) when is_binary(comment), do: scan(comment, 0)
   def parse(comment), do: {nil, comment}
 
-  @spec scan(binary(), binary()) :: {t() | nil, String.t()}
-  defp scan(<<?!, d, a, o, ?!, rest::binary>> = data, acc) do
-    case offsets(d, a, o) do
-      {lat_offset, lon_offset} ->
-        dao = %{datum: <<upcase(d)>>, lat_offset: lat_offset, lon_offset: lon_offset}
-        {dao, String.trim(acc <> rest)}
+  @spec scan(binary(), non_neg_integer()) :: {t() | nil, String.t()}
+  defp scan(comment, offset) when offset <= byte_size(comment) - 5 do
+    scope = {offset, byte_size(comment) - offset}
 
-      nil ->
-        skip(data, acc)
+    case :binary.match(comment, "!", scope: scope) do
+      {index, 1} ->
+        candidate = binary_part(comment, index, byte_size(comment) - index)
+        parse_candidate(comment, index, candidate)
+
+      :nomatch ->
+        {nil, comment}
     end
   end
 
-  defp scan(<<>>, acc), do: {nil, acc}
-  defp scan(data, acc), do: skip(data, acc)
+  defp scan(comment, _offset), do: {nil, comment}
 
-  @spec skip(binary(), binary()) :: {t() | nil, String.t()}
-  defp skip(<<c, rest::binary>>, acc), do: scan(rest, <<acc::binary, c>>)
+  @spec parse_candidate(binary(), non_neg_integer(), binary()) :: {t() | nil, String.t()}
+  defp parse_candidate(comment, index, <<?!, d, a, o, ?!, rest::binary>>) do
+    case offsets(d, a, o) do
+      {lat_offset, lon_offset} ->
+        dao = %{datum: <<upcase(d)>>, lat_offset: lat_offset, lon_offset: lon_offset}
+        {dao, String.trim(binary_part(comment, 0, index) <> rest)}
+
+      nil ->
+        scan(comment, index + 1)
+    end
+  end
+
+  defp parse_candidate(comment, index, _candidate), do: scan(comment, index + 1)
 
   # Human-readable form: two ASCII digits of 1/1000 minute.
   @spec offsets(byte(), byte(), byte()) :: {float(), float()} | nil
