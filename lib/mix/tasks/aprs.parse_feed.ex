@@ -186,13 +186,28 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
   end
 
   defp open_session(address, config) do
-    with {:ok, socket} <- :gen_tcp.connect(address, config.port, [:binary, active: false, packet: :raw], @connect_timeout) do
-      # A socket that dies before the login lands fails the first receive, and
-      # the loop reports that, so there is nothing extra to do with a send error.
-      _ = :gen_tcp.send(socket, login_string(config))
-      {:ok, socket}
+    case transport().connect(address, config.port, [:binary, active: false, packet: :raw], @connect_timeout) do
+      {:ok, socket} -> send_login(socket, config)
+      {:error, reason} -> {:error, reason}
     end
   end
+
+  # An address whose login cannot be sent is an address this run cannot use, so
+  # the socket goes and the pool walk moves on to the next one.
+  defp send_login(socket, config) do
+    case transport().send(socket, login_string(config)) do
+      :ok ->
+        {:ok, socket}
+
+      {:error, reason} ->
+        transport().close(socket)
+        {:error, reason}
+    end
+  end
+
+  # The session transport is swapped in tests to fail a send on a socket that
+  # has only just connected, which no timing on a real socket can guarantee.
+  defp transport, do: Application.get_env(:aprs, :feed_transport, :gen_tcp)
 
   defp format_address(address), do: address |> :inet.ntoa() |> List.to_string()
 

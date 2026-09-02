@@ -7,6 +7,17 @@ defmodule Mix.Tasks.Aprs.ParseFeedTest do
   @bad_no_path "totally bogus line"
   @bad_payload "N0CALL>APRS:@nonsense"
 
+  # A real socket cannot be made to fail its very first send on demand, so the
+  # transport is swapped for one that does.
+  defmodule FailingLoginTransport do
+    @moduledoc false
+
+    defdelegate connect(address, port, options, timeout), to: :gen_tcp
+    defdelegate close(socket), to: :gen_tcp
+
+    def send(_socket, _data), do: {:error, :closed}
+  end
+
   setup do
     output = Path.join(System.tmp_dir!(), "aprs_parse_feed_#{System.unique_integer([:positive])}/failures.jsonl")
     on_exit(fn -> File.rm_rf(Path.dirname(output)) end)
@@ -77,6 +88,19 @@ defmodule Mix.Tasks.Aprs.ParseFeedTest do
 
   test "exits when no address answers", %{output: output} do
     assert catch_exit(run(65_000, output, ["--server", "127.0.0.1"])) == {:shutdown, 1}
+  end
+
+  test "an address whose login cannot be sent is closed and abandoned", %{output: output} do
+    {port, _login} = start_fake_aprs_is([], close_after_send: false)
+
+    Application.put_env(:aprs, :feed_transport, FailingLoginTransport)
+    on_exit(fn -> Application.delete_env(:aprs, :feed_transport) end)
+
+    assert catch_exit(run_with(port, output, ["--duration", "1", "--progress", "0"])) == {:shutdown, 1}
+
+    assert_receive {:mix_shell, :info, ["  127.0.0.1 unavailable (:closed), trying next address"]}
+    assert_receive {:mix_shell, :error, [message]}
+    assert message =~ "all_addresses_failed"
   end
 
   test "stops on a stop signal, with no duration limit", %{output: output} do
