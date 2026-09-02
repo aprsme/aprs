@@ -9,6 +9,11 @@ defmodule Aprs.PHGHelpers do
   @type phg_directivity :: {integer() | nil, String.t()}
   @type df_strength :: {integer() | nil, String.t()}
 
+  @doc """
+  Decode the P digit of a PHG value into `{watts, description}`.
+
+  An unrecognised digit gives `{nil, description}`.
+  """
   @spec parse_phg_power(integer()) :: phg_power
   def parse_phg_power(?0), do: {1, "1 watt"}
   def parse_phg_power(?1), do: {4, "4 watts"}
@@ -22,6 +27,11 @@ defmodule Aprs.PHGHelpers do
   def parse_phg_power(?9), do: {81, "81 watts"}
   def parse_phg_power(p), do: {nil, "Unknown power: #{<<p>>}"}
 
+  @doc """
+  Decode the H digit of a PHG value into `{feet, description}`.
+
+  An unrecognised digit gives `{nil, description}`.
+  """
   @spec parse_phg_height(integer()) :: phg_height
   def parse_phg_height(?0), do: {10, "10 feet"}
   def parse_phg_height(?1), do: {20, "20 feet"}
@@ -35,6 +45,11 @@ defmodule Aprs.PHGHelpers do
   def parse_phg_height(?9), do: {5120, "5120 feet"}
   def parse_phg_height(h), do: {nil, "Unknown height: #{<<h>>}"}
 
+  @doc """
+  Decode the G digit of a PHG value into `{dB, description}`.
+
+  An unrecognised digit gives `{nil, description}`.
+  """
   @spec parse_phg_gain(integer()) :: phg_gain
   def parse_phg_gain(?0), do: {0, "0 dB"}
   def parse_phg_gain(?1), do: {1, "1 dB"}
@@ -48,6 +63,11 @@ defmodule Aprs.PHGHelpers do
   def parse_phg_gain(?9), do: {9, "9 dB"}
   def parse_phg_gain(g), do: {nil, "Unknown gain: #{<<g>>}"}
 
+  @doc """
+  Decode the D digit of a PHG value into `{degrees, description}`.
+
+  An unrecognised digit gives `{nil, description}`.
+  """
   @spec parse_phg_directivity(integer()) :: phg_directivity
   def parse_phg_directivity(?0), do: {360, "Omni"}
   def parse_phg_directivity(?1), do: {45, "45° NE"}
@@ -61,6 +81,11 @@ defmodule Aprs.PHGHelpers do
   def parse_phg_directivity(?9), do: {nil, "Undefined"}
   def parse_phg_directivity(d), do: {nil, "Unknown directivity: #{<<d>>}"}
 
+  @doc """
+  Decode the S digit of a DFS value into `{strength, description}`.
+
+  An unrecognised digit gives `{nil, description}`.
+  """
   @spec parse_df_strength(integer()) :: df_strength
   def parse_df_strength(?0), do: {0, "0 dB"}
   def parse_df_strength(?1), do: {1, "3 dB above S0"}

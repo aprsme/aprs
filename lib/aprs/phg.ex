@@ -4,7 +4,12 @@ defmodule Aprs.PHG do
   """
 
   @doc """
-  Parse a PHG/DFS string. Returns a map with PHG data.
+  Parse a `PHG` or `DFS` string, with or without a leading `#`.
+
+  Returns `%{phg: "PHGD", data_type: :phg_data, raw_data: ...}` for PHG and
+  `%{dfs: "SHGD", data_type: :df_report, raw_data: ...}` for DFS. Input that
+  matches neither returns an `:error` key. Use `Aprs.PHGHelpers` to decode the
+  individual digits.
   """
   @spec parse(String.t()) :: map()
   def parse(phg_str) when is_binary(phg_str) do

@@ -8,6 +8,14 @@ defmodule Aprs.WeatherHelpers do
   @type weather_value :: integer() | float() | nil
   @type weather_values :: %{required(atom()) => weather_value()}
 
+  @doc """
+  Split a leading timestamp off a weather report.
+
+  A positionless report starts with the eight-digit `MDHM` form, which is
+  recognised only when it is followed by the wind direction field. Otherwise
+  the seven-byte `DDHHMM` form (`h`, `z` or `/`) is looked for anywhere in the
+  data. Returns `{timestamp_or_nil, data_without_timestamp}`.
+  """
   @spec extract_timestamp_and_data(binary()) :: {String.t() | nil, binary()}
   def extract_timestamp_and_data(<<d1, d2, d3, d4, d5, d6, d7, d8, ?c, _rest::binary>> = data)
       when is_digit(d1) and is_digit(d2) and is_digit(d3) and is_digit(d4) and is_digit(d5) and is_digit(d6) and
@@ -21,54 +29,96 @@ defmodule Aprs.WeatherHelpers do
     extract_legacy_timestamp(data, data, 0)
   end
 
+  @doc """
+  The timestamp half of `extract_timestamp_and_data/1`.
+  """
   @spec extract_timestamp(binary()) :: String.t() | nil
   def extract_timestamp(data) do
     {timestamp, _weather_data} = extract_timestamp_and_data(data)
     timestamp
   end
 
+  @doc """
+  The data half of `extract_timestamp_and_data/1`.
+  """
   @spec remove_timestamp(binary()) :: binary()
   def remove_timestamp(data) do
     {_timestamp, weather_data} = extract_timestamp_and_data(data)
     weather_data
   end
 
+  @doc """
+  Scan a weather report in one left-to-right pass.
+
+  Returns `{weather_values, remainder}`, where the remainder is the part of the
+  input that was not a weather field - for a position comment, the comment
+  text. Fields the report omits are `nil`. A bare `ddd/sss` wind pair at the
+  start is accepted as direction and speed.
+  """
   @spec scan_weather_data(binary()) :: {weather_values(), binary()}
   def scan_weather_data(data) when is_binary(data) do
     {rest, weather} = scan_leading_wind(data, empty_weather_values())
     scan_tokens(rest, weather)
   end
 
+  @doc """
+  Return one weather field from a report, or `nil` when it is absent.
+
+  Each of these runs `scan_weather_data/1` and picks a single value out, so
+  parsing a whole report with `scan_weather_data/1` is cheaper than calling
+  them one at a time.
+  """
+  @doc group: "Single fields"
   @spec parse_wind_direction(binary()) :: integer() | nil
   def parse_wind_direction(data), do: weather_value(data, :wind_direction)
 
+  @doc "See `parse_wind_direction/1`."
+  @doc group: "Single fields"
   @spec parse_wind_speed(binary()) :: integer() | nil
   def parse_wind_speed(data), do: weather_value(data, :wind_speed)
 
+  @doc "See `parse_wind_direction/1`."
+  @doc group: "Single fields"
   @spec parse_wind_gust(binary()) :: integer() | nil
   def parse_wind_gust(data), do: weather_value(data, :wind_gust)
 
+  @doc "See `parse_wind_direction/1`."
+  @doc group: "Single fields"
   @spec parse_temperature(binary()) :: integer() | nil
   def parse_temperature(data), do: weather_value(data, :temperature)
 
+  @doc "See `parse_wind_direction/1`."
+  @doc group: "Single fields"
   @spec parse_rainfall_1h(binary()) :: float() | nil
   def parse_rainfall_1h(data), do: weather_value(data, :rain_1h)
 
+  @doc "See `parse_wind_direction/1`."
+  @doc group: "Single fields"
   @spec parse_rainfall_24h(binary()) :: float() | nil
   def parse_rainfall_24h(data), do: weather_value(data, :rain_24h)
 
+  @doc "See `parse_wind_direction/1`."
+  @doc group: "Single fields"
   @spec parse_rainfall_since_midnight(binary()) :: float() | nil
   def parse_rainfall_since_midnight(data), do: weather_value(data, :rain_since_midnight)
 
+  @doc "See `parse_wind_direction/1`."
+  @doc group: "Single fields"
   @spec parse_humidity(binary()) :: integer() | nil
   def parse_humidity(data), do: weather_value(data, :humidity)
 
+  @doc "See `parse_wind_direction/1`."
+  @doc group: "Single fields"
   @spec parse_pressure(binary()) :: float() | nil
   def parse_pressure(data), do: weather_value(data, :pressure)
 
+  @doc "See `parse_wind_direction/1`."
+  @doc group: "Single fields"
   @spec parse_luminosity(binary()) :: integer() | nil
   def parse_luminosity(data), do: weather_value(data, :luminosity)
 
+  @doc "See `parse_wind_direction/1`."
+  @doc group: "Single fields"
   @spec parse_snow(binary()) :: float() | nil
   def parse_snow(data), do: weather_value(data, :snow)
 

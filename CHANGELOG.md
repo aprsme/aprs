@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-09-02
+
+### Fixed
+- `Aprs.version/0` returned `"1.0.1"`. It now reads the version from `mix.exs` at
+  compile time, so it cannot drift from the released package again.
+- README documentation: the installation snippet asked for `~> 1.0`, the example
+  packet map showed a `posresolution` and packet `id` shape the parser stopped
+  producing in 2.0.0, and the weather example showed `snow: 0.0` for a report that
+  carries no snow field (it is `nil`).
+
+### Added
+- A `@doc` on every public function, including `Aprs.parse/1`, with executable
+  examples for the entry points.
+- `CHANGELOG.md` ships in the hex package and is published with the docs.
+
 ## [2.0.0] - 2026-09-02
 
 ### Fixed

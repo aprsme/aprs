@@ -31,7 +31,9 @@ defmodule Aprs do
   alias Aprs.UtilityHelpers
   alias Aprs.Weather
 
-  @version "1.0.1"
+  # Kept in step with mix.exs so `version/0` cannot drift from the released
+  # package version.
+  @version Mix.Project.config()[:version]
 
   @max_packet_size 8192
 
@@ -40,7 +42,13 @@ defmodule Aprs do
   @legacy_position_scan_limit 40
 
   @doc """
-  Returns the current version of the APRS library as a static string.
+  Returns the version of the library, the same string `mix.exs` declares.
+
+  ## Examples
+
+      iex> [major, minor, patch] = String.split(Aprs.version(), ".")
+      iex> Enum.all?([major, minor, patch], &match?({_, ""}, Integer.parse(&1)))
+      true
   """
   @spec version() :: String.t()
   def version, do: @version
@@ -84,6 +92,30 @@ defmodule Aprs do
           optional(:data_type) => atom()
         }
 
+  @doc """
+  Parse a TNC2-format packet (`SRC>DST,PATH:information`).
+
+  Returns `{:ok, packet}`, or `{:error, reason}` for a packet that is not
+  parseable at all - a malformed header, an invalid callsign or path, or a
+  body larger than 8192 bytes. A packet whose header is well formed but whose
+  information field is not always parses; the trouble is reported in
+  `data_type` (`:unknown_datatype`, `:malformed_position`, `:mic_e_error`, and
+  so on) rather than as an error.
+
+  The returned map carries the packet envelope, the type-specific fields under
+  `data_extended`, those same fields flattened into the top level, and the
+  reference-parser field names (`srccallsign`, `symboltable`, `posambiguity`,
+  ...). See the README for the full field list.
+
+  ## Examples
+
+      iex> {:ok, packet} = Aprs.parse("N0CALL>APRS,TCPIP*,qAC,T2TEST:=4903.50N/07201.75W-Hi")
+      iex> {packet.data_type, packet.latitude, packet.comment}
+      {:position_with_message, 49.05833333333333, "Hi"}
+
+      iex> Aprs.parse("not a packet")
+      {:error, :invalid_packet}
+  """
   @spec parse(term()) :: parse_result()
   def parse(message) when is_binary(message) do
     if byte_size(message) > @max_packet_size do
@@ -371,7 +403,19 @@ defmodule Aprs do
     |> Map.put(:symboltable, Map.get(packet, :symbol_table_id))
   end
 
-  # Safely split packet into components using binary pattern matching
+  @doc """
+  Split a packet into `[sender, path, information_field]`.
+
+  `path` is everything between `>` and the first `:`, destination included.
+
+  ## Examples
+
+      iex> Aprs.split_packet("N0CALL>APRS,TCPIP*:>Hello")
+      {:ok, ["N0CALL", "APRS,TCPIP*", ">Hello"]}
+
+      iex> Aprs.split_packet("N0CALL")
+      {:error, :invalid_packet}
+  """
   @spec split_packet(String.t()) :: {:ok, [String.t()]} | {:error, :invalid_packet}
   def split_packet(message) do
     with {:ok, sender, rest} <- find_delimiter(message, ?>),
@@ -415,7 +459,19 @@ defmodule Aprs do
     end
   end
 
-  # Safely split path into destination and digipeater path
+  @doc """
+  Split the path into `[destination, digipeater_path]`.
+
+  The digipeater path is `""` when the packet has no digipeaters.
+
+  ## Examples
+
+      iex> Aprs.split_path("APRS,WIDE1-1,WIDE2-1")
+      {:ok, ["APRS", "WIDE1-1,WIDE2-1"]}
+
+      iex> Aprs.split_path("APRS")
+      {:ok, ["APRS", ""]}
+  """
   @spec split_path(String.t()) :: {:ok, [String.t()]}
   def split_path(path) when is_binary(path) do
     path |> String.split(",", parts: 2) |> split_path_parts()
@@ -425,9 +481,30 @@ defmodule Aprs do
   defp split_path_parts([destination, digi_path]), do: {:ok, [destination, digi_path]}
   defp split_path_parts([destination]), do: {:ok, [destination, ""]}
 
+  @doc """
+  `parse_datatype/1` wrapped in an `:ok` tuple, for use in a `with` chain.
+
+  ## Examples
+
+      iex> Aprs.parse_datatype_safe("!4903.50N/07201.75W-")
+      {:ok, :position}
+  """
   @spec parse_datatype_safe(String.t()) :: {:ok, atom()}
   def parse_datatype_safe(data), do: {:ok, parse_datatype(data)}
 
+  @doc """
+  Split a callsign into `[base_callsign, ssid]`, validating it as AX.25.
+
+  The SSID is `"0"` when the callsign carries none.
+
+  ## Examples
+
+      iex> Aprs.parse_callsign("N0CALL-9")
+      {:ok, ["N0CALL", "9"]}
+
+      iex> Aprs.parse_callsign("N0CALL")
+      {:ok, ["N0CALL", "0"]}
+  """
   @spec parse_callsign(String.t()) :: {:ok, [String.t()]} | {:error, String.t() | atom()}
   def parse_callsign(callsign) do
     case Aprs.AX25.parse_callsign(callsign) do
@@ -465,6 +542,21 @@ defmodule Aprs do
 
   @doc """
   Determine the data type of an information field.
+
+  Returns the atom for the data type indicator, `:empty` for an empty field,
+  or `:unknown_datatype` for an indicator that is not recognised and holds no
+  `!` within its first 40 bytes.
+
+  ## Examples
+
+      iex> Aprs.parse_datatype("=4903.50N/07201.75W-")
+      :position_with_message
+
+      iex> Aprs.parse_datatype("T#005,199,000,255,073,123,01101001")
+      :telemetry
+
+      iex> Aprs.parse_datatype("~nonsense")
+      :unknown_datatype
   """
   @spec parse_datatype(String.t()) :: atom()
   def parse_datatype(data) when is_binary(data) do
@@ -504,6 +596,15 @@ defmodule Aprs do
   defp find_legacy_position(<<_, rest::binary>>, pos), do: find_legacy_position(rest, pos + 1)
   defp find_legacy_position(<<>>, _pos), do: :error
 
+  @doc """
+  Parse an information field that has already been classified by
+  `parse_datatype/1`.
+
+  `destination` is the TOCALL, which Mic-E packets need for the latitude. The
+  returned map always carries a `data_type`, which may be more specific than
+  the one passed in (a `:weather` position, a `:message_ack`, a
+  `:mic_e_error`). Returns `nil` when the field cannot be parsed at all.
+  """
   @spec parse_data(atom(), String.t(), String.t()) :: map() | nil
   def parse_data(:empty, _destination, _data), do: %{data_type: :empty}
   def parse_data(:mic_e, destination, data), do: MicE.parse(data, strip_ssid(destination), :mic_e)
@@ -790,6 +891,15 @@ defmodule Aprs do
 
   defp has_valid_coordinates?(_), do: false
 
+  @doc """
+  Parse the body of an untimestamped position report (`!` or `=`), compressed
+  or uncompressed, with the data type indicator already removed.
+
+  Returns the position fields plus everything the comment carried: a data
+  extension, altitude, telemetry, DAO and, on the weather symbol, a weather
+  report. Coordinates that do not decode give `data_type: :malformed_position`
+  and `has_position: false` rather than an error.
+  """
   @spec parse_position_without_timestamp(String.t()) :: map()
   def parse_position_without_timestamp(
         <<lat::binary-size(8), table::binary-size(1), lon::binary-size(9), code::binary-size(1), comment::binary>> =
@@ -1222,6 +1332,10 @@ defmodule Aprs do
 
   ## Timestamped positions
 
+  @doc """
+  `parse_position_without_timestamp/1` with the messaging flag set, for the `=`
+  data type indicator.
+  """
   @spec parse_position_with_message_without_timestamp(String.t()) :: map()
   def parse_position_with_message_without_timestamp(position_data) do
     position_data
@@ -1229,6 +1343,13 @@ defmodule Aprs do
     |> Map.put(:aprs_messaging?, true)
   end
 
+  @doc """
+  Parse the body of a timestamped position report (`/` or `@`), with the data
+  type indicator already removed.
+
+  The leading seven bytes are the timestamp; the rest is parsed as an
+  untimestamped position. `aprs_messaging?` is `true` for `@`.
+  """
   @spec parse_position_with_timestamp(boolean(), binary(), atom()) :: map()
   def parse_position_with_timestamp(
         aprs_messaging?,

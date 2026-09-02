@@ -4,6 +4,8 @@ defmodule Aprs.TelemetryHelpersTest do
 
   alias Aprs.TelemetryHelpers
 
+  doctest TelemetryHelpers
+
   describe "parse_coefficient/1" do
     property "returns a float or the original coefficient string" do
       check all coefficient <-

@@ -14,7 +14,7 @@ Add `:aprs` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:aprs, "~> 1.0"}
+    {:aprs, "~> 2.0"}
   ]
 end
 ```
@@ -41,7 +41,7 @@ convenience:
 
 ```elixir
 %{
-  id: "1bb0315fae23ca7145614eb807abe85c",   # random hex per parse
+  id: "d00797958416d5581386",   # per-VM random prefix plus a counter
   sender: "N0CALL",
   path: "TCPIP*,qAC,T2TEST",
   destination: "APRS",
@@ -61,15 +61,20 @@ convenience:
     symbol_code: "-",
     aprs_messaging?: true,
     compressed?: false,
+    format: :uncompressed,
+    has_position: true,
     position_ambiguity: 0,
-    posresolution: 19,
+    posambiguity: 0,
+    posresolution: 18.52,
+    messaging: 0,
+    timestamp: nil,
     altitude: nil,
     course: nil,
     speed: nil,
     phg: nil,
+    radiorange: nil,
     dao: nil,
-    wx: nil,
-    has_position: true
+    wx: nil
   },
   # ... flattened data_extended fields plus reference-parser aliases ...
 }
@@ -93,13 +98,17 @@ Alongside the snake_case fields above, each packet includes field names matching
 common reference APRS parsers, so output can be consumed by existing tooling:
 
 `srccallsign`, `dstcallsign`, `body`, `origpacket`, `header`, `alive`, `type`,
-`digipeaters`, `posambiguity`, `posresolution`, `format`, `messaging`, `symboltable`,
-`symbolcode`, `daodatumbyte`, `gpsfixstatus`, `mbits`, `message`, `phg`, `wx`,
-`radiorange`, `itemname`.
+`digipeaters`, `posambiguity`, `format`, `messaging`, `symboltable`, `symbolcode`,
+`daodatumbyte`, `gpsfixstatus`, `mbits`, `message`, `phg`, `wx`, `radiorange`,
+`itemname`. Packets that carry a position also get `posresolution`.
 
 `type` is the standard type string for the packet (`"location"`, `"wx"`, `"object"`,
-`"item"`, `"message"`, `"telemetry"`, `"status"`, `"capabilities"`, …), and `digipeaters`
-is a list of `%{call: String.t(), wasdigied: 0 | 1}`.
+`"item"`, `"message"`, `"messageack"`, `"messagerej"`, `"telemetry"`,
+`"telemetry-message"`, `"status"`, `"capabilities"`, …), and `digipeaters` is a list of
+`%{call: String.t(), wasdigied: 0 | 1}`.
+
+`format` is how the position was encoded — `:uncompressed`, `:compressed`, `:mice`,
+`:nmea`, `:maidenhead`, or `:unknown`.
 
 ### More examples
 
@@ -140,9 +149,13 @@ packet.wx
 #=> %{
 #     wind_direction: 0, wind_speed: 0, wind_gust: 0, temperature: 0,
 #     rain_1h: 0.0, rain_24h: 0.0, rain_since_midnight: 0.0,
-#     humidity: 100, pressure: 0.0, luminosity: nil, snow: 0.0
+#     humidity: 100, pressure: 0.0, luminosity: nil, snow: nil,
+#     timestamp: "12345678", raw_weather_data: "c000s000g000t000r000p000P000h00b00000"
 #   }
 ```
+
+A field the report leaves out is `nil`, so a station that sends no snow gauge reading is
+distinguishable from one reporting no snow.
 
 Weather data embedded in a position comment is detected and extracted automatically into
 the same `:wx` field, and the comment is cleaned of it.
@@ -189,7 +202,8 @@ packet.data_extended.speed       #=> 36.0
 | `/` | `:timestamped_position` | |
 | `@` | `:timestamped_position_with_message` | |
 | `` ` `` | `:mic_e` | Position, course/speed, altitude, message bits |
-| `'` | `:mic_e_old` | Old Mic-E; `0x1C`/`0x1D` are the rev-0 forms |
+| `'` | `:mic_e_old` | Old Mic-E |
+| `0x1C` `0x1D` | `:mic_e` / `:mic_e_old` | Rev-0 (current and old) Mic-E |
 | `_` | `:weather` | Full weather field set |
 | `;` | `:object` | Live/killed, course/speed, altitude, RNG, DAO, weather |
 | `)` | `:item` | Live/killed, course/speed, altitude, RNG, DAO, weather |
@@ -217,6 +231,7 @@ reference `Ham::APRS::FAP` parser:
 - A leading data extension — course/speed (`088/036`), PHG (`PHG5132`), RNG (`RNG0050`)
   or DFS (`DFS2360`) — parsed as mutually exclusive alternatives and removed from the
   comment; a course/speed pair followed by `/BRG/NRQ` is decoded as a DF report
+  (`bearing`, `nrq`, `df_hits`, `df_range`, `df_quality`)
 - Altitude anywhere in the comment (`/A=001234`), validated to −10 000..500 000 ft
 - Base91 telemetry embedded in the comment (`|SS...|`), removed from the comment and
   decoded into `telemetry: %{seq: integer, vals: [integer], bits: String.t() | nil}`
@@ -231,9 +246,11 @@ reference `Ham::APRS::FAP` parser:
 ## Other public helpers
 
 - `Aprs.version/0` — library version string
+- `Aprs.parse_datatype/1` — the data type of an information field, without parsing it
 - `Aprs.AX25` — callsign and path parsing/validation
 - `Aprs.KISSHelpers` — KISS ↔ TNC2 frame conversion
 - `Aprs.DeviceParser` — device identification from a packet or raw string
+- `Aprs.PHGHelpers` — decode the digits of a PHG or DFS value
 - `Aprs.Convert` — Ultimeter unit conversions
 
 ## Development

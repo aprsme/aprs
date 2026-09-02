@@ -7,7 +7,14 @@ defmodule Aprs.Object do
   @typep object_map :: %{:data_type => :object, optional(atom()) => object_value()}
 
   @doc """
-  Parse an APRS object string.
+  Parse an APRS object report, with or without its `;` data type indicator.
+
+  The name is a fixed nine bytes, followed by the `*` (live) or `_` (killed)
+  status byte and a seven-byte timestamp. The remainder is parsed as an
+  uncompressed or compressed position followed by the shared comment pipeline.
+  Returns `:object_name`, `:live_killed`, `:alive`, `:timestamp` and the
+  position fields; a report too short to split comes back as `:raw_data`
+  alone.
   """
   @spec parse(String.t()) :: object_map()
   def parse(<<";", object_name::binary-size(9), live_killed::binary-size(1), timestamp::binary-size(7), rest::binary>>) do

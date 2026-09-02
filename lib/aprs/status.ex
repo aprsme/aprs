@@ -12,7 +12,12 @@ defmodule Aprs.Status do
   defguardp is_grid_subsquare(b) when (b >= ?A and b <= ?X) or (b >= ?a and b <= ?x)
 
   @doc """
-  Parses an APRS status string.
+  Parse an APRS status report, with or without its `>` data type indicator.
+
+  A leading `DDHHMM` timestamp, a four- or six-character Maidenhead locator
+  with its symbol, and a trailing `^` beam heading and ERP are each decoded
+  when present, and are absent from the returned map when they are not. What
+  is left is `:status_text`.
   """
   @spec parse(String.t()) :: map()
   def parse(<<">", status::binary>>), do: parse_status(status)

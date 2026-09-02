@@ -4,6 +4,8 @@ defmodule Aprs.ConvertTest do
 
   alias Aprs.Convert
 
+  doctest Convert
+
   describe "wind/3" do
     test "converts ultimeter wind speed to mph" do
       # Test conversion factor: 0.0621371192

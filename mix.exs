@@ -2,7 +2,7 @@ defmodule Aprs.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/aprsme/aprs"
-  @version "2.0.0"
+  @version "2.0.1"
 
   def project do
     [
@@ -44,14 +44,14 @@ defmodule Aprs.MixProject do
         "GitHub" => @source_url,
         "HexDocs" => "https://hexdocs.pm/aprs"
       },
-      files: ["lib", "mix.exs", "README.md", "LICENSE"]
+      files: ["lib", "mix.exs", "README.md", "CHANGELOG.md", "LICENSE"]
     ]
   end
 
   defp docs do
     [
       main: "readme",
-      extras: ["README.md", "LICENSE"],
+      extras: ["README.md", "CHANGELOG.md", "LICENSE"],
       source_url: @source_url,
       source_ref: "v#{@version}",
       formatters: ["html"]

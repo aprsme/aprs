@@ -3,6 +3,12 @@ defmodule Aprs.SpecialDataHelpers do
   Helpers for special APRS data types: PEET logging and invalid/test data.
   """
 
+  @doc """
+  Parse a Peet Bros logging packet (`#` or `*`) into `:peet_data`.
+
+  The payload is returned as it arrived; the field layout depends on the
+  station's logging mode and is not decoded here.
+  """
   @spec parse_peet_logging(String.t()) :: map()
   def parse_peet_logging(<<"*", peet_data::binary>>) do
     %{
@@ -18,6 +24,9 @@ defmodule Aprs.SpecialDataHelpers do
     }
   end
 
+  @doc """
+  Parse an invalid-or-test packet (`,`) into `:test_data`.
+  """
   @spec parse_invalid_test_data(String.t()) :: map()
   def parse_invalid_test_data(<<",", test_data::binary>>) do
     %{

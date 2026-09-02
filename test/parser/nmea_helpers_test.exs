@@ -4,6 +4,8 @@ defmodule Aprs.NMEAHelpersTest do
 
   alias Aprs.NMEAHelpers
 
+  doctest NMEAHelpers
+
   describe "parse_nmea_coordinate/2" do
     test "parses valid latitude coordinates with correct DD+MM/60 conversion" do
       # 4903.50 = 49 degrees, 03.50 minutes = 49 + 3.50/60 = 49.058333...
