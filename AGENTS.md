@@ -19,10 +19,10 @@ The library has **no runtime dependencies** — it is pure Elixir and relies onl
 ### Setup and Dependencies
 - `mix deps.get` - Install dependencies
 - `mix compile` - Compile the project
-- `mix docs` - Generate documentation
+- `mix docs` - Generate documentation (README, CHANGELOG and LICENSE ship as extras)
 
 ### Testing
-- `mix test` - Run full test suite (~900 tests/properties)
+- `mix test` - Run full test suite (~820 tests, properties and doctests)
 - `mix test --stale` - Run only tests affected by code changes
 - `mix test.watch` - Continuous testing with file watching (mix_test_watch)
 - `mix test --cover` - Generate test coverage reports
@@ -81,6 +81,7 @@ Message parsing lives in `Aprs.parse_data/3` in the main module (there is no sep
 - Each parser module has a corresponding test file (e.g., `position_test.exs`)
 - Tests use ExUnit framework with standard assertions
 - Property-based testing with StreamData (`*_property_test.exs`) for edge cases
+- Doctests run for `Aprs`, `Aprs.Convert`, `Aprs.NMEAHelpers` and `Aprs.TelemetryHelpers`, so an `iex>` example in those modules is executable and must stay correct
 - Comprehensive coverage across all packet types and edge cases, including invalid encoding and malformed packets
 
 ## Data Types and Parsing
@@ -118,7 +119,7 @@ Derived types that can appear as the final `data_type` include `:mic_e_error`,
 - `data_type` - Packet type atom
 - `data_extended` - Type-specific parsed data (also flattened into the top level)
 - `received_at` - Timestamp of parsing
-- Reference-parser compatibility fields: `srccallsign`, `dstcallsign`, `body`, `origpacket`, `header`, `alive`, `type` (standard type string), `digipeaters`, `posambiguity`, `format`, `messaging`, `symboltable`, `symbolcode`, `posresolution`, `daodatumbyte`, `gpsfixstatus`, `mbits`, `message`, `phg`, `wx`, `radiorange`, `itemname`
+- Reference-parser compatibility fields: `srccallsign`, `dstcallsign`, `body`, `origpacket`, `header`, `alive`, `type` (standard type string), `digipeaters`, `posambiguity`, `format`, `messaging`, `symboltable`, `symbolcode`, `daodatumbyte`, `gpsfixstatus`, `mbits`, `message`, `phg`, `wx`, `radiorange`, `itemname`; `posresolution` is added by the position parsers, so it is present only on packets that carry a position
 - `resultcode` / `resultmsg` - `"success"` / `"OK"` on a successful parse
 
 ## Code Style Guidelines
@@ -131,12 +132,21 @@ Derived types that can appear as the final `data_type` include `:mic_e_error`,
 - Implement comprehensive error handling
 - Run `mix format` before committing
 - Address all Dialyzer warnings
+- Every public function carries a `@doc` and a `@spec`; keep it that way when adding one
+- `Aprs.version/0` reads the version from `mix.exs` at compile time - do not hardcode a version string anywhere in `lib/`
 
 ## Git Workflow
 
 - **NEVER commit or push directly to `main`.** Always create a feature branch off `main` for any code change, push the branch, and open a pull request (`gh pr create`) for review.
 - One branch per logical change; keep the branch rebased on `main` rather than merging `main` into it.
 - Make sure `mix format --check-formatted`, `mix credo`, and `mix test` pass before opening the PR — CI runs the same three checks.
+
+## Releasing
+
+- Bump `@version` in `mix.exs` only; `Aprs.version/0` and the docs `source_ref` follow it.
+- Add the matching section to `CHANGELOG.md` and check the README install snippet still
+  names the right `~>` requirement.
+- `mix hex.publish` ships `lib`, `mix.exs`, `README.md`, `CHANGELOG.md` and `LICENSE`.
 
 ## Git Commit Guidelines
 

@@ -3,8 +3,8 @@ defmodule Aprs.MainTest do
   use ExUnitProperties
 
   describe "version/0" do
-    test "returns version string" do
-      assert Aprs.version() == "1.0.1"
+    test "returns the version mix.exs declares" do
+      assert Aprs.version() == Mix.Project.config()[:version]
       assert is_binary(Aprs.version())
     end
   end

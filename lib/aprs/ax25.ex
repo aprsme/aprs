@@ -4,7 +4,11 @@ defmodule Aprs.AX25 do
   """
 
   @doc """
-  Parse and validate an AX.25 callsign. Returns {:ok, {base, ssid}} or {:error, reason}.
+  Parse and validate an AX.25 callsign.
+
+  Returns `{:ok, {base_callsign, ssid}}`, with an SSID of `"0"` when the
+  callsign carries none, or `{:error, reason}` when the callsign is not a legal
+  AX.25 address.
   """
   @spec parse_callsign(String.t()) :: {:ok, {String.t(), String.t()}} | {:error, atom() | String.t()}
   def parse_callsign(""), do: {:error, :invalid_packet}

@@ -6,7 +6,10 @@ defmodule Aprs.Weather do
   alias Aprs.WeatherHelpers
 
   @doc """
-  Parses a positionless APRS weather report.
+  Parse a positionless APRS weather report (the `_` data type).
+
+  Returns the weather fields with `data_type: :weather`. Fields the report
+  omits are `nil`.
   """
   @spec parse(String.t()) :: map()
   def parse(data) do

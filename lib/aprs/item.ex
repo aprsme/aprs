@@ -6,7 +6,13 @@ defmodule Aprs.Item do
   import Aprs.Guards
 
   @doc """
-  Parse an APRS item string.
+  Parse an APRS item report, data type indicator included.
+
+  The name runs to the `!` (live) or `_` (killed) status byte, and the rest is
+  parsed as an uncompressed or compressed position followed by the shared
+  comment pipeline. Returns `:item_name`/`:itemname`, `:live_killed`, `:alive`
+  and the position fields; a report whose name cannot be delimited comes back
+  as `:raw_data` alone.
   """
   @spec parse(String.t()) :: map()
   def parse(<<item_indicator, item_name_and_data::binary>>) when item_indicator in [?%, ?)] do

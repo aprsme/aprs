@@ -58,6 +58,15 @@ defmodule Aprs.MicE do
            telemetry: map() | nil
          }
 
+  @doc """
+  Parse a Mic-E information field against its destination callsign.
+
+  The destination carries the latitude, the message bits, the longitude offset
+  and the hemispheres, so it is required; a `nil` destination gives a map with
+  `data_type: :mic_e_error`. The information field supplies the longitude,
+  speed, course and symbol, and the comment supplies the altitude, the device
+  identifier, a DAO extension and base-91 telemetry.
+  """
   @spec parse(binary(), String.t() | nil, :mic_e | :mic_e_old) :: map()
   def parse(data, destination, data_type \\ :mic_e)
 

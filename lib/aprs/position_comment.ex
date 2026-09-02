@@ -12,6 +12,15 @@ defmodule Aprs.PositionComment do
   @minimum_altitude -10_000.0
   @maximum_altitude 500_000.0
 
+  @doc """
+  Run the comment pipeline over a parsed object or item position.
+
+  Takes the position map with its raw `:comment`, pulls out each extension in
+  the order the reference parser uses, and returns the map with `:comment`
+  cleaned and `:course`, `:speed`, `:altitude`, `:radiorange`, `:phg`, `:dao`
+  and `:weather` filled in where the comment carried them. Any DAO precision is
+  applied to `:latitude` and `:longitude`.
+  """
   @spec parse(map()) :: map()
   def parse(%{comment: comment} = position) when is_binary(comment) do
     {course, speed, comment} = extract_course_speed(position, comment)

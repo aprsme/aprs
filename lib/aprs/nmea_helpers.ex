@@ -7,6 +7,18 @@ defmodule Aprs.NMEAHelpers do
 
   @feet_per_metre 3.280839895
 
+  @doc """
+  Convert an NMEA `DDMM.MMMM` coordinate and its hemisphere letter to degrees.
+
+  ## Examples
+
+      iex> Aprs.NMEAHelpers.parse_nmea_coordinate("4903.50", "N")
+      {:ok, 49.05833333333333}
+
+      iex> Aprs.NMEAHelpers.parse_nmea_coordinate("4903.50", "X")
+      {:error, "Invalid coordinate direction"}
+
+  """
   @spec parse_nmea_coordinate(term(), term()) :: {:ok, float()} | {:error, String.t()}
   def parse_nmea_coordinate(value, direction) when is_binary(value) and is_binary(direction) do
     case Float.parse(value) do
@@ -24,6 +36,12 @@ defmodule Aprs.NMEAHelpers do
 
   def parse_nmea_coordinate(_, _), do: {:error, "Invalid coordinate format"}
 
+  @doc """
+  Parse an NMEA sentence or a Peet Bros `$ULTW` packet.
+
+  `RMC`, `GGA`, `GLL`, `VTG` and `WPL` are decoded, from any two-letter talker
+  id (`$GPRMC`, `$GNRMC`, ...). The checksum is stripped and not verified.
+  """
   @spec parse_nmea_sentence(term()) :: {:ok, map()} | {:error, String.t()}
   def parse_nmea_sentence(<<"$", sentence::binary>>), do: parse_sentence(sentence, true)
   def parse_nmea_sentence(sentence) when is_binary(sentence), do: parse_sentence(sentence, false)
