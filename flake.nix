@@ -35,11 +35,11 @@
             inherit system;
             overlays = [
               # Pin specific Elixir and Erlang versions to match .tool-versions:
-              # Elixir 1.20.3-otp-29, Erlang 29.0.5.
+              # Elixir 1.20.4-otp-29, Erlang 29.0.6.
               (
                 final: prev:
                 let
-                  # nixpkgs ships OTP 29.0.5, so the interpreter comes straight
+                  # nixpkgs ships OTP 29.0.6, so the interpreter comes straight
                   # from the binary cache rather than being rebuilt from a
                   # tarball. Elixir must resolve through this same OTP 29 set so
                   # the dev shell matches .tool-versions.
@@ -48,7 +48,7 @@
                 {
                   erlang = beam29.erlang;
 
-                  # Elixir 1.20 built against Erlang 29 (1.20.3-otp-29)
+                  # Elixir 1.20 built against Erlang 29 (1.20.4-otp-29)
                   elixir = beam29.elixir_1_20;
 
                   # Keep beamPackages on the same pins so any BEAM tool taken
