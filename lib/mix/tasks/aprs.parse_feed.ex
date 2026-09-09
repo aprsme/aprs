@@ -40,7 +40,8 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
     * `--server` / `-s` - APRS-IS host (default: `noam.aprs2.net`)
     * `--port` / `-p` - APRS-IS port (default: `10152`, the unfiltered feed)
     * `--filter` / `-f` - server-side filter; requires a filter port such as 14580
-    * `--duration` / `-d` - seconds to run, `0` for unlimited (default: `60`)
+    * `--duration` / `-d` - seconds to run, fractional allowed, `0` for
+      unlimited (default: `60`)
     * `--limit` / `-n` - stop after this many packets (default: unlimited)
     * `--max-failures` - stop after this many failures (default: unlimited)
     * `--callsign` - login callsign (default: `$APRS_CALLSIGN`, else `N0CALL`)
@@ -87,7 +88,7 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
           server: :string,
           port: :integer,
           filter: :string,
-          duration: :integer,
+          duration: :float,
           limit: :integer,
           max_failures: :integer,
           callsign: :string,
@@ -106,7 +107,7 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
     case connect(config) do
       {:ok, socket} ->
         counts = stream(socket, config, io)
-        :ok = :gen_tcp.close(socket)
+        :ok = config.transport.close(socket)
         :ok = File.close(io)
         print_summary(counts, config)
 
@@ -121,6 +122,7 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
     duration = Keyword.get(opts, :duration, @default_duration)
 
     %{
+      transport: transport(),
       server: Keyword.get(opts, :server, @default_server),
       port: Keyword.get(opts, :port, @default_port),
       filter: Keyword.get(opts, :filter),
@@ -140,7 +142,7 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
   defp mode(true), do: :hard
   defp mode(false), do: :all
 
-  defp deadline(duration) when is_integer(duration) and duration > 0 do
+  defp deadline(duration) when is_number(duration) and duration > 0 do
     System.monotonic_time(:millisecond) + duration * 1_000
   end
 
@@ -186,7 +188,7 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
   end
 
   defp open_session(address, config) do
-    case transport().connect(address, config.port, [:binary, active: false, packet: :raw], @connect_timeout) do
+    case config.transport.connect(address, config.port, [:binary, active: false, packet: :raw], @connect_timeout) do
       {:ok, socket} -> send_login(socket, config)
       {:error, reason} -> {:error, reason}
     end
@@ -195,19 +197,22 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
   # An address whose login cannot be sent is an address this run cannot use, so
   # the socket goes and the pool walk moves on to the next one.
   defp send_login(socket, config) do
-    case transport().send(socket, login_string(config)) do
+    case config.transport.send(socket, login_string(config)) do
       :ok ->
         {:ok, socket}
 
       {:error, reason} ->
-        transport().close(socket)
+        config.transport.close(socket)
         {:error, reason}
     end
   end
 
-  # The session transport is swapped in tests to fail a send on a socket that
-  # has only just connected, which no timing on a real socket can guarantee.
-  defp transport, do: Application.get_env(:aprs, :feed_transport, :gen_tcp)
+  # The session transport is read once, from the process dictionary rather than
+  # from the application environment, so a test can script a whole session -
+  # chunk boundaries, socket errors, a send that fails on a freshly connected
+  # socket - without mutating state that a concurrent test can see. The run
+  # happens in the calling process, so a process-local lookup reaches it.
+  defp transport, do: Process.get(:aprs_feed_transport, :gen_tcp)
 
   defp format_address(address), do: address |> :inet.ntoa() |> List.to_string()
 
@@ -241,7 +246,7 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
   defp describe_run(config) do
     limits =
       [
-        if(config.duration > 0, do: "#{config.duration}s"),
+        if(config.duration > 0, do: format_seconds(config.duration)),
         if(config.limit, do: "#{config.limit} packets"),
         if(config.max_failures, do: "#{config.max_failures} failures")
       ]
@@ -252,6 +257,9 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
     Mix.shell().info("Parsing feed; will stop after #{stop_when}. Failures: #{config.output}")
   end
 
+  defp format_seconds(seconds) when seconds == trunc(seconds), do: "#{trunc(seconds)}s"
+  defp format_seconds(seconds), do: "#{seconds}s"
+
   defp loop(socket, state) do
     case stop_reason(state) do
       nil -> receive_chunk(socket, state)
@@ -260,12 +268,22 @@ defmodule Mix.Tasks.Aprs.ParseFeed do
   end
 
   defp receive_chunk(socket, state) do
-    case :gen_tcp.recv(socket, 0, @recv_timeout) do
+    case state.config.transport.recv(socket, 0, recv_timeout(state.config.deadline)) do
       {:ok, chunk} -> loop(socket, handle_chunk(chunk, state))
       {:error, :timeout} -> loop(socket, state)
       {:error, :closed} -> {state, :connection_closed}
       {:error, reason} -> {state, {:socket_error, reason}}
     end
+  end
+
+  # Blocking past the deadline would overshoot the run by up to a whole idle
+  # receive, so an idle receive only waits for as long as the run has left.
+  defp recv_timeout(nil), do: @recv_timeout
+
+  defp recv_timeout(deadline) do
+    remaining = deadline - System.monotonic_time(:millisecond)
+
+    remaining |> max(0) |> min(@recv_timeout) |> round()
   end
 
   defp stop_reason(state) do

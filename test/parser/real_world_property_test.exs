@@ -23,13 +23,13 @@ defmodule Aprs.RealWorldPropertyTest do
                     max_length: 8
                   ),
                 has_qconstruct <- boolean(),
-                has_asterisk <- boolean() do
+                has_asterisk <- boolean(),
+                qtype <- member_of(["qAC", "qAR", "qAO", "qAS", "qAU"]),
+                server <- member_of(["T2TOKYO", "T2TEXAS", "T2SYDNEY", "T2NORWAY"]) do
         base_path = "APRS"
 
         path =
           if has_qconstruct do
-            qtype = Enum.random(["qAC", "qAR", "qAO", "qAS", "qAU"])
-            server = Enum.random(["T2TOKYO", "T2TEXAS", "T2SYDNEY", "T2NORWAY"])
             base_path <> "," <> Enum.join(hops, ",") <> "," <> qtype <> "," <> server
           else
             hop_path = Enum.join(hops, ",")
@@ -96,7 +96,8 @@ defmodule Aprs.RealWorldPropertyTest do
     property "handles device-specific prefixes and suffixes" do
       check all device <- member_of(["APRS", "APDW17", "APMI06", "APLRG1", "APDG03", "APU25N", "APDR16"]),
                 suffix <- string(:alphanumeric, max_length: 5),
-                prefix <- member_of(["!", "@", "=", "/", "`", "'", ">", ";"]) do
+                prefix <- member_of(["!", "@", "=", "/", "`", "'", ">", ";"]),
+                mic_e_bytes <- list_of(integer(33..127), length: 8) do
         path =
           if suffix == "" do
             device
@@ -111,7 +112,7 @@ defmodule Aprs.RealWorldPropertyTest do
             "@" -> "@032035z4903.50N/07201.75W>"
             "=" -> "=4903.50N/07201.75W>"
             "/" -> "/032035z4903.50N/07201.75W>"
-            "`" -> "`" <> :binary.list_to_bin(Enum.map(1..8, fn _ -> :rand.uniform(95) + 32 end))
+            "`" -> "`" <> :binary.list_to_bin(mic_e_bytes)
             ">" -> ">Device status message"
             ";" -> ";OBJECT   *032035z4903.50N/07201.75W>"
             _ -> "!4903.50N/07201.75W>"
@@ -129,12 +130,15 @@ defmodule Aprs.RealWorldPropertyTest do
     property "handles complex comment fields with multiple data extensions" do
       check all base_comment <- string(:printable, max_length: 20),
                 extensions <-
-                  list_of(member_of(["PHG", "RNG", "DFS", "DAO", "ALTITUDE", "DIGI"]), min_length: 0, max_length: 6) do
+                  list_of(member_of(["PHG", "RNG", "DFS", "DAO", "ALTITUDE", "DIGI"]), min_length: 0, max_length: 6),
+                phg_digits <- list_of(integer(1..9), length: 4),
+                rng_value <- integer(1..9999),
+                alt_value <- integer(1..99_999) do
         comment = base_comment
 
         comment =
           if "PHG" in extensions do
-            phg_val = "PHG#{:rand.uniform(9)}#{:rand.uniform(9)}#{:rand.uniform(9)}#{:rand.uniform(9)}"
+            phg_val = "PHG" <> Enum.join(phg_digits)
             comment <> phg_val
           else
             comment
@@ -142,7 +146,7 @@ defmodule Aprs.RealWorldPropertyTest do
 
         comment =
           if "RNG" in extensions do
-            rng_val = "RNG#{String.pad_leading(to_string(:rand.uniform(9999)), 4, "0")}"
+            rng_val = "RNG#{String.pad_leading(to_string(rng_value), 4, "0")}"
             comment <> rng_val
           else
             comment
@@ -150,7 +154,7 @@ defmodule Aprs.RealWorldPropertyTest do
 
         comment =
           if "ALTITUDE" in extensions do
-            alt = "/A=#{String.pad_leading(to_string(:rand.uniform(99_999)), 6, "0")}"
+            alt = "/A=#{String.pad_leading(to_string(alt_value), 6, "0")}"
             comment <> alt
           else
             comment
@@ -192,14 +196,9 @@ defmodule Aprs.RealWorldPropertyTest do
     end
 
     property "handles binary data in Mic-E and compressed formats" do
-      check all byte_count <- integer(5..20) do
-        # Generate bytes that could appear in compressed/binary formats
-        bytes =
-          for _ <- 1..byte_count do
-            # Valid range for compressed data (ASCII 33-126)
-            :rand.uniform(126 - 33) + 33
-          end
-
+      # Generate bytes that could appear in compressed/binary formats
+      # Valid range for compressed data (ASCII 33-126)
+      check all bytes <- list_of(integer(33..126), length: 5..20) do
         binary_data = :binary.list_to_bin(bytes)
 
         # Test as compressed position

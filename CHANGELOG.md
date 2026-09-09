@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- `mix aprs.parse_feed --duration` accepts fractional seconds, and a run now
+  ends when its duration is up instead of overshooting by however much of an
+  idle receive was left (up to a second).
+
 ## [2.0.2] - 2026-09-02
 
 ### Changed

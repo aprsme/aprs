@@ -1,5 +1,9 @@
 defmodule Mix.Tasks.Aprs.ParseFeedTest do
-  use ExUnit.Case, async: false
+  # Safe to run concurrently: `Mix.Shell.Process` sends shell output to the
+  # process that produced it, the run happens in the test process, the session
+  # transport is read from that process's own dictionary, and every socket and
+  # output path is per-test.
+  use ExUnit.Case, async: true
 
   alias Mix.Tasks.Aprs.ParseFeed
 
@@ -7,15 +11,39 @@ defmodule Mix.Tasks.Aprs.ParseFeedTest do
   @bad_no_path "totally bogus line"
   @bad_payload "N0CALL>APRS:@nonsense"
 
-  # A real socket cannot be made to fail its very first send on demand, so the
-  # transport is swapped for one that does.
-  defmodule FailingLoginTransport do
+  # A transport whose whole session is a script held in the test process, so
+  # chunk boundaries, timeouts and socket errors land exactly where the test
+  # puts them instead of being coaxed out of a real socket. It also covers what
+  # no timing on a real socket can arrange: a send that fails on a connection
+  # that has only just come up, and a receive that fails with neither a timeout
+  # nor a close. A script that runs out is a server that hung up.
+  defmodule ScriptedTransport do
     @moduledoc false
 
-    defdelegate connect(address, port, options, timeout), to: :gen_tcp
-    defdelegate close(socket), to: :gen_tcp
+    def connect(_address, _port, _options, _timeout), do: {:ok, :scripted_socket}
 
-    def send(_socket, _data), do: {:error, :closed}
+    def send(_socket, login) do
+      Process.put(:login, login)
+      Process.get(:send_result, :ok)
+    end
+
+    def close(_socket) do
+      Process.put(:closed?, true)
+      :ok
+    end
+
+    def recv(_socket, _length, timeout) do
+      Process.put(:recv_timeouts, [timeout | Process.get(:recv_timeouts, [])])
+
+      case Process.get(:recvs, []) do
+        [result | rest] ->
+          Process.put(:recvs, rest)
+          result
+
+        [] ->
+          {:error, :closed}
+      end
+    end
   end
 
   setup do
@@ -37,7 +65,7 @@ defmodule Mix.Tasks.Aprs.ParseFeedTest do
 
     {port, login_task} = start_fake_aprs_is(frames, close_after_send: true)
 
-    run(port, output, ["--callsign", "TESTCALL", "--filter", "r/1/2/3"])
+    run_socket(port, output, ["--duration", "10", "--progress", "0", "--callsign", "TESTCALL", "--filter", "r/1/2/3"])
 
     login = Task.await(login_task, 5_000)
     assert login =~ "user TESTCALL pass -1 vers aprs-parse-feed #{Aprs.version()}"
@@ -57,22 +85,22 @@ defmodule Mix.Tasks.Aprs.ParseFeedTest do
   test "--hard-errors-only skips payload failures", %{output: output} do
     {port, _login} = start_fake_aprs_is([@bad_payload <> "\r\n", @bad_no_path <> "\r\n"], close_after_send: true)
 
-    run(port, output, ["--hard-errors-only"])
+    run_socket(port, output, ["--duration", "10", "--progress", "0", "--hard-errors-only"])
 
     assert [failure] = read_failures(output)
     assert failure =~ ~s("raw":"#{@bad_no_path}")
   end
 
   test "reassembles packets split across TCP chunks", %{output: output} do
-    frames = [
-      String.slice(@bad_no_path, 0..5),
-      String.slice(@bad_no_path, 6..-1//1) <> "\r\n",
-      @good <> "\r\n"
-    ]
+    script(
+      recvs: [
+        {:ok, String.slice(@bad_no_path, 0..5)},
+        {:ok, String.slice(@bad_no_path, 6..-1//1) <> "\r\n"},
+        {:ok, @good <> "\r\n"}
+      ]
+    )
 
-    {port, _login} = start_fake_aprs_is(frames, close_after_send: true)
-
-    run(port, output, [])
+    run_scripted(output, ["--duration", "10", "--progress", "0"])
 
     assert [failure] = read_failures(output)
     assert failure =~ ~s("raw":"#{@bad_no_path}")
@@ -81,23 +109,21 @@ defmodule Mix.Tasks.Aprs.ParseFeedTest do
   test "writes an empty file when nothing fails", %{output: output} do
     {port, _login} = start_fake_aprs_is([@good <> "\r\n"], close_after_send: true)
 
-    run(port, output, [])
+    run_socket(port, output, ["--duration", "10", "--progress", "0"])
 
     assert File.read!(output) == ""
   end
 
   test "exits when no address answers", %{output: output} do
-    assert catch_exit(run(65_000, output, ["--server", "127.0.0.1"])) == {:shutdown, 1}
+    assert catch_exit(run_socket(65_000, output, ["--duration", "10", "--progress", "0"])) == {:shutdown, 1}
   end
 
   test "an address whose login cannot be sent is closed and abandoned", %{output: output} do
-    {port, _login} = start_fake_aprs_is([], close_after_send: false)
+    script(send_result: {:error, :closed})
 
-    Application.put_env(:aprs, :feed_transport, FailingLoginTransport)
-    on_exit(fn -> Application.delete_env(:aprs, :feed_transport) end)
+    assert catch_exit(run_scripted(output, ["--duration", "1", "--progress", "0"])) == {:shutdown, 1}
 
-    assert catch_exit(run_with(port, output, ["--duration", "1", "--progress", "0"])) == {:shutdown, 1}
-
+    assert Process.get(:closed?), "the socket of an address that cannot be used must be closed"
     assert_receive {:mix_shell, :info, ["  127.0.0.1 unavailable (:closed), trying next address"]}
     assert_receive {:mix_shell, :error, [message]}
     assert message =~ "all_addresses_failed"
@@ -107,33 +133,61 @@ defmodule Mix.Tasks.Aprs.ParseFeedTest do
     {port, _login} = start_fake_aprs_is([], close_after_send: false)
 
     send(self(), :parse_feed_stop)
-    run_with(port, output, ["--duration", "0", "--progress", "0"])
+    run_socket(port, output, ["--duration", "0", "--progress", "0"])
 
-    assert_summary("Stopped: stop signal received")
+    assert_shell_info("Stopped: stop signal received")
   end
 
   test "with no duration limit the run lasts until the server hangs up", %{output: output} do
     {port, _login} = start_fake_aprs_is([@good <> "\r\n"], close_after_send: true)
 
-    run_with(port, output, ["--duration", "0", "--progress", "0"])
+    run_socket(port, output, ["--duration", "0", "--progress", "0"])
 
-    assert_summary("Stopped: connection closed by server")
+    assert_shell_info("Stopped: connection closed by server")
   end
 
-  test "stops when the duration elapses, waiting through idle receives", %{output: output} do
+  test "stops when the duration elapses", %{output: output} do
     {port, _login} = start_fake_aprs_is([], close_after_send: false)
 
-    run_with(port, output, ["--duration", "1", "--progress", "0"])
+    run_socket(port, output, ["--duration", "0.05", "--progress", "0"])
 
-    assert_summary("Stopped: duration elapsed")
+    assert_shell_info("Stopped: duration elapsed")
+  end
+
+  test "describes a whole-number duration without a decimal point", %{output: output} do
+    script(recvs: [])
+
+    run_scripted(output, ["--duration", "10", "--progress", "0"])
+
+    assert_shell_info("will stop after 10s (or a stop signal)")
+  end
+
+  test "an idle receive does not end the run", %{output: output} do
+    script(recvs: [{:error, :timeout}, {:error, :timeout}, {:ok, @bad_no_path <> "\r\n"}])
+
+    run_scripted(output, ["--duration", "0", "--progress", "0"])
+
+    # The frame was still read after two idle receives, so neither ended the run.
+    assert [failure] = read_failures(output)
+    assert failure =~ ~s("raw":"#{@bad_no_path}")
+    assert_shell_info("Stopped: connection closed by server")
+  end
+
+  test "an idle receive is never allowed to wait past the deadline", %{output: output} do
+    script(recvs: [{:error, :timeout}])
+
+    run_scripted(output, ["--duration", "0.02", "--progress", "0"])
+
+    timeouts = Process.get(:recv_timeouts, [])
+    assert Enum.all?(timeouts, &(&1 <= 20)), "an idle receive waited past the deadline: #{inspect(timeouts)}"
   end
 
   test "stops when the packet limit is reached", %{output: output} do
     {port, _login} = start_fake_aprs_is([@good <> "\r\n", @good <> "\r\n"], close_after_send: false)
 
-    run_with(port, output, ["--duration", "10", "--progress", "0", "--limit", "1"])
+    run_socket(port, output, ["--duration", "10", "--progress", "0", "--limit", "1"])
 
-    assert_summary("Stopped: packet limit reached")
+    assert_shell_info("Stopped: packet limit reached")
     assert File.read!(output) == ""
   end
 
@@ -141,26 +195,24 @@ defmodule Mix.Tasks.Aprs.ParseFeedTest do
     frames = [@bad_no_path <> "\r\n", @bad_no_path <> "\r\n"]
     {port, _login} = start_fake_aprs_is(frames, close_after_send: false)
 
-    run_with(port, output, ["--duration", "10", "--progress", "0", "--max-failures", "1"])
+    run_socket(port, output, ["--duration", "10", "--progress", "0", "--max-failures", "1"])
 
-    assert_summary("Stopped: failure limit reached")
+    assert_shell_info("Stopped: failure limit reached")
   end
 
   test "reports a socket error that is neither a timeout nor a close", %{output: output} do
-    {port, _login} = start_fake_aprs_is([], close_after_send: false)
+    script(recvs: [{:error, :einval}])
 
-    break_client_socket(port)
-    run_with(port, output, ["--duration", "10", "--progress", "0"])
+    run_scripted(output, ["--duration", "10", "--progress", "0"])
 
-    assert_summary("Stopped: socket error: :einval")
+    assert_shell_info("Stopped: socket error: :einval")
   end
 
   test "logs an unterminated frame past the frame limit and resyncs", %{output: output} do
     overlong = String.duplicate("x", 1100)
-    frames = [overlong, {:pause, 200}, "\r\n" <> @bad_no_path <> "\r\n"]
-    {port, _login} = start_fake_aprs_is(frames, close_after_send: true)
+    script(recvs: [{:ok, overlong}, {:ok, "\r\n" <> @bad_no_path <> "\r\n"}])
 
-    run_with(port, output, ["--duration", "10", "--progress", "0"])
+    run_scripted(output, ["--duration", "10", "--progress", "0"])
 
     assert [overlong_failure, resynced] = read_failures(output)
     assert overlong_failure =~ ~s("error":"frame_exceeds_max_length")
@@ -178,7 +230,7 @@ defmodule Mix.Tasks.Aprs.ParseFeedTest do
 
     {port, _login} = start_fake_aprs_is(frames, close_after_send: true)
 
-    run_with(port, output, ["--duration", "10", "--progress", "0"])
+    run_socket(port, output, ["--duration", "10", "--progress", "0"])
 
     assert_receive {:mix_shell, :info, ["APRS-IS: # first"]}
     assert_receive {:mix_shell, :info, ["APRS-IS: # second"]}
@@ -189,7 +241,7 @@ defmodule Mix.Tasks.Aprs.ParseFeedTest do
   test "reports progress every N packets", %{output: output} do
     {port, _login} = start_fake_aprs_is([@good <> "\r\n", @good <> "\r\n"], close_after_send: true)
 
-    run_with(port, output, ["--duration", "10", "--progress", "1"])
+    run_socket(port, output, ["--duration", "10", "--progress", "1"])
 
     assert_receive {:mix_shell, :info, ["  2 packets, 0 failures"]}
   end
@@ -197,7 +249,7 @@ defmodule Mix.Tasks.Aprs.ParseFeedTest do
   test "stays quiet until the progress interval is reached", %{output: output} do
     {port, _login} = start_fake_aprs_is([@good <> "\r\n", @good <> "\r\n"], close_after_send: true)
 
-    run_with(port, output, ["--duration", "10", "--progress", "5"])
+    run_socket(port, output, ["--duration", "10", "--progress", "5"])
 
     refute_received {:mix_shell, :info, ["  2 packets, 0 failures"]}
   end
@@ -220,68 +272,34 @@ defmodule Mix.Tasks.Aprs.ParseFeedTest do
     assert message =~ "dns_failed"
   end
 
-  defp run(port, output, extra) do
-    ParseFeed.run(
-      [
-        "--server",
-        "127.0.0.1",
-        "--port",
-        Integer.to_string(port),
-        "--duration",
-        "10",
-        "--progress",
-        "0",
-        "--output",
-        output
-      ] ++ extra
-    )
-  end
-
-  defp run_with(port, output, args) do
+  defp run_socket(port, output, args) do
     ParseFeed.run(["--server", "127.0.0.1", "--port", Integer.to_string(port), "--output", output] ++ args)
   end
 
-  defp assert_summary(line) do
-    assert summary_line() =~ line
+  defp run_scripted(output, args) do
+    ParseFeed.run(["--server", "127.0.0.1", "--output", output] ++ args)
   end
 
-  defp summary_line do
+  # The transport and its script live in this process, so a concurrent test
+  # cannot see either, and each test starts with an empty dictionary.
+  defp script(opts) do
+    Process.put(:aprs_feed_transport, ScriptedTransport)
+    Enum.each(opts, fn {key, value} -> Process.put(key, value) end)
+  end
+
+  # The run happens in this process, so every shell message it produced is
+  # already in the mailbox by the time it returns: nothing here waits.
+  defp assert_shell_info(fragment) do
+    assert shell_info(fragment) =~ fragment
+  end
+
+  defp shell_info(fragment) do
     receive do
       {:mix_shell, :info, [message]} ->
-        if String.contains?(message, "Stopped:"), do: message, else: summary_line()
+        if String.contains?(message, fragment), do: message, else: shell_info(fragment)
     after
-      15_000 -> flunk("no run summary was printed")
+      0 -> flunk("no shell output containing #{inspect(fragment)}")
     end
-  end
-
-  # A receive on a socket that has been switched to active mode fails with
-  # :einval, which is how a socket error other than a close is provoked here.
-  # The task runs in this process, so its socket is a port this process owns.
-  defp break_client_socket(server_port) do
-    test_pid = self()
-
-    spawn_link(fn ->
-      test_pid |> await_client_socket(server_port, 500) |> :inet.setopts(active: true)
-    end)
-
-    :ok
-  end
-
-  defp await_client_socket(pid, server_port, attempts) when attempts > 0 do
-    case Enum.find(Port.list(), &client_socket?(&1, pid, server_port)) do
-      nil ->
-        Process.sleep(10)
-        await_client_socket(pid, server_port, attempts - 1)
-
-      port ->
-        port
-    end
-  end
-
-  defp client_socket?(port, pid, server_port) do
-    Port.info(port, :name) == {:name, ~c"tcp_inet"} and
-      Port.info(port, :connected) == {:connected, pid} and
-      match?({:ok, {_address, ^server_port}}, :inet.peername(port))
   end
 
   defp read_failures(output) do
@@ -289,8 +307,8 @@ defmodule Mix.Tasks.Aprs.ParseFeedTest do
   end
 
   # Minimal APRS-IS stand-in: accepts one client, captures its login line,
-  # writes the given frames, then either idles or closes. A `{:pause, ms}`
-  # frame holds the write back so the next frame lands in its own chunk.
+  # writes the given frames, then either hangs up or holds the connection open
+  # so the run stops on one of its own limits.
   defp start_fake_aprs_is(frames, opts) do
     {:ok, listener} =
       :gen_tcp.listen(0, [:binary, ip: {127, 0, 0, 1}, active: false, packet: :line, reuseaddr: true])
@@ -300,23 +318,34 @@ defmodule Mix.Tasks.Aprs.ParseFeedTest do
     login_task =
       Task.async(fn ->
         {:ok, socket} = :gen_tcp.accept(listener, 5_000)
-        {:ok, login} = :gen_tcp.recv(socket, 0, 5_000)
+        login = login_line(socket)
         :inet.setopts(socket, packet: :raw)
-        Enum.each(frames, &write_frame(socket, &1))
+        Enum.each(frames, &:gen_tcp.send(socket, &1))
 
-        if !Keyword.get(opts, :close_after_send, false) do
-          # Hold the connection open so the task stops on its own limits.
-          Process.sleep(2_000)
+        if Keyword.fetch!(opts, :close_after_send) do
+          :gen_tcp.close(socket)
+          :gen_tcp.close(listener)
+        else
+          Process.sleep(:infinity)
         end
 
-        :gen_tcp.close(socket)
-        :gen_tcp.close(listener)
         login
       end)
+
+    # A hold is only ever ended by this: exiting normally would leave a linked
+    # task holding a listening socket, because a normal exit signal is ignored.
+    on_exit(fn -> Process.exit(login_task.pid, :kill) end)
 
     {port, login_task}
   end
 
-  defp write_frame(_socket, {:pause, milliseconds}), do: Process.sleep(milliseconds)
-  defp write_frame(socket, frame), do: :gen_tcp.send(socket, frame)
+  # A client that hangs up before sending a login is something a test sets up on
+  # purpose. Reporting it belongs to that test, not to a crash in this task that
+  # would land on whichever test happened to still be running.
+  defp login_line(socket) do
+    case :gen_tcp.recv(socket, 0, 5_000) do
+      {:ok, login} -> login
+      {:error, reason} -> {:error, reason}
+    end
+  end
 end

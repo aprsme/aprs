@@ -1,5 +1,8 @@
 defmodule Mix.Tasks.Aprs.ParseFileTest do
-  use ExUnit.Case, async: false
+  # Safe to run concurrently: `Mix.Shell.Process` sends shell output to the
+  # process that produced it, the run happens in the test process, and the
+  # input and output paths are per-test.
+  use ExUnit.Case, async: true
 
   alias Mix.Tasks.Aprs.ParseFile
 

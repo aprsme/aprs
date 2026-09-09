@@ -118,22 +118,22 @@ defmodule Aprs.ItemPropertyTest do
                   member_of(
                     ["/", "\\"] ++
                       (?0..?9 |> Enum.to_list() |> Enum.map(&<<&1>>)) ++ (?A..?F |> Enum.to_list() |> Enum.map(&<<&1>>))
-                  ) do
+                  ),
+                radius <- integer(1..999),
+                bearing <- integer(1..360),
+                length <- integer(1..999),
+                height <- integer(1..99),
+                width <- integer(1..99) do
         # Area object formats based on shape
         area_spec =
           case shape do
             "circle" ->
-              radius = :rand.uniform(999)
               "Cir#{String.pad_leading(to_string(radius), 3, "0")}"
 
             "line" ->
-              bearing = :rand.uniform(360)
-              length = :rand.uniform(999)
               "Line#{String.pad_leading(to_string(bearing), 3, "0")}/#{String.pad_leading(to_string(length), 3, "0")}"
 
             "box" ->
-              height = :rand.uniform(99)
-              width = :rand.uniform(99)
               "Box#{String.pad_leading(to_string(height), 2, "0")}x#{String.pad_leading(to_string(width), 2, "0")}"
 
             "triangle" ->
@@ -219,14 +219,15 @@ defmodule Aprs.ItemPropertyTest do
 
     property "handles malformed item packets gracefully" do
       check all name_len <- integer(0..15),
+                name_chars <-
+                  list_of(
+                    member_of(~w(A B C D E F G H I J K L M N O P Q R S T U V W X Y Z 0 1 2 3 4 5 6 7 8 9)),
+                    length: name_len
+                  ),
                 has_position <- boolean(),
                 has_live_indicator <- boolean() do
         # Generate potentially malformed names
-        name =
-          for _ <- 1..name_len//1,
-              do: Enum.random(~w(A B C D E F G H I J K L M N O P Q R S T U V W X Y Z 0 1 2 3 4 5 6 7 8 9))
-
-        name = Enum.join(name)
+        name = Enum.join(name_chars)
 
         data = ")#{name}"
         data = if has_live_indicator, do: data <> "!", else: data

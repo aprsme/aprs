@@ -36,8 +36,7 @@ defmodule Aprs.SpecialDataHelpersPropertyTest do
     end
 
     property "handles binary PEET data" do
-      check all byte_count <- integer(1..50) do
-        bytes = for _ <- 1..byte_count, do: :rand.uniform(255)
+      check all bytes <- list_of(integer(1..255), length: 1..50) do
         binary_data = :binary.list_to_bin(bytes)
 
         result = SpecialDataHelpers.parse_peet_logging(binary_data)
