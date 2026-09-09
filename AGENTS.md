@@ -22,12 +22,20 @@ The library has **no runtime dependencies** — it is pure Elixir and relies onl
 - `mix docs` - Generate documentation (README, CHANGELOG and LICENSE ship as extras)
 
 ### Testing
-- `mix test` - Run full test suite (~820 tests, properties and doctests)
+- `mix test` - Run full test suite (~990 tests, properties and doctests)
 - `mix test --stale` - Run only tests affected by code changes
 - `mix test.watch` - Continuous testing with file watching (mix_test_watch)
 - `mix test --cover` - Generate test coverage reports
 - `mix test test/parser/` - Run specific test directory
 - `mix test test/parser/position_test.exs` - Run single test file
+- `mix test --slowest N` / `mix test --slowest-modules N` - rankings only. Both
+  imply `--trace`, which pins `max_cases: 1` and runs the whole suite serially,
+  so the wall time they report is not the suite's wall time. Measure with a
+  plain `mix test` and rank with a second pass.
+- Nearly all of the duration `mix test` reports is test files being compiled
+  (they are recompiled every run); the tests themselves execute in about 0.1s,
+  which `mix test --repeat-until-failure N` shows on its later iterations.
+  `mix test --stale` is the fast loop while editing.
 
 ### Code Quality
 - `mix format` - Format code according to `.formatter.exs` (uses the Styler plugin, so formatting also rewrites style)
@@ -90,6 +98,23 @@ Message parsing lives in `Aprs.parse_data/3` in the main module (there is no sep
 - Property-based testing with StreamData (`*_property_test.exs`) for edge cases
 - Doctests run for `Aprs`, `Aprs.Convert`, `Aprs.NMEAHelpers` and `Aprs.TelemetryHelpers`, so an `iex>` example in those modules is executable and must stay correct
 - Comprehensive coverage across all packet types and edge cases, including invalid encoding and malformed packets
+- Every test file runs `async: true`. A file that has to be `async: false` names
+  the reason in a comment at its `use ExUnit.Case` line; without that, nobody
+  can tell a required constraint from an accident. Nothing in the suite mutates
+  process-global state: the feed task reads its socket transport from the
+  process dictionary (`:aprs_feed_transport`), so a test scripts a session
+  without an `Application.put_env` a concurrent test could see
+- Randomness in a property comes from generator clauses, never from `:rand` or
+  `Enum.random` in the body of a `check all`. ExUnit does seed `:rand` per test
+  from the suite seed, so a body draw still reproduces under `mix test --seed N`
+  - the problem is shrinking: StreamData can only shrink what it generated, and
+  every shrink step re-draws the body values, so a body-random failure prints the
+  unrelated clause value it happened to generate instead of the input that
+  failed. A generated value shrinks to the failure boundary at any seed
+- No test sleeps or waits on the network. Time-dependent behaviour is provoked
+  directly: the clock's per-second cache is poisoned rather than waited out, and
+  socket timeouts, chunk boundaries, socket errors and hangups are script
+  entries in the test transport
 
 ## Data Types and Parsing
 

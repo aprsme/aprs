@@ -244,12 +244,12 @@ defmodule Aprs.PropertyTest do
     property "handles messages with various addressee formats" do
       check all addressee <- string(:alphanumeric, min_length: 1, max_length: 9),
                 message <- string(:printable, max_length: 67),
-                has_msg_id <- boolean() do
+                has_msg_id <- boolean(),
+                msg_id <- integer(1..99_999) do
         padded_addr = String.pad_trailing(addressee, 9)
 
         packet =
           if has_msg_id do
-            msg_id = :rand.uniform(99_999)
             "TEST>APRS::#{padded_addr}:#{message}{#{msg_id}"
           else
             "TEST>APRS::#{padded_addr}:#{message}"

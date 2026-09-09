@@ -23,55 +23,56 @@ defmodule Aprs.MicEPropertyTest do
                 _is_north <- boolean(),
                 _lon_offset <- integer(0..2),
                 _is_west <- boolean(),
-                _msg_code <- integer(0..7) do
+                _msg_code <- integer(0..7),
+                dest_char_list <-
+                  list_of(
+                    member_of([
+                      "0",
+                      "1",
+                      "2",
+                      "3",
+                      "4",
+                      "5",
+                      "6",
+                      "7",
+                      "8",
+                      "9",
+                      "A",
+                      "B",
+                      "C",
+                      "D",
+                      "E",
+                      "F",
+                      "G",
+                      "H",
+                      "I",
+                      "J",
+                      "K",
+                      "L",
+                      "P",
+                      "Q",
+                      "R",
+                      "S",
+                      "T",
+                      "U",
+                      "V",
+                      "W",
+                      "X",
+                      "Y",
+                      "Z"
+                    ]),
+                    length: 6
+                  ),
+                info_bytes <- list_of(integer(29..127), length: 8) do
         # Mic-E encodes latitude in destination field
         # Each character encodes part of the latitude and message bits
 
         # This is a simplified test - actual Mic-E encoding is complex
         # Just verify parser doesn't crash on various destination patterns
-        for_result =
-          for _ <- 1..6 do
-            Enum.random([
-              "0",
-              "1",
-              "2",
-              "3",
-              "4",
-              "5",
-              "6",
-              "7",
-              "8",
-              "9",
-              "A",
-              "B",
-              "C",
-              "D",
-              "E",
-              "F",
-              "G",
-              "H",
-              "I",
-              "J",
-              "K",
-              "L",
-              "P",
-              "Q",
-              "R",
-              "S",
-              "T",
-              "U",
-              "V",
-              "W",
-              "X",
-              "Y",
-              "Z"
-            ])
-          end
-
-        dest_chars = Enum.join(for_result)
+        dest_chars = Enum.join(dest_char_list)
 
         # Mic-E data field contains compressed lon/speed/course
-        info_field = "`" <> :binary.list_to_bin(Enum.map(1..8, fn _ -> :rand.uniform(127 - 28) + 28 end))
+        info_field = "`" <> :binary.list_to_bin(info_bytes)
 
         packet = "TEST>#{dest_chars},WIDE1-1:#{info_field}"
 
@@ -98,7 +99,14 @@ defmodule Aprs.MicEPropertyTest do
 
     property "handles Mic-E with telemetry data" do
       check all telemetry_flag <- member_of(["`", "'"]),
-                has_telemetry <- boolean() do
+                has_telemetry <- boolean(),
+                lon_deg <- integer(29..127),
+                lon_min <- integer(29..127),
+                lon_hun <- integer(29..127),
+                speed_course <- integer(29..127),
+                speed <- integer(29..127),
+                course <- integer(29..127),
+                telemetry_bytes <- list_of(integer(29..127), length: 2) do
         # Example valid Mic-E destination
         dest = "T7RSUV"
 
@@ -106,27 +114,23 @@ defmodule Aprs.MicEPropertyTest do
         base_data =
           :binary.list_to_bin([
             # Longitude degrees
-            :rand.uniform(127 - 28) + 28,
+            lon_deg,
             # Longitude minutes
-            :rand.uniform(127 - 28) + 28,
+            lon_min,
             # Longitude hundredths
-            :rand.uniform(127 - 28) + 28,
+            lon_hun,
             # Speed/course
-            :rand.uniform(127 - 28) + 28,
+            speed_course,
             # Speed
-            :rand.uniform(127 - 28) + 28,
+            speed,
             # Course
-            :rand.uniform(127 - 28) + 28
+            course
           ])
 
         info =
           if has_telemetry do
             # Add telemetry values after position data
-            telemetry =
-              :binary.list_to_bin([
-                :rand.uniform(127 - 28) + 28,
-                :rand.uniform(127 - 28) + 28
-              ])
+            telemetry = :binary.list_to_bin(telemetry_bytes)
 
             telemetry_flag <> base_data <> telemetry
           else
@@ -147,12 +151,13 @@ defmodule Aprs.MicEPropertyTest do
                     ["/", "\\"] ++
                       (?A..?Z |> Enum.to_list() |> Enum.map(&<<&1>>)) ++ (?0..?9 |> Enum.to_list() |> Enum.map(&<<&1>>))
                   ),
-                symbol_code <- string(:ascii, length: 1) do
+                symbol_code <- string(:ascii, length: 1),
+                base_bytes <- list_of(integer(29..127), length: 8) do
         # Example Mic-E destination
         dest = "T7STUV"
 
         # Mic-E with status text
-        base_data = :binary.list_to_bin(Enum.map(1..8, fn _ -> :rand.uniform(127 - 28) + 28 end))
+        base_data = :binary.list_to_bin(base_bytes)
         info = "`" <> base_data <> symbol_table <> symbol_code <> status_text
 
         packet = "TEST>#{dest},WIDE1-1:#{info}"
@@ -169,9 +174,10 @@ defmodule Aprs.MicEPropertyTest do
 
     property "handles Mic-E altitude encoding" do
       check all altitude <- integer(-10_000..100_000),
-                has_altitude <- boolean() do
+                has_altitude <- boolean(),
+                base_bytes <- list_of(integer(29..127), length: 8) do
         dest = "T7RSUV"
-        base_data = :binary.list_to_bin(Enum.map(1..8, fn _ -> :rand.uniform(127 - 28) + 28 end))
+        base_data = :binary.list_to_bin(base_bytes)
 
         info =
           if has_altitude do
@@ -193,7 +199,8 @@ defmodule Aprs.MicEPropertyTest do
 
   describe "Mic-E message type encoding" do
     property "handles different Mic-E message types" do
-      check all msg_type <- member_of([:emergency, :priority, :custom, :standard]) do
+      check all msg_type <- member_of([:emergency, :priority, :custom, :standard]),
+                info_bytes <- list_of(integer(29..127), length: 8) do
         # Different destination patterns encode different message types
         dest =
           case msg_type do
@@ -207,7 +214,7 @@ defmodule Aprs.MicEPropertyTest do
             _ -> "T7RSUV"
           end
 
-        info = "`" <> :binary.list_to_bin(Enum.map(1..8, fn _ -> :rand.uniform(127 - 28) + 28 end))
+        info = "`" <> :binary.list_to_bin(info_bytes)
         packet = "TEST>#{dest},WIDE1-1:#{info}"
 
         result = parse_packet(packet)
@@ -282,18 +289,10 @@ defmodule Aprs.MicEPropertyTest do
 
   describe "Mic-E edge cases from real packets" do
     property "handles Mic-E packets with non-standard characters" do
-      check all dest_suffix <- string(:alphanumeric, min_length: 0, max_length: 3) do
-        # Real example patterns from packets.csv
-        destinations = ["TSPU88", "SUUVU2", "TP0V4X", "APLC13", "S7U0U6"]
-        dest = Enum.random(destinations)
-
-        # Mic-E info field with various byte values
-        info_bytes =
-          for _ <- 1..10 do
-            # Mic-E can have bytes from 0x1C to 0x7F
-            :rand.uniform(127 - 28) + 28
-          end
-
+      # Real example patterns from packets.csv; Mic-E can have bytes from 0x1C to 0x7F
+      check all dest_suffix <- string(:alphanumeric, min_length: 0, max_length: 3),
+                dest <- member_of(["TSPU88", "SUUVU2", "TP0V4X", "APLC13", "S7U0U6"]),
+                info_bytes <- list_of(integer(29..127), length: 10) do
         info = "`" <> :binary.list_to_bin(info_bytes)
         packet = "TEST>#{dest}#{dest_suffix},WIDE1-1:#{info}"
 
@@ -304,12 +303,14 @@ defmodule Aprs.MicEPropertyTest do
 
     property "handles Mic-E with manufacturer-specific data" do
       check all mfr <- member_of([" ", "!", "#", "$", "%", "&", "'", "(", ")"]),
-                data_len <- integer(0..20) do
+                data_len <- integer(0..20),
+                base_bytes <- list_of(integer(29..127), length: 8),
+                mfr_bytes <- list_of(integer(33..127), length: data_len) do
         dest = "T7RSUV"
-        base_data = :binary.list_to_bin(Enum.map(1..8, fn _ -> :rand.uniform(127 - 28) + 28 end))
+        base_data = :binary.list_to_bin(base_bytes)
 
         # Add manufacturer specific data
-        mfr_data = :binary.list_to_bin(Enum.map(1..data_len//1, fn _ -> :rand.uniform(95) + 32 end))
+        mfr_data = :binary.list_to_bin(mfr_bytes)
         info = "`" <> base_data <> mfr <> mfr_data
 
         packet = "TEST>#{dest},WIDE1-1:#{info}"

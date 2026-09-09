@@ -22,12 +22,23 @@ defmodule Aprs.ClockTest do
     end
 
     test "keeps the calendar fields correct once the cached second is stale" do
-      first = Clock.utc_now()
-      Process.sleep(1_100)
-      second = Clock.utc_now()
+      # The calendar part of a read is cached per process for the second it was
+      # computed for. Poisoning that cache with another second is exactly what a
+      # process that has sat idle across a second boundary comes back to, and it
+      # needs no waiting.
+      poison = {0, DateTime.from_unix!(0)}
+      :erlang.put({Clock, :second}, poison)
 
-      assert DateTime.after?(second, first)
-      assert second == DateTime.from_unix!(DateTime.to_unix(second, :microsecond), :microsecond)
+      datetime = Clock.utc_now()
+
+      # A stale calendar would still round-trip, so the read is also checked
+      # against the real clock.
+      assert_in_delta DateTime.to_unix(datetime, :microsecond), :os.system_time(:microsecond), 1_000_000
+      assert datetime == DateTime.from_unix!(DateTime.to_unix(datetime, :microsecond), :microsecond)
+
+      # Guards against this test going vacuous if the cache key ever changes:
+      # an unread poison means the read never consulted the cache at all.
+      refute :erlang.get({Clock, :second}) == poison
     end
 
     test "reads the clock independently in each process" do
