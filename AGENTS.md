@@ -10,7 +10,7 @@ The library has **no runtime dependencies** — it is pure Elixir and relies onl
 
 ## Development Environment
 
-- Elixir/OTP versions are pinned in `.tool-versions` (currently Elixir 1.20.3-otp-29, Erlang 29.0.5); `mix.exs` requires `elixir ~> 1.17`.
+- Elixir/OTP versions are pinned in `.tool-versions` (currently Elixir 1.20.4-otp-29, Erlang 29.0.6); `mix.exs` requires `elixir ~> 1.17`.
 - A Nix flake dev shell is provided (`flake.nix`, `nix/`). With direnv installed, `.envrc` (`use flake .`) loads it automatically; otherwise `nix develop`.
 - CI runs on GitHub Actions (`.github/workflows/ci.yml`): format check, Credo, and the test suite on `push`/`pull_request` against `main`. It resolves versions from `.tool-versions` via `erlef/setup-beam`.
 
