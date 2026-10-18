@@ -2,6 +2,20 @@
   lib,
   stdenv,
   mkShell,
+  # mkShell prepends stdenv's tools (GNU coreutils, gnugrep, gnused, gawk,
+  # findutils, diffutils, ...) to PATH, which shadows macOS builtins like
+  # cp/grep/sed with incompatible GNU versions. Scrubbed in shellHook below.
+  coreutils,
+  gnugrep,
+  gnused,
+  gawk,
+  findutils,
+  diffutils,
+  patch,
+  gnutar,
+  gzip,
+  bzip2,
+  xz,
   # Elixir/Erlang
   erlang,
   elixir,
@@ -32,6 +46,24 @@ mkShell {
   ];
 
   shellHook = ''
+    # Undo mkShell's stdenv PATH prepend so macOS tools win for interactive
+    # use (BSD cp/grep/sed semantics). nix-added deps like elixir/git stay.
+    # Split/rejoin on ':' -- a naive string replace corrupts sibling store paths.
+    _newpath=""
+    _oldifs=$IFS; IFS=:
+    for _p in $PATH; do
+      case "$_p" in
+        ${coreutils}/bin|${gnugrep}/bin|${gnused}/bin|${gawk}/bin|\
+${findutils}/bin|${diffutils}/bin|${patch}/bin|${gnutar}/bin|\
+${gzip}/bin|${bzip2}/bin|${xz}/bin) ;;
+        *) _newpath="''${_newpath:+$_newpath:}$_p" ;;
+      esac
+    done
+    IFS=$_oldifs
+    PATH=$_newpath
+    export PATH
+    unset _newpath _oldifs _p
+
     # Keep Mix and Hex state inside the project instead of polluting $HOME,
     # so the toolchain here can never disagree with a system-wide install.
     export MIX_HOME="$PWD/.nix-mix"
